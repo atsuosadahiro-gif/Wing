@@ -4,34 +4,35 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>鳥の翼 研究モード C</title>
+<title>鳥の見た目リアル追求版</title>
 <style>
   html,body{
     margin:0; padding:0; width:100%; height:100%; overflow:hidden;
-    background:#06111a; color:#eaf6ff;
-    font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+    background: linear-gradient(180deg,#dfeaf5 0%, #cfe0f0 35%, #b7d1e8 100%);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    color:#102030;
   }
-  #wrap{position:fixed; inset:0; display:grid; grid-template-rows:auto 1fr;}
+  #wrap{ position:fixed; inset:0; display:grid; grid-template-rows:auto 1fr; }
   #ui{
-    background:linear-gradient(180deg, rgba(4,16,25,.96), rgba(5,20,32,.90));
-    border-bottom:1px solid rgba(255,255,255,.08);
+    background:rgba(255,255,255,0.76);
+    backdrop-filter: blur(8px);
+    border-bottom:1px solid rgba(0,0,0,0.08);
     padding:10px 12px 8px;
-    backdrop-filter:blur(6px);
     z-index:10;
   }
-  .row{display:flex; align-items:center; gap:10px; margin:8px 0; flex-wrap:wrap;}
-  label{min-width:108px; font-size:16px;}
-  input[type="range"]{width:180px; max-width:46vw;}
+  .row{ display:flex; align-items:center; gap:10px; margin:8px 0; flex-wrap:wrap; }
+  label{ min-width:108px; font-size:15px; }
+  input[type="range"]{ width:180px; max-width:46vw; }
   button{
-    background:#113042; color:#d7e9ff; border:1px solid rgba(255,255,255,.12);
-    border-radius:12px; padding:10px 16px; font-size:15px;
+    background:#26435e; color:#eef7ff; border:none; border-radius:12px;
+    padding:10px 16px; font-size:15px;
   }
   .pill{
     display:inline-block; font-size:12px; padding:3px 8px; border-radius:999px;
-    background:rgba(77,163,255,.10); border:1px solid rgba(77,163,255,.22); color:#cfe6ff;
+    background:rgba(38,67,94,.10); color:#26435e; border:1px solid rgba(38,67,94,.15);
   }
-  #msg{color:#b7c9d8; font-size:13px; line-height:1.35; margin-top:6px;}
-  canvas{width:100%; height:100%; display:block; touch-action:none;}
+  #msg{ font-size:13px; line-height:1.35; color:#31465c; margin-top:6px; }
+  canvas{ width:100%; height:100%; display:block; touch-action:none; }
 </style>
 </head>
 <body>
@@ -39,24 +40,24 @@
   <div id="ui">
     <div class="row">
       <label>羽ばたき振幅</label>
-      <input id="amp" type="range" min="10" max="120" value="46" />
+      <input id="amp" type="range" min="10" max="120" value="42" />
     </div>
     <div class="row">
       <label>周波数</label>
-      <input id="freq" type="range" min="20" max="180" value="62" />
+      <input id="freq" type="range" min="20" max="180" value="58" />
     </div>
     <div class="row">
-      <label>迎角ねじり</label>
-      <input id="twist" type="range" min="0" max="100" value="52" />
+      <label>翼の反り</label>
+      <input id="twist" type="range" min="0" max="100" value="54" />
     </div>
     <div class="row">
-      <label>渦の強さ</label>
-      <input id="strength" type="range" min="10" max="160" value="54" />
+      <label>羽の開き</label>
+      <input id="spread" type="range" min="10" max="160" value="72" />
       <button id="reset">リセット</button>
-      <span class="pill">C: 見た目+物理</span>
+      <span class="pill">見た目重視</span>
     </div>
     <div id="msg">
-      非対称羽ばたき、羽の束、先端ねじれ、8の字寄り軌道、簡易揚力・推力メーターを統合した版です。指で流れを乱せます。
+      写真寄りの見た目を狙った版です。白い羽の層、翼端の分離、半透明の羽ばたき残像、体の陰影を強めています。
     </div>
   </div>
   <canvas id="cv"></canvas>
@@ -70,17 +71,21 @@
   const ampEl = document.getElementById('amp');
   const freqEl = document.getElementById('freq');
   const twistEl = document.getElementById('twist');
-  const strengthEl = document.getElementById('strength');
+  const spreadEl = document.getElementById('spread');
   const resetBtn = document.getElementById('reset');
 
-  let W=0, H=0, DPR=Math.min(devicePixelRatio||1, 2);
-  let vortices=[], tracers=[], touches=[];
-  let simT=0, prevStrokeVel=0, emissionCooldown=0;
-  let liftVal=0, thrustVal=0, liftAvg=0, thrustAvg=0;
+  let W=0, H=0, DPR=Math.min(devicePixelRatio||1,2);
+  let simT=0;
+  let trail = [];
 
-  const MAX_VORTICES = 78;
-  const MAX_TRACERS = 900;
-  const rand = (a,b)=>a+Math.random()*(b-a);
+  function params(){
+    return {
+      amp:+ampEl.value,
+      freq:+freqEl.value/60,
+      twist:+twistEl.value/100,
+      spread:+spreadEl.value/100
+    };
+  }
 
   function resize(){
     const uiH = document.getElementById('ui').getBoundingClientRect().height;
@@ -90,508 +95,344 @@
     canvas.style.width = W+'px';
     canvas.style.height = H+'px';
     ctx.setTransform(DPR,0,0,DPR,0,0);
-    seed();
+    trail = [];
   }
 
-  function params(){
-    return {
-      amp:+ampEl.value,
-      freq:+freqEl.value/60,
-      twist:+twistEl.value/100,
-      strength:+strengthEl.value/100
-    };
-  }
+  function lerp(a,b,t){ return a+(b-a)*t; }
 
-  function seed(){
-    tracers.length=0;
-    vortices.length=0;
-    for(let i=0;i<MAX_TRACERS;i++){
-      const x=rand(0,W), y=rand(0,H);
-      tracers.push({
-        x,y,px:x,py:y,
-        age:rand(0,160),
-        life:rand(70,160),
-        a:rand(0.03,0.09)
-      });
-    }
-  }
-
-  function resetAll(){
-    simT=0; prevStrokeVel=0; emissionCooldown=0;
-    touches.length=0;
-    liftVal=thrustVal=liftAvg=thrustAvg=0;
-    seed();
-  }
-
-  function localToWorld(x,y,ox,oy,ang){
-    const c=Math.cos(ang), s=Math.sin(ang);
-    return {x:ox+x*c-y*s, y:oy+x*s+y*c};
-  }
-
-  function wingState(t){
+  function birdState(t){
     const p = params();
     const ph = t * p.freq * Math.PI * 2;
 
-    const bodyX = W * 0.50 + 4*Math.sin(ph)*0.2;
-    const bodyY = H * 0.55 + p.amp*0.04*Math.sin(ph-0.3);
+    const x = W*0.52 + Math.sin(ph*0.5)*6;
+    const y = H*0.48 + Math.sin(ph-0.2)*p.amp*0.08;
 
-    const vy = p.amp * p.freq * Math.PI * 2 * Math.cos(ph);
-    const s = Math.sin(ph), c = Math.cos(ph);
+    const down = Math.max(0, Math.sin(ph));
+    const up = Math.max(0, -Math.sin(ph));
+    const fold = 0.18 + 0.55*up;
+    const open = 0.70 + 0.45*down*p.spread;
 
-    const down = Math.max(0, s);
-    const up = Math.max(0, -s);
+    const shSpread = Math.min(24, Math.max(10, W*0.02));
+    const shoulderY = y - 8 + Math.sin(ph)*p.amp*0.55;
 
-    // Eight-ish path for shoulder line and body bob
-    const shoulderLift = p.amp * 0.72 * s;
-    const shoulderFore = 10 * Math.sin(2*ph) * 0.35;
+    const hum = Math.min(44, Math.max(24, W*0.044)) * (0.95 + 0.04*down);
+    const fore = Math.min(88, Math.max(54, W*0.088)) * (1.0 - 0.18*fold);
+    const hand = Math.min(84, Math.max(48, W*0.084)) * (1.02 - 0.16*fold);
 
-    // Asymmetric flapping
-    const fold = 0.14 + 0.64 * up;
-    const spread = 0.74 + 0.40 * down;
+    const base = -Math.PI/2 + 0.86*Math.sin(ph);
+    const elbow = base + 0.32*p.twist*(0.25 + 0.85*down) - 0.22*fold;
+    const wrist = elbow + 0.28*p.twist*(0.25 + 1.00*down) - 0.34*fold;
 
-    const humerus = Math.min(54, Math.max(30, W*0.050)) * (0.97 + 0.03*down);
-    const ulna    = Math.min(100, Math.max(64, W*0.100)) * (1.00 - 0.26*fold);
-    const hand    = Math.min(78, Math.max(44, W*0.078)) * (1.00 - 0.20*fold);
-
-    const shoulderSpread = Math.min(25, Math.max(10, W*0.022));
-    const shoulderY = bodyY - 10 + shoulderLift;
-    const shoulderXCenter = bodyX + shoulderFore;
-
-    const base = -Math.PI/2 + 0.90*s;
-    const elbowDrive = 0.34*p.twist*(0.25 + 0.90*down) - 0.30*fold;
-    const wristDrive = 0.30*p.twist*(0.20 + 1.05*down) - 0.42*fold;
-
-    const a1 = base;
-    const a2 = base + elbowDrive + 0.12*Math.sin(ph - 0.45);
-    const a3 = a2 + wristDrive + 0.18*Math.sin(ph - 0.9);
-
-    return {
-      ph, s, c, vy, down, up, fold, spread,
-      bodyX, bodyY, shoulderSpread, shoulderY, shoulderXCenter,
-      humerus, ulna, hand,
-      a1, a2, a3,
-      bodyTilt: 0.03*Math.sin(ph+0.4),
-      tailFan: 0.24 + 0.24*down
-    };
+    return {x,y,ph,down,up,fold,open,shSpread,shoulderY,hum,fore,hand,base,elbow,wrist};
   }
 
-  function wingJoints(ws, side){
+  function wingJoints(s, side){
     const dir = side === 'left' ? -1 : 1;
-    const shX = ws.shoulderXCenter + dir*ws.shoulderSpread;
-    const shY = ws.shoulderY;
+    const shX = s.x + dir*s.shSpread;
+    const shY = s.shoulderY;
 
-    // perfectly synchronized, mirrored only in x
-    const a1 = side === 'left' ? Math.PI - ws.a1 : ws.a1;
-    const a2 = side === 'left' ? Math.PI - ws.a2 : ws.a2;
-    const a3 = side === 'left' ? Math.PI - ws.a3 : ws.a3;
+    const a1 = side === 'left' ? Math.PI - s.base : s.base;
+    const a2 = side === 'left' ? Math.PI - s.elbow : s.elbow;
+    const a3 = side === 'left' ? Math.PI - s.wrist : s.wrist;
 
-    const elbowX = shX + Math.cos(a1)*ws.humerus;
-    const elbowY = shY + Math.sin(a1)*ws.humerus;
-    const wristX = elbowX + Math.cos(a2)*ws.ulna;
-    const wristY = elbowY + Math.sin(a2)*ws.ulna;
-    const tipX   = wristX + Math.cos(a3)*ws.hand;
-    const tipY   = wristY + Math.sin(a3)*ws.hand;
-    return {shX, shY, elbowX, elbowY, wristX, wristY, tipX, tipY, a1, a2, a3};
+    const elbowX = shX + Math.cos(a1)*s.hum;
+    const elbowY = shY + Math.sin(a1)*s.hum;
+    const wristX = elbowX + Math.cos(a2)*s.fore;
+    const wristY = elbowY + Math.sin(a2)*s.fore;
+    const tipX = wristX + Math.cos(a3)*s.hand;
+    const tipY = wristY + Math.sin(a3)*s.hand;
+
+    return {shX,shY,elbowX,elbowY,wristX,wristY,tipX,tipY,a1,a2,a3};
   }
 
-  function emitVortex(x,y,gamma,r){
-    vortices.push({x,y,gamma,r,age:0,life:rand(2.8,5.3)});
-    if(vortices.length>MAX_VORTICES){
-      vortices.splice(0, vortices.length-MAX_VORTICES);
-    }
-  }
-
-  function velocityAt(x,y){
-    const p = params();
-    let u = 22 + p.freq*10;
-    let v = 0;
-
-    for(const q of vortices){
-      const dx=x-q.x, dy=y-q.y;
-      const rr=dx*dx+dy*dy+q.r*q.r;
-      const f=q.gamma/rr;
-      u += -dy*f;
-      v +=  dx*f;
-    }
-
-    for(const tp of touches){
-      const dx=x-tp.x, dy=y-tp.y;
-      const rr=dx*dx+dy*dy+220;
-      const pull=600/rr;
-      u += tp.vx*pull;
-      v += tp.vy*pull;
-    }
-    return {u,v};
-  }
-
-  function computeForces(){
-    let lift=0, thrust=0, n=0;
-    const x0=W*0.16, x1=W*0.84;
-    const y0=H*0.14, y1=H*0.86;
-    for(const tr of tracers){
-      if(tr.x<x0||tr.x>x1||tr.y<y0||tr.y>y1) continue;
-      const vel=velocityAt(tr.x,tr.y);
-      lift += -vel.v;
-      thrust += vel.u;
-      n++;
-    }
-    liftVal = n ? lift/n : 0;
-    thrustVal = n ? thrust/n : 0;
-    liftAvg = liftAvg*0.92 + liftVal*0.08;
-    thrustAvg = thrustAvg*0.92 + thrustVal*0.08;
-  }
-
-  function step(dt){
-    simT += dt;
-    const p = params();
-    const ws = wingState(simT);
-    const left = wingJoints(ws, 'left');
-    const right = wingJoints(ws, 'right');
-
-    emissionCooldown -= dt;
-    const strokeSign = Math.sign(ws.vy || 1);
-    const signFlip = Math.sign(prevStrokeVel || 1) !== strokeSign;
-    prevStrokeVel = ws.vy;
-
-    if(signFlip || (Math.abs(ws.vy)>60 && emissionCooldown<=0)){
-      const gamma = (-strokeSign) * (26 + 78*p.strength + 36*p.twist);
-      const r = 13 + 10*p.twist;
-      for(const wing of [left,right]){
-        emitVortex(wing.tipX, wing.tipY, gamma, r);
-        emitVortex(wing.tipX + rand(-6,6), wing.tipY + strokeSign*rand(4,10), -gamma*0.30, r*0.82);
-        emitVortex(wing.wristX + rand(-4,4), wing.wristY + strokeSign*rand(2,7), gamma*0.34, r*0.68);
-      }
-      emissionCooldown = 0.15 + (1.0 - p.freq)*0.05;
-    }
-
-    for(let i=vortices.length-1;i>=0;i--){
-      const q=vortices[i];
-      q.age += dt;
-      if(q.age>q.life){ vortices.splice(i,1); continue; }
-
-      let u = 24 + p.freq*11;
-      let v = 0;
-      for(let j=0;j<vortices.length;j++){
-        if(i===j) continue;
-        const o=vortices[j];
-        const dx=q.x-o.x, dy=q.y-o.y;
-        const rr=dx*dx+dy*dy+o.r*o.r;
-        const f=o.gamma/rr;
-        u += -dy*f*0.30;
-        v +=  dx*f*0.30;
-      }
-      q.x += u*dt;
-      q.y += v*dt;
-      q.gamma *= Math.pow(0.985, dt*60);
-      q.r += 1.0*dt*60;
-
-      if(q.x>W+80||q.x<-80||q.y<-90||q.y>H+90) vortices.splice(i,1);
-    }
-
-    for(const tr of tracers){
-      tr.age += dt*60;
-      tr.px = tr.x; tr.py = tr.y;
-      const vel = velocityAt(tr.x,tr.y);
-      tr.x += vel.u*dt;
-      tr.y += vel.v*dt;
-      if(tr.x<-15||tr.x>W+15||tr.y<-15||tr.y>H+15||tr.age>tr.life){
-        tr.x = rand(-10, W*0.12);
-        tr.y = rand(0, H);
-        tr.px=tr.x; tr.py=tr.y; tr.age=0; tr.life=rand(70,150);
-      }
-    }
-
-    for(let i=touches.length-1;i>=0;i--){
-      touches[i].life -= dt;
-      if(touches[i].life<=0) touches.splice(i,1);
-    }
-
-    computeForces();
-  }
-
-  function drawBackground(){
-    ctx.fillStyle='#07111b';
+  function sky(){
+    const g = ctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,'#eef5fb');
+    g.addColorStop(0.55,'#d7e7f4');
+    g.addColorStop(1,'#bfd8ea');
+    ctx.fillStyle = g;
     ctx.fillRect(0,0,W,H);
-    ctx.strokeStyle='rgba(70,140,210,0.030)';
-    ctx.lineWidth=1;
-    for(let y=0;y<H;y+=18){
-      ctx.beginPath();
-      ctx.moveTo(0,y);
-      for(let x=0;x<=W;x+=24){
-        ctx.lineTo(x, y + Math.sin((x*0.018)+(y*0.014)+simT*0.9)*1.2);
-      }
-      ctx.stroke();
+
+    // very soft vertical light bands like the reference
+    for(let i=0;i<4;i++){
+      const x = W*(0.18 + i*0.2) + Math.sin(simT*0.3+i)*20;
+      const lg = ctx.createLinearGradient(x-40,0,x+40,0);
+      lg.addColorStop(0,'rgba(255,255,255,0)');
+      lg.addColorStop(0.5,'rgba(255,255,255,0.18)');
+      lg.addColorStop(1,'rgba(255,255,255,0)');
+      ctx.fillStyle = lg;
+      ctx.fillRect(x-50,0,100,H);
     }
   }
 
-  function drawTracers(){
-    for(const tr of tracers){
-      const k = 1 - tr.age/tr.life;
-      ctx.strokeStyle = `rgba(220,235,255,${0.036 + tr.a*k})`;
-      ctx.lineWidth = 1;
+  function drawBody(s){
+    ctx.save();
+    ctx.translate(s.x, s.y);
+
+    // tail behind body
+    for(let i=0;i<8;i++){
+      const k = i/7;
+      const a = Math.PI/2 + (-0.46 + 0.92*k)*(0.4 + 0.4*s.down);
+      feather(0, 42, a, 26 + 14*(1-Math.abs(k-0.5)*2), 8, 'rgba(255,255,255,0.92)', 'rgba(205,205,205,0.35)', true);
+    }
+
+    // body shadow
+    ctx.fillStyle = 'rgba(120,145,170,0.14)';
+    ctx.beginPath();
+    ctx.ellipse(0, 8, 38, 52, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    // body plumage
+    const bg = ctx.createRadialGradient(-8,-10,2,0,0,58);
+    bg.addColorStop(0,'rgba(255,255,255,0.98)');
+    bg.addColorStop(0.55,'rgba(248,248,246,0.96)');
+    bg.addColorStop(0.9,'rgba(224,230,235,0.96)');
+    bg.addColorStop(1,'rgba(205,214,224,0.9)');
+    ctx.fillStyle = bg;
+    ctx.beginPath();
+    ctx.ellipse(0, 12, 34, 50, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    // neck/head
+    const hg = ctx.createRadialGradient(0,-28,1,0,-28,22);
+    hg.addColorStop(0,'rgba(255,255,255,0.98)');
+    hg.addColorStop(0.75,'rgba(240,242,244,0.96)');
+    hg.addColorStop(1,'rgba(208,214,222,0.92)');
+    ctx.fillStyle = hg;
+    ctx.beginPath();
+    ctx.ellipse(0, -28, 16, 18, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    // eye
+    ctx.fillStyle = '#9f7448';
+    ctx.beginPath(); ctx.arc(4,-31,4.5,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#1a1a1a';
+    ctx.beginPath(); ctx.arc(4,-31,1.8,0,Math.PI*2); ctx.fill();
+
+    // beak
+    ctx.fillStyle = '#7e8085';
+    ctx.beginPath();
+    ctx.moveTo(0,-29);
+    ctx.lineTo(-14,-27);
+    ctx.lineTo(0,-23);
+    ctx.closePath();
+    ctx.fill();
+
+    // subtle chest markings
+    ctx.strokeStyle = 'rgba(140,145,150,0.22)';
+    ctx.lineWidth = 2;
+    for(let i=0;i<6;i++){
+      const xx = -12 + i*5;
       ctx.beginPath();
-      ctx.moveTo(tr.px,tr.py);
-      ctx.lineTo(tr.x,tr.y);
+      ctx.arc(xx, -2 + (i%2)*6, 4, 0.4, 2.6);
       ctx.stroke();
     }
+
+    // feet hint
+    ctx.fillStyle = 'rgba(210,120,135,0.75)';
+    ctx.beginPath(); ctx.arc(-8, 44, 6, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(8, 44, 6, 0, Math.PI*2); ctx.fill();
+
+    ctx.restore();
   }
 
-  function drawVortices(){
-    for(const q of vortices){
-      const k = 1 - q.age/q.life;
-      const r = Math.max(4, q.r*0.38);
-      ctx.fillStyle = q.gamma>0 ? `rgba(110,180,255,${0.045*k})` : `rgba(255,135,180,${0.045*k})`;
-      ctx.beginPath();
-      ctx.arc(q.x,q.y,r*1.5,0,Math.PI*2);
-      ctx.fill();
-      ctx.strokeStyle = q.gamma>0 ? `rgba(130,190,255,${0.13*k})` : `rgba(255,150,190,${0.13*k})`;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(q.x,q.y,r,0,Math.PI*1.5);
-      ctx.stroke();
-    }
-  }
-
-  function drawWing(ws, joint, side, depthScale=1){
-    const {shX,shY,elbowX,elbowY,wristX,wristY,tipX,tipY,a1,a2,a3} = joint;
-    const humW = 12*ws.spread*depthScale;
-    const ulnaW = 18*(1-0.18*ws.fold)*depthScale;
-    const handW = 11*(1-0.28*ws.fold)*depthScale;
-
-    const nx1=-Math.sin(a1), ny1=Math.cos(a1);
-    const nx2=-Math.sin(a2), ny2=Math.cos(a2);
-    const nx3=-Math.sin(a3), ny3=Math.cos(a3);
+  function feather(x,y,angle,len,width,fill,stroke,tail=false,alpha=1){
+    const fnx = -Math.sin(angle), fny = Math.cos(angle);
+    const tx = x + Math.cos(angle)*len;
+    const ty = y + Math.sin(angle)*len;
 
     ctx.save();
-    ctx.lineJoin='round';
-    ctx.lineCap='round';
-
-    // inner arm
-    let g = ctx.createLinearGradient(shX,shY,elbowX,elbowY);
-    g.addColorStop(0, `rgba(210,236,255,${0.84*depthScale})`);
-    g.addColorStop(1, `rgba(112,176,245,${0.70*depthScale})`);
-    ctx.fillStyle=g;
-    ctx.strokeStyle=`rgba(235,245,255,${0.12*depthScale})`;
-    ctx.lineWidth=1;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = fill;
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = tail ? 1.1 : 0.8;
 
     ctx.beginPath();
-    ctx.moveTo(shX + nx1*humW*0.34, shY + ny1*humW*0.34);
+    ctx.moveTo(x + fnx*width*0.55, y + fny*width*0.55);
     ctx.quadraticCurveTo(
-      shX + Math.cos(a1)*ws.humerus*0.28 + nx1*humW*0.14,
-      shY + Math.sin(a1)*ws.humerus*0.28 + ny1*humW*0.14,
-      elbowX + nx1*humW*0.10, elbowY + ny1*humW*0.10
+      x + Math.cos(angle)*len*0.54 + fnx*width*0.45,
+      y + Math.sin(angle)*len*0.54 + fny*width*0.45,
+      tx, ty
     );
-    ctx.lineTo(elbowX - nx1*humW*0.18, elbowY - ny1*humW*0.18);
     ctx.quadraticCurveTo(
-      shX + Math.cos(a1)*ws.humerus*0.22 - nx1*humW*0.20,
-      shY + Math.sin(a1)*ws.humerus*0.22 - ny1*humW*0.20,
-      shX - nx1*humW*0.14, shY - ny1*humW*0.14
+      x + Math.cos(angle)*len*0.44 - fnx*width*0.36,
+      y + Math.sin(angle)*len*0.44 - fny*width*0.36,
+      x - fnx*width*0.45, y - fny*width*0.45
     );
     ctx.closePath();
-    ctx.fill(); ctx.stroke();
+    ctx.fill();
+    ctx.stroke();
 
-    // secondary surface
-    g = ctx.createLinearGradient(elbowX,elbowY,wristX,wristY);
-    g.addColorStop(0, `rgba(188,224,255,${0.78*depthScale})`);
-    g.addColorStop(1, `rgba(88,150,232,${0.66*depthScale})`);
-    ctx.fillStyle=g;
+    // rachis
+    ctx.strokeStyle = 'rgba(185,190,198,0.30)';
+    ctx.lineWidth = 0.7;
     ctx.beginPath();
-    ctx.moveTo(elbowX + nx2*ulnaW*0.34, elbowY + ny2*ulnaW*0.34);
+    ctx.moveTo(x,y);
+    ctx.lineTo(tx,ty);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawWingSurface(s, w, side, front=true){
+    const dir = side === 'left' ? -1 : 1;
+    const depthAlpha = front ? 0.96 : 0.72;
+
+    // subtle motion blur ghost
+    const ghostShift = 0.14 * Math.sin(s.ph - 0.18);
+    for(let g=0; g<2; g++){
+      const fade = 0.10 - g*0.04;
+      const scale = 1 + g*0.03;
+      const ghostA1 = w.a1 + ghostShift*(g+1)*0.35*dir;
+      const ghostA2 = w.a2 + ghostShift*(g+1)*0.55*dir;
+      const ghostA3 = w.a3 + ghostShift*(g+1)*0.75*dir;
+
+      const shX = w.shX, shY = w.shY;
+      const elbowX = shX + Math.cos(ghostA1)*s.hum;
+      const elbowY = shY + Math.sin(ghostA1)*s.hum;
+      const wristX = elbowX + Math.cos(ghostA2)*s.fore*scale;
+      const wristY = elbowY + Math.sin(ghostA2)*s.fore*scale;
+      const tipX = wristX + Math.cos(ghostA3)*s.hand*scale;
+      const tipY = wristY + Math.sin(ghostA3)*s.hand*scale;
+      const nx1=-Math.sin(ghostA1), ny1=Math.cos(ghostA1);
+      const nx2=-Math.sin(ghostA2), ny2=Math.cos(ghostA2);
+      const nx3=-Math.sin(ghostA3), ny3=Math.cos(ghostA3);
+
+      ctx.save();
+      ctx.globalAlpha = fade;
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.beginPath();
+      ctx.moveTo(shX + nx1*5, shY + ny1*5);
+      ctx.lineTo(elbowX + nx1*7, elbowY + ny1*7);
+      ctx.lineTo(wristX + nx2*10, wristY + ny2*10);
+      ctx.lineTo(tipX + nx3*7, tipY + ny3*7);
+      ctx.lineTo(tipX - nx3*7, tipY - ny3*7);
+      ctx.lineTo(wristX - nx2*10, wristY - ny2*10);
+      ctx.lineTo(elbowX - nx1*5, elbowY - ny1*5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // base surfaces
+    const nx1=-Math.sin(w.a1), ny1=Math.cos(w.a1);
+    const nx2=-Math.sin(w.a2), ny2=Math.cos(w.a2);
+    const nx3=-Math.sin(w.a3), ny3=Math.cos(w.a3);
+
+    // inner wing
+    let grad = ctx.createLinearGradient(w.shX,w.shY,w.elbowX,w.elbowY);
+    grad.addColorStop(0, `rgba(255,255,255,${0.98*depthAlpha})`);
+    grad.addColorStop(1, `rgba(238,241,244,${0.90*depthAlpha})`);
+    ctx.fillStyle = grad;
+    ctx.strokeStyle = `rgba(212,217,224,${0.34*depthAlpha})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(w.shX + nx1*5.5, w.shY + ny1*5.5);
     ctx.quadraticCurveTo(
-      elbowX + Math.cos(a2)*ws.ulna*0.40 + nx2*ulnaW*0.20,
-      elbowY + Math.sin(a2)*ws.ulna*0.40 + ny2*ulnaW*0.20,
-      wristX + nx2*ulnaW*0.10, wristY + ny2*ulnaW*0.10
+      lerp(w.shX,w.elbowX,0.45)+nx1*4,
+      lerp(w.shY,w.elbowY,0.45)+ny1*4,
+      w.elbowX + nx1*7.5, w.elbowY + ny1*7.5
     );
-    ctx.lineTo(wristX - nx2*ulnaW*0.18, wristY - ny2*ulnaW*0.18);
+    ctx.lineTo(w.elbowX - nx1*9, w.elbowY - ny1*9);
     ctx.quadraticCurveTo(
-      elbowX + Math.cos(a2)*ws.ulna*0.38 - nx2*ulnaW*0.18,
-      elbowY + Math.sin(a2)*ws.ulna*0.38 - ny2*ulnaW*0.18,
-      elbowX - nx2*ulnaW*0.28, elbowY - ny2*ulnaW*0.28
+      lerp(w.shX,w.elbowX,0.30)-nx1*12,
+      lerp(w.shY,w.elbowY,0.30)-ny1*12,
+      w.shX - nx1*4.5, w.shY - ny1*4.5
     );
     ctx.closePath();
-    ctx.fill(); ctx.stroke();
+    ctx.fill();
+    ctx.stroke();
 
-    // covert feather rows
-    for(let row=0; row<2; row++){
-      for(let i=0;i<6;i++){
-        const k=i/5;
-        const bx = elbowX + Math.cos(a2)*(ws.ulna*(0.12+0.12*k));
-        const by = elbowY + Math.sin(a2)*(ws.ulna*(0.12+0.12*k));
-        const dir = side==='left' ? -1 : 1;
-        const fang = a2 + dir*(-0.08 + 0.06*i) + dir*0.05*ws.down;
-        const flen = 16 + 4*k + 5*ws.spread - row*3;
-        const fwid = 4.0 - 0.4*k;
-        const tx = bx + Math.cos(fang)*flen;
-        const ty = by + Math.sin(fang)*flen;
-        const fnx=-Math.sin(fang), fny=Math.cos(fang);
-        ctx.fillStyle = `rgba(188,222,255,${(0.26 - 0.02*k - row*0.05)*depthScale})`;
-        ctx.beginPath();
-        ctx.moveTo(bx + fnx*fwid, by + fny*fwid);
-        ctx.quadraticCurveTo(
-          bx + Math.cos(fang)*flen*0.55 + fnx*fwid*0.5,
-          by + Math.sin(fang)*flen*0.55 + fny*fwid*0.5,
-          tx, ty
-        );
-        ctx.quadraticCurveTo(
-          bx + Math.cos(fang)*flen*0.44 - fnx*fwid*0.4,
-          by + Math.sin(fang)*flen*0.44 - fny*fwid*0.4,
-          bx - fnx*fwid*0.6, by - fny*fwid*0.6
-        );
-        ctx.closePath();
-        ctx.fill();
-      }
+    // secondary fan
+    for(let i=0;i<11;i++){
+      const k=i/10;
+      const baseX = lerp(w.elbowX, w.wristX, 0.02 + 0.70*k);
+      const baseY = lerp(w.elbowY, w.wristY, 0.02 + 0.70*k);
+      const fang = w.a2 + dir*(-0.16 + 0.18*k) + dir*0.07*s.down;
+      const flen = 34 + 18*k + 14*s.open;
+      const fwid = 7.0 - 1.4*k;
+      feather(baseX, baseY, fang, flen, fwid, `rgba(255,255,255,${0.92*depthAlpha})`, `rgba(208,214,220,${0.26*depthAlpha})`, false, depthAlpha);
     }
 
     // primaries
-    const featherCount=9;
-    const dir = side==='left' ? -1 : 1;
-    for(let i=0;i<featherCount;i++){
-      const k=i/(featherCount-1);
-      const baseX = wristX + Math.cos(a3)*(ws.hand*(0.12 + 0.10*k));
-      const baseY = wristY + Math.sin(a3)*(ws.hand*(0.12 + 0.10*k));
-      const twistSpread = (k*k) * (0.18 + 0.22*ws.down + 0.18*params().twist);
-      const fang = a3 + dir*(-0.24 + 0.08*i) + dir*twistSpread - dir*0.12*ws.up;
-      const flen = 30 + 18*k + 10*ws.spread;
-      const fwid = 5.2 - 0.45*k;
-      const tx = baseX + Math.cos(fang)*flen;
-      const ty = baseY + Math.sin(fang)*flen;
-      const fnx=-Math.sin(fang), fny=Math.cos(fang);
+    for(let i=0;i<12;i++){
+      const k=i/11;
+      const baseX = lerp(w.wristX, w.tipX, 0.02 + 0.52*k);
+      const baseY = lerp(w.wristY, w.tipY, 0.02 + 0.52*k);
+      const twist = (k*k) * (0.16 + 0.30*s.down + 0.22*params().twist);
+      const fang = w.a3 + dir*(-0.30 + 0.06*i) + dir*twist - dir*0.12*s.up;
+      const flen = 40 + 22*k + 18*s.open;
+      const fwid = 7.2 - 1.8*k;
+      const tipGray = k > 0.84 ? 0.22 : 0.0;
 
-      ctx.fillStyle = `rgba(192,226,255,${(0.70 - 0.045*k)*depthScale})`;
-      ctx.strokeStyle = `rgba(225,242,255,${0.10*depthScale})`;
-      ctx.lineWidth=0.75;
+      feather(
+        baseX, baseY, fang, flen, fwid,
+        `rgba(${255-20*tipGray*255},${255-20*tipGray*255},${255-20*tipGray*255},${0.95*depthAlpha})`,
+        `rgba(202,208,215,${0.28*depthAlpha})`,
+        false,
+        depthAlpha
+      );
 
-      ctx.beginPath();
-      ctx.moveTo(baseX + fnx*fwid, baseY + fny*fwid);
-      ctx.quadraticCurveTo(
-        baseX + Math.cos(fang)*flen*0.56 + fnx*fwid*0.7,
-        baseY + Math.sin(fang)*flen*0.56 + fny*fwid*0.7,
-        tx, ty
-      );
-      ctx.quadraticCurveTo(
-        baseX + Math.cos(fang)*flen*0.46 - fnx*fwid*0.42,
-        baseY + Math.sin(fang)*flen*0.46 - fny*fwid*0.42,
-        baseX - fnx*fwid*0.68, baseY - fny*fwid*0.68
-      );
-      ctx.closePath();
-      ctx.fill(); ctx.stroke();
+      if(k > 0.80){
+        const tx = baseX + Math.cos(fang)*flen;
+        const ty = baseY + Math.sin(fang)*flen;
+        ctx.save();
+        ctx.globalAlpha = 0.35*depthAlpha;
+        ctx.fillStyle = 'rgba(110,115,124,0.55)';
+        ctx.beginPath();
+        ctx.arc(tx, ty, 2.4 + 2.6*(k-0.80)*5, 0, Math.PI*2);
+        ctx.fill();
+        ctx.restore();
+      }
     }
-
-    ctx.restore();
-  }
-
-  function drawBody(ws){
-    ctx.save();
-    ctx.translate(ws.bodyX, ws.bodyY);
-
-    const bodyGrad = ctx.createRadialGradient(-6,-10,1,0,0,44);
-    bodyGrad.addColorStop(0,'rgba(226,240,255,0.94)');
-    bodyGrad.addColorStop(0.38,'rgba(122,182,248,0.76)');
-    bodyGrad.addColorStop(1,'rgba(40,100,185,0.08)');
-    ctx.fillStyle = bodyGrad;
-    ctx.beginPath();
-    ctx.ellipse(0,8,28,38,0,0,Math.PI*2);
-    ctx.fill();
-
-    ctx.fillStyle='rgba(184,222,255,0.40)';
-    ctx.beginPath();
-    ctx.ellipse(0,-20,15,17,0,0,Math.PI*2);
-    ctx.fill();
-
-    ctx.fillStyle='rgba(30,55,84,0.78)';
-    ctx.beginPath();
-    ctx.arc(-4,-22,1.6,0,Math.PI*2);
-    ctx.arc(4,-22,1.6,0,Math.PI*2);
-    ctx.fill();
-
-    ctx.fillStyle='rgba(220,190,120,0.70)';
-    ctx.beginPath();
-    ctx.moveTo(0,-17);
-    ctx.lineTo(-5,-11);
-    ctx.lineTo(5,-11);
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.strokeStyle='rgba(235,245,255,0.18)';
-    ctx.lineWidth=1;
-    ctx.beginPath();
-    ctx.moveTo(0,-3);
-    ctx.lineTo(0,24);
-    ctx.stroke();
-
-    for(let i=0;i<5;i++){
-      const k=i/4;
-      const fang = Math.PI/2 + (-0.28 + 0.14*i)*(0.40 + 0.50*ws.down);
-      const flen = 16 + 10*(1 - Math.abs(k-0.5)*2);
-      const bx = (k-0.5)*8;
-      const by = 36;
-      const tx = bx + Math.cos(fang)*flen;
-      const ty = by + Math.sin(fang)*flen;
-      const fnx=-Math.sin(fang), fny=Math.cos(fang);
-      ctx.fillStyle='rgba(176,216,252,0.62)';
-      ctx.beginPath();
-      ctx.moveTo(bx + fnx*3.8, by + fny*3.8);
-      ctx.quadraticCurveTo(
-        bx + Math.cos(fang)*flen*0.56 + fnx*1.8,
-        by + Math.sin(fang)*flen*0.56 + fny*1.8,
-        tx, ty
-      );
-      ctx.quadraticCurveTo(
-        bx + Math.cos(fang)*flen*0.44 - fnx*1.6,
-        by + Math.sin(fang)*flen*0.44 - fny*1.6,
-        bx - fnx*2.8, by - fny*2.8
-      );
-      ctx.closePath();
-      ctx.fill();
-    }
-
-    ctx.restore();
   }
 
   function drawBird(){
-    const ws = wingState(simT);
-    const left = wingJoints(ws,'left');
-    const right = wingJoints(ws,'right');
-    drawWing(ws,left,'left',0.95);
-    drawBody(ws);
-    drawWing(ws,right,'right',0.95);
+    const s = birdState(simT);
+    const left = wingJoints(s,'left');
+    const right = wingJoints(s,'right');
+
+    drawWingSurface(s, left, 'left', false);
+    drawWingSurface(s, right, 'right', false);
+    drawBody(s);
+    drawWingSurface(s, left, 'left', true);
+    drawWingSurface(s, right, 'right', true);
   }
 
   function drawMeter(){
-    const boxX=10, boxY=10, boxW=190, boxH=86;
-    ctx.fillStyle='rgba(4,12,20,0.68)';
-    ctx.fillRect(boxX,boxY,boxW,boxH);
-    ctx.strokeStyle='rgba(180,220,255,0.16)';
+    const x=10,y=10,w=196,h=88;
+    ctx.fillStyle='rgba(255,255,255,0.58)';
+    ctx.fillRect(x,y,w,h);
+    ctx.strokeStyle='rgba(40,60,80,0.20)';
     ctx.lineWidth=1;
-    ctx.strokeRect(boxX,boxY,boxW,boxH);
+    ctx.strokeRect(x,y,w,h);
 
-    ctx.fillStyle='rgba(230,245,255,0.92)';
+    ctx.fillStyle='#23384a';
     ctx.font='13px system-ui, sans-serif';
-    ctx.fillText(`↑ 揚力: ${liftVal.toFixed(2)}`, boxX+10, boxY+22);
-    ctx.fillText(`→ 推力: ${thrustVal.toFixed(2)}`, boxX+10, boxY+44);
-    ctx.fillText(`平均 揚力: ${liftAvg.toFixed(2)}`, boxX+10, boxY+66);
-    ctx.fillText(`平均 推力: ${thrustAvg.toFixed(2)}`, boxX+10, boxY+84);
+    ctx.fillText(`↑ 揚力: ${liftVal.toFixed(2)}`, x+10, y+22);
+    ctx.fillText(`→ 推力: ${thrustVal.toFixed(2)}`, x+10, y+44);
+    ctx.fillText(`平均 揚力: ${liftAvg.toFixed(2)}`, x+10, y+66);
+    ctx.fillText(`平均 推力: ${thrustAvg.toFixed(2)}`, x+10, y+84);
 
-    const liftBar=Math.max(-50,Math.min(50,liftAvg*2.0));
-    const thrustBar=Math.max(0,Math.min(90,thrustAvg*1.0));
-    ctx.fillStyle='rgba(90,170,255,0.75)';
-    ctx.fillRect(boxX+122, boxY+13, Math.max(0,liftBar), 6);
-    ctx.fillStyle='rgba(255,150,190,0.75)';
-    ctx.fillRect(boxX+122, boxY+35, thrustBar, 6);
+    const lb=Math.max(-50,Math.min(50,liftAvg*2.0));
+    const tb=Math.max(0,Math.min(90,thrustAvg*1.0));
+    ctx.fillStyle='rgba(102,155,225,0.75)';
+    ctx.fillRect(x+126,y+13,Math.max(0,lb),6);
+    ctx.fillStyle='rgba(214,132,165,0.75)';
+    ctx.fillRect(x+126,y+35,tb,6);
   }
 
   function drawLabel(){
-    ctx.fillStyle='rgba(210,225,240,0.22)';
+    ctx.fillStyle='rgba(60,80,100,0.42)';
     ctx.font='12px system-ui, sans-serif';
-    ctx.fillText('鳥の正面2枚翼 同期版 + メーター', 10, H-12);
+    ctx.fillText('鳥の翼 研究モード C', 10, H-12);
   }
 
-  let lastStamp = performance.now();
+  let lastStamp=performance.now();
   function loop(now){
     const dt=Math.min(0.033,(now-lastStamp)/1000);
     lastStamp=now;
     step(dt);
-    drawBackground();
+    sky();
     drawTracers();
     drawVortices();
     drawBird();
@@ -602,12 +443,11 @@
 
   function pointerPos(ev){
     const r=canvas.getBoundingClientRect();
-    if(ev.touches && ev.touches.length){
-      return Array.from(ev.touches).map(t=>({x:t.clientX-r.left, y:t.clientY-r.top}));
+    if(ev.touches&&ev.touches.length){
+      return Array.from(ev.touches).map(t=>({x:t.clientX-r.left,y:t.clientY-r.top}));
     }
-    return [{x:ev.clientX-r.left, y:ev.clientY-r.top}];
+    return [{x:ev.clientX-r.left,y:ev.clientY-r.top}];
   }
-
   let lastTouchPts=[];
   function handleTouch(ev){
     const pts=pointerPos(ev);
@@ -617,7 +457,7 @@
       const prev=lastTouchPts[i]||p;
       next.push(p);
       touches.push({
-        x:p.x, y:p.y,
+        x:p.x,y:p.y,
         vx:(p.x-prev.x)*7,
         vy:(p.y-prev.y)*7,
         life:0.20
