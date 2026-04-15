@@ -4,52 +4,46 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>羽ばたき後流 線画モード + メーター 完全版</title>
+<title>鳥の羽リアル版 + 後流メーター</title>
 <style>
-  html,body{
-    margin:0; padding:0; width:100%; height:100%; overflow:hidden;
-    background:#05111a; color:#eaf6ff;
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
+    background: #07111b; color: #eaf6ff;
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   }
-  #wrap{
-    position:fixed; inset:0;
-    display:grid; grid-template-rows:auto 1fr;
+  #wrap {
+    position: fixed; inset: 0;
+    display: grid; grid-template-rows: auto 1fr;
   }
-  #ui{
-    background:linear-gradient(180deg, rgba(4,16,25,.96), rgba(5,20,32,.90));
-    border-bottom:1px solid rgba(255,255,255,.08);
-    padding:10px 12px 8px;
+  #ui {
+    background: linear-gradient(180deg, rgba(4,16,25,.96), rgba(5,20,32,.90));
+    border-bottom: 1px solid rgba(255,255,255,.08);
+    padding: 10px 12px 8px;
     backdrop-filter: blur(6px);
-    z-index:10;
+    z-index: 10;
   }
-  .row{
-    display:flex; align-items:center; gap:10px;
-    margin:8px 0; flex-wrap:wrap;
+  .row {
+    display: flex; align-items: center; gap: 10px;
+    margin: 8px 0; flex-wrap: wrap;
   }
-  label{
-    min-width:108px; font-size:16px;
+  label { min-width: 108px; font-size: 16px; }
+  input[type="range"] { width: 180px; max-width: 46vw; }
+  button {
+    background: #113042; color: #d7e9ff;
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 12px; padding: 10px 16px; font-size: 15px;
   }
-  input[type="range"]{
-    width:180px; max-width:46vw;
+  .pill {
+    display: inline-block; font-size: 12px; padding: 3px 8px;
+    border-radius: 999px;
+    background: rgba(77,163,255,.10);
+    border: 1px solid rgba(77,163,255,.22);
+    color: #cfe6ff;
   }
-  button{
-    background:#113042; color:#d7e9ff;
-    border:1px solid rgba(255,255,255,.12);
-    border-radius:12px; padding:10px 16px; font-size:15px;
+  #msg {
+    color: #b7c9d8; font-size: 13px; line-height: 1.35; margin-top: 6px;
   }
-  .pill{
-    display:inline-block; font-size:12px; padding:3px 8px;
-    border-radius:999px;
-    background:rgba(77,163,255,.10);
-    border:1px solid rgba(77,163,255,.22);
-    color:#cfe6ff;
-  }
-  #msg{
-    color:#b7c9d8; font-size:13px; line-height:1.35; margin-top:6px;
-  }
-  canvas{
-    width:100%; height:100%; display:block; touch-action:none;
-  }
+  canvas { width: 100%; height: 100%; display: block; touch-action: none; }
 </style>
 </head>
 <body>
@@ -57,24 +51,24 @@
   <div id="ui">
     <div class="row">
       <label>羽ばたき振幅</label>
-      <input id="amp" type="range" min="10" max="120" value="40" />
+      <input id="amp" type="range" min="10" max="120" value="42" />
     </div>
     <div class="row">
       <label>周波数</label>
-      <input id="freq" type="range" min="20" max="180" value="52" />
+      <input id="freq" type="range" min="20" max="180" value="54" />
     </div>
     <div class="row">
       <label>迎角ねじり</label>
-      <input id="twist" type="range" min="0" max="100" value="28" />
+      <input id="twist" type="range" min="0" max="100" value="34" />
     </div>
     <div class="row">
       <label>渦の強さ</label>
-      <input id="strength" type="range" min="10" max="160" value="42" />
+      <input id="strength" type="range" min="10" max="160" value="45" />
       <button id="reset">リセット</button>
-      <span class="pill">メーター完全版</span>
+      <span class="pill">鳥の羽リアル版</span>
     </div>
     <div id="msg">
-      発光をほぼやめた線画版です。羽ばたきで交互の渦を作り、後流から簡易的に揚力・推力メーターを算出します。指でなぞると流れを乱せます。
+      内翼・外翼・翼端羽を分けて描く版です。上げ羽では少したたみ、下げ羽では広げます。左上に簡易の揚力・推力メーターを表示します。
     </div>
   </div>
   <canvas id="cv"></canvas>
@@ -98,32 +92,25 @@
   let simT = 0;
   let prevStrokeVel = 0;
   let emissionCooldown = 0;
+  let liftVal = 0, thrustVal = 0, liftAvg = 0, thrustAvg = 0;
 
-  let liftVal = 0;
-  let thrustVal = 0;
-  let liftAvg = 0;
-  let thrustAvg = 0;
+  const MAX_VORTICES = 40;
+  const MAX_TRACERS = 560;
+  const rand = (a,b) => a + Math.random()*(b-a);
 
-  const MAX_VORTICES = 36;
-  const MAX_TRACERS = 520;
-
-  const rand = (a,b) => a + Math.random() * (b-a);
-
-  function resize(){
+  function resize() {
     const uiH = document.getElementById('ui').getBoundingClientRect().height;
     W = window.innerWidth;
     H = window.innerHeight - uiH;
-
     canvas.width = Math.floor(W * DPR);
     canvas.height = Math.floor(H * DPR);
     canvas.style.width = W + 'px';
     canvas.style.height = H + 'px';
-
     ctx.setTransform(DPR,0,0,DPR,0,0);
     seed();
   }
 
-  function params(){
+  function params() {
     return {
       amp: +ampEl.value,
       freq: +freqEl.value / 60,
@@ -132,27 +119,40 @@
     };
   }
 
-  function wingState(t){
+  function wingState(t) {
     const p = params();
+    const phase = t * p.freq * Math.PI * 2;
     const x = W * 0.18;
-    const y0 = H * 0.46;
-    const y = y0 + p.amp * Math.sin(t * p.freq * Math.PI * 2);
-    const vy = p.amp * p.freq * Math.PI * 2 * Math.cos(t * p.freq * Math.PI * 2);
-    const chord = Math.max(26, Math.min(52, W * 0.055));
-    const ang = 0.18 * p.twist * Math.sin(t * p.freq * Math.PI * 2 + Math.PI / 2);
-    return { x, y, vy, chord, ang };
+    const y0 = H * 0.48;
+    const y = y0 + p.amp * Math.sin(phase);
+    const vy = p.amp * p.freq * Math.PI * 2 * Math.cos(phase);
+
+    const downstroke = Math.max(0, Math.sin(phase));   // 0..1
+    const upstroke = Math.max(0, -Math.sin(phase));    // 0..1
+
+    const fold = 0.20 + 0.45 * upstroke;      // 上げ羽でたたむ
+    const spread = 0.72 + 0.38 * downstroke;  // 下げ羽で広げる
+
+    const innerLen = Math.min(70, Math.max(42, W * 0.10)) * (0.92 + 0.10 * downstroke);
+    const outerLen = Math.min(88, Math.max(50, W * 0.13)) * (1.00 - 0.25 * fold);
+    const angBase = -0.18 + 0.24 * Math.sin(phase + Math.PI/2);
+    const angInner = angBase + 0.16 * p.twist * Math.sin(phase + Math.PI/2);
+    const angOuter = angInner + 0.28 * p.twist * (0.4 + 0.6 * downstroke) - 0.18 * fold;
+
+    return {
+      x, y, vy, phase,
+      downstroke, upstroke, fold, spread,
+      innerLen, outerLen, angInner, angOuter
+    };
   }
 
-  function seed(){
+  function seed() {
     tracers.length = 0;
     vortices.length = 0;
-
-    for(let i = 0; i < MAX_TRACERS; i++){
-      const x = rand(0, W);
-      const y = rand(0, H);
+    for (let i=0; i<MAX_TRACERS; i++) {
+      const x = rand(0, W), y = rand(0, H);
       tracers.push({
-        x, y,
-        px: x, py: y,
+        x, y, px:x, py:y,
         age: rand(0, 160),
         life: rand(70, 150),
         a: rand(0.04, 0.12)
@@ -160,83 +160,64 @@
     }
   }
 
-  function resetAll(){
+  function resetAll() {
     simT = 0;
     prevStrokeVel = 0;
     emissionCooldown = 0;
     touches.length = 0;
-    liftVal = thrustVal = 0;
-    liftAvg = thrustAvg = 0;
+    liftVal = thrustVal = liftAvg = thrustAvg = 0;
     seed();
   }
 
-  function emitVortex(x, y, gamma, r){
-    vortices.push({ x, y, gamma, r, age: 0, life: rand(2.8, 4.8) });
-    if(vortices.length > MAX_VORTICES){
+  function emitVortex(x, y, gamma, r) {
+    vortices.push({ x, y, gamma, r, age:0, life:rand(2.8, 4.6) });
+    if (vortices.length > MAX_VORTICES) {
       vortices.splice(0, vortices.length - MAX_VORTICES);
     }
   }
 
-  function velocityAt(x, y){
+  function velocityAt(x, y) {
     const p = params();
     let u = 22 + p.freq * 10;
     let v = 0;
 
-    for(const q of vortices){
-      const dx = x - q.x;
-      const dy = y - q.y;
-      const rr = dx * dx + dy * dy + q.r * q.r;
+    for (const q of vortices) {
+      const dx = x - q.x, dy = y - q.y;
+      const rr = dx*dx + dy*dy + q.r*q.r;
       const f = q.gamma / rr;
       u += -dy * f;
       v +=  dx * f;
     }
 
-    for(const tp of touches){
-      const dx = x - tp.x;
-      const dy = y - tp.y;
-      const rr = dx * dx + dy * dy + 220;
+    for (const tp of touches) {
+      const dx = x - tp.x, dy = y - tp.y;
+      const rr = dx*dx + dy*dy + 220;
       const pull = 600 / rr;
       u += tp.vx * pull;
       v += tp.vy * pull;
     }
-
     return { u, v };
   }
 
-  function computeForces(){
-    let lift = 0;
-    let thrust = 0;
-    let sampleCount = 0;
+  function computeForces() {
+    let lift = 0, thrust = 0, n = 0;
+    const x0 = W * 0.24, x1 = W * 0.72;
+    const y0 = H * 0.18, y1 = H * 0.82;
 
-    const x0 = W * 0.22;
-    const x1 = W * 0.72;
-    const y0 = H * 0.18;
-    const y1 = H * 0.82;
-
-    for(const tr of tracers){
-      if(tr.x < x0 || tr.x > x1 || tr.y < y0 || tr.y > y1) continue;
-
+    for (const tr of tracers) {
+      if (tr.x < x0 || tr.x > x1 || tr.y < y0 || tr.y > y1) continue;
       const vel = velocityAt(tr.x, tr.y);
-
       lift += -vel.v;
       thrust += vel.u;
-      sampleCount++;
+      n++;
     }
-
-    if(sampleCount > 0){
-      liftVal = lift / sampleCount;
-      thrustVal = thrust / sampleCount;
-    } else {
-      liftVal = 0;
-      thrustVal = 0;
-    }
-
-    // time averaging for stability
+    liftVal = n ? lift / n : 0;
+    thrustVal = n ? thrust / n : 0;
     liftAvg = liftAvg * 0.92 + liftVal * 0.08;
     thrustAvg = thrustAvg * 0.92 + thrustVal * 0.08;
   }
 
-  function step(dt){
+  function step(dt) {
     simT += dt;
     const p = params();
     const ws = wingState(simT);
@@ -246,99 +227,90 @@
     const signFlip = Math.sign(prevStrokeVel || 1) !== strokeSign;
     prevStrokeVel = ws.vy;
 
-    if(signFlip || (Math.abs(ws.vy) > 60 && emissionCooldown <= 0)){
-      const teX = ws.x + Math.cos(ws.ang) * ws.chord * 0.68;
-      const teY = ws.y + Math.sin(ws.ang) * ws.chord * 0.68;
-      const gamma = (-strokeSign) * (24 + 70 * p.strength + 28 * p.twist);
+    // trailing edge from outer wing tip
+    const tipX = ws.x + Math.cos(ws.angInner) * ws.innerLen + Math.cos(ws.angOuter) * ws.outerLen;
+    const tipY = ws.y + Math.sin(ws.angInner) * ws.innerLen + Math.sin(ws.angOuter) * ws.outerLen;
+
+    if (signFlip || (Math.abs(ws.vy) > 60 && emissionCooldown <= 0)) {
+      const gamma = (-strokeSign) * (24 + 70 * p.strength + 30 * p.twist);
       const r = 14 + 8 * p.twist;
 
-      emitVortex(teX, teY, gamma, r);
-      emitVortex(teX + rand(7, 12), teY + strokeSign * rand(5, 9), -gamma * 0.28, r * 0.82);
+      emitVortex(tipX, tipY, gamma, r);
+      emitVortex(tipX + rand(6, 12), tipY + strokeSign * rand(5, 10), -gamma * 0.30, r * 0.82);
 
-      emissionCooldown = 0.19 + (1.0 - p.freq) * 0.05;
+      emissionCooldown = 0.18 + (1.0 - p.freq) * 0.05;
     }
 
-    for(let i = vortices.length - 1; i >= 0; i--){
+    for (let i=vortices.length-1; i>=0; i--) {
       const q = vortices[i];
       q.age += dt;
-
-      if(q.age > q.life){
-        vortices.splice(i, 1);
+      if (q.age > q.life) {
+        vortices.splice(i,1);
         continue;
       }
 
       let u = 24 + p.freq * 11;
       let v = 0;
-
-      for(let j = 0; j < vortices.length; j++){
-        if(i === j) continue;
+      for (let j=0; j<vortices.length; j++) {
+        if (i===j) continue;
         const o = vortices[j];
-        const dx = q.x - o.x;
-        const dy = q.y - o.y;
-        const rr = dx * dx + dy * dy + o.r * o.r;
+        const dx = q.x - o.x, dy = q.y - o.y;
+        const rr = dx*dx + dy*dy + o.r*o.r;
         const f = o.gamma / rr;
         u += -dy * f * 0.30;
         v +=  dx * f * 0.30;
       }
-
       q.x += u * dt;
       q.y += v * dt;
       q.gamma *= Math.pow(0.985, dt * 60);
       q.r += 1.0 * dt * 60;
 
-      if(q.x > W + 60 || q.y < -70 || q.y > H + 70){
-        vortices.splice(i, 1);
+      if (q.x > W + 60 || q.y < -70 || q.y > H + 70) {
+        vortices.splice(i,1);
       }
     }
 
-    for(const tr of tracers){
+    for (const tr of tracers) {
       tr.age += dt * 60;
-      tr.px = tr.x;
-      tr.py = tr.y;
-
+      tr.px = tr.x; tr.py = tr.y;
       const vel = velocityAt(tr.x, tr.y);
       tr.x += vel.u * dt;
       tr.y += vel.v * dt;
 
-      if(tr.x < -15 || tr.x > W + 15 || tr.y < -15 || tr.y > H + 15 || tr.age > tr.life){
+      if (tr.x < -15 || tr.x > W + 15 || tr.y < -15 || tr.y > H + 15 || tr.age > tr.life) {
         tr.x = rand(-10, W * 0.16);
         tr.y = rand(0, H);
-        tr.px = tr.x;
-        tr.py = tr.y;
-        tr.age = 0;
-        tr.life = rand(70, 150);
+        tr.px = tr.x; tr.py = tr.y;
+        tr.age = 0; tr.life = rand(70,150);
       }
     }
 
-    for(let i = touches.length - 1; i >= 0; i--){
+    for (let i=touches.length-1; i>=0; i--) {
       touches[i].life -= dt;
-      if(touches[i].life <= 0) touches.splice(i, 1);
+      if (touches[i].life <= 0) touches.splice(i,1);
     }
 
     computeForces();
   }
 
-  function drawBackground(){
+  function drawBackground() {
     ctx.fillStyle = '#07111b';
-    ctx.fillRect(0, 0, W, H);
+    ctx.fillRect(0,0,W,H);
 
     ctx.strokeStyle = 'rgba(70,140,210,0.035)';
     ctx.lineWidth = 1;
-
-    for(let y = 0; y < H; y += 18){
+    for (let y=0; y<H; y+=18) {
       ctx.beginPath();
-      ctx.moveTo(0, y);
-      for(let x = 0; x <= W; x += 24){
-        ctx.lineTo(x, y + Math.sin((x * 0.018) + (y * 0.014) + simT * 0.9) * 1.2);
+      ctx.moveTo(0,y);
+      for (let x=0; x<=W; x+=24) {
+        ctx.lineTo(x, y + Math.sin((x*0.018)+(y*0.014)+simT*0.9)*1.2);
       }
       ctx.stroke();
     }
   }
 
-  function drawTracers(){
-    ctx.globalCompositeOperation = 'source-over';
-
-    for(const tr of tracers){
+  function drawTracers() {
+    for (const tr of tracers) {
       const k = 1 - tr.age / tr.life;
       ctx.strokeStyle = `rgba(220,235,255,${0.04 + tr.a * k})`;
       ctx.lineWidth = 1;
@@ -349,8 +321,8 @@
     }
   }
 
-  function drawVortices(){
-    for(const q of vortices){
+  function drawVortices() {
+    for (const q of vortices) {
       const k = 1 - q.age / q.life;
       const r = Math.max(4, q.r * 0.38);
 
@@ -371,45 +343,129 @@
     }
   }
 
-  function drawWing(){
+  function drawBirdWing() {
     const ws = wingState(simT);
 
+    const shoulderX = ws.x;
+    const shoulderY = ws.y;
+
+    const elbowX = shoulderX + Math.cos(ws.angInner) * ws.innerLen;
+    const elbowY = shoulderY + Math.sin(ws.angInner) * ws.innerLen;
+
+    const tipX = elbowX + Math.cos(ws.angOuter) * ws.outerLen;
+    const tipY = elbowY + Math.sin(ws.angOuter) * ws.outerLen;
+
+    const innerWidth = 24 * ws.spread;
+    const outerWidth = 18 * (1 - 0.22 * ws.fold);
+
+    // inner wing
     ctx.save();
-    ctx.translate(ws.x, ws.y);
-    ctx.rotate(ws.ang);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
 
-    const rx = Math.max(13, Math.min(20, W * 0.020));
-    const ry = Math.max(18, Math.min(26, H * 0.028));
+    const g1 = ctx.createLinearGradient(shoulderX, shoulderY, elbowX, elbowY);
+    g1.addColorStop(0, 'rgba(210,235,255,0.90)');
+    g1.addColorStop(1, 'rgba(110,175,245,0.78)');
+    ctx.fillStyle = g1;
+    ctx.strokeStyle = 'rgba(230,245,255,0.24)';
+    ctx.lineWidth = 1.2;
 
-    const grad = ctx.createRadialGradient(-3, -3, 1, 0, 0, ry * 1.2);
-    grad.addColorStop(0, 'rgba(200,230,255,0.85)');
-    grad.addColorStop(0.6, 'rgba(95,170,245,0.70)');
-    grad.addColorStop(1, 'rgba(40,100,185,0.08)');
-    ctx.fillStyle = grad;
+    const nx1 = -Math.sin(ws.angInner);
+    const ny1 =  Math.cos(ws.angInner);
 
     ctx.beginPath();
-    ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+    ctx.moveTo(shoulderX + nx1 * innerWidth * 0.38, shoulderY + ny1 * innerWidth * 0.38);
+    ctx.quadraticCurveTo(
+      shoulderX + ws.innerLen * 0.30, shoulderY - innerWidth * 0.18,
+      elbowX + nx1 * innerWidth * 0.18, elbowY + ny1 * innerWidth * 0.18
+    );
+    ctx.lineTo(elbowX - nx1 * innerWidth * 0.30, elbowY - ny1 * innerWidth * 0.30);
+    ctx.quadraticCurveTo(
+      shoulderX + ws.innerLen * 0.26, shoulderY + innerWidth * 0.52,
+      shoulderX - nx1 * innerWidth * 0.18, shoulderY - ny1 * innerWidth * 0.18
+    );
+    ctx.closePath();
     ctx.fill();
-
-    ctx.strokeStyle = 'rgba(225,245,255,0.35)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(-rx * 0.55, -ry * 0.35);
-    ctx.quadraticCurveTo(-rx * 0.10, -ry * 0.05, rx * 0.65, ry * 0.55);
     ctx.stroke();
+
+    // outer wing
+    const g2 = ctx.createLinearGradient(elbowX, elbowY, tipX, tipY);
+    g2.addColorStop(0, 'rgba(180,220,255,0.84)');
+    g2.addColorStop(1, 'rgba(80,145,230,0.72)');
+    ctx.fillStyle = g2;
+
+    const nx2 = -Math.sin(ws.angOuter);
+    const ny2 =  Math.cos(ws.angOuter);
+
+    ctx.beginPath();
+    ctx.moveTo(elbowX + nx2 * outerWidth * 0.34, elbowY + ny2 * outerWidth * 0.34);
+    ctx.quadraticCurveTo(
+      elbowX + Math.cos(ws.angOuter) * ws.outerLen * 0.48 + nx2 * outerWidth * 0.24,
+      elbowY + Math.sin(ws.angOuter) * ws.outerLen * 0.48 + ny2 * outerWidth * 0.24,
+      tipX + nx2 * outerWidth * 0.10, tipY + ny2 * outerWidth * 0.10
+    );
+    ctx.lineTo(tipX - nx2 * outerWidth * 0.16, tipY - ny2 * outerWidth * 0.16);
+    ctx.quadraticCurveTo(
+      elbowX + Math.cos(ws.angOuter) * ws.outerLen * 0.42 - nx2 * outerWidth * 0.20,
+      elbowY + Math.sin(ws.angOuter) * ws.outerLen * 0.42 - ny2 * outerWidth * 0.20,
+      elbowX - nx2 * outerWidth * 0.34, elbowY - ny2 * outerWidth * 0.34
+    );
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // primary feathers
+    const featherCount = 5;
+    for (let i=0; i<featherCount; i++) {
+      const k = i / (featherCount - 1);
+      const baseX = elbowX + Math.cos(ws.angOuter) * (ws.outerLen * (0.54 + 0.11 * k));
+      const baseY = elbowY + Math.sin(ws.angOuter) * (ws.outerLen * (0.54 + 0.11 * k));
+      const fang = ws.angOuter + (-0.30 + 0.15 * i) + 0.18 * ws.downstroke - 0.10 * ws.upstroke;
+      const flen = 26 + 12 * k + 10 * ws.spread;
+      const fwid = 5.5 - 1.0 * k;
+
+      const tx = baseX + Math.cos(fang) * flen;
+      const ty = baseY + Math.sin(fang) * flen;
+      const fnx = -Math.sin(fang), fny = Math.cos(fang);
+
+      ctx.fillStyle = `rgba(185,220,255,${0.72 - 0.05 * k})`;
+      ctx.strokeStyle = 'rgba(220,240,255,0.18)';
+      ctx.lineWidth = 0.8;
+
+      ctx.beginPath();
+      ctx.moveTo(baseX + fnx * fwid, baseY + fny * fwid);
+      ctx.quadraticCurveTo(
+        baseX + Math.cos(fang) * flen * 0.55 + fnx * fwid * 0.8,
+        baseY + Math.sin(fang) * flen * 0.55 + fny * fwid * 0.8,
+        tx, ty
+      );
+      ctx.quadraticCurveTo(
+        baseX + Math.cos(fang) * flen * 0.48 - fnx * fwid * 0.5,
+        baseY + Math.sin(fang) * flen * 0.48 - fny * fwid * 0.5,
+        baseX - fnx * fwid * 0.75, baseY - fny * fwid * 0.75
+      );
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // shoulder/body hint
+    const bodyGrad = ctx.createRadialGradient(shoulderX - 6, shoulderY - 4, 1, shoulderX, shoulderY, 26);
+    bodyGrad.addColorStop(0, 'rgba(210,235,255,0.86)');
+    bodyGrad.addColorStop(0.55, 'rgba(95,170,245,0.72)');
+    bodyGrad.addColorStop(1, 'rgba(40,100,185,0.06)');
+    ctx.fillStyle = bodyGrad;
+    ctx.beginPath();
+    ctx.ellipse(shoulderX - 10, shoulderY, 18, 26, 0, 0, Math.PI * 2);
+    ctx.fill();
 
     ctx.restore();
   }
 
-  function drawMeter(){
-    const boxX = 10;
-    const boxY = 10;
-    const boxW = 190;
-    const boxH = 84;
-
+  function drawMeter() {
+    const boxX = 10, boxY = 10, boxW = 190, boxH = 86;
     ctx.fillStyle = 'rgba(4,12,20,0.68)';
     ctx.fillRect(boxX, boxY, boxW, boxH);
-
     ctx.strokeStyle = 'rgba(180,220,255,0.16)';
     ctx.lineWidth = 1;
     ctx.strokeRect(boxX, boxY, boxW, boxH);
@@ -418,30 +474,25 @@
     ctx.font = '13px system-ui, sans-serif';
     ctx.fillText(`↑ 揚力: ${liftVal.toFixed(2)}`, boxX + 10, boxY + 22);
     ctx.fillText(`→ 推力: ${thrustVal.toFixed(2)}`, boxX + 10, boxY + 44);
-
-    ctx.fillStyle = 'rgba(180,220,255,0.82)';
     ctx.fillText(`平均 揚力: ${liftAvg.toFixed(2)}`, boxX + 10, boxY + 66);
     ctx.fillText(`平均 推力: ${thrustAvg.toFixed(2)}`, boxX + 10, boxY + 84);
 
     const liftBar = Math.max(-50, Math.min(50, liftAvg * 2.0));
     const thrustBar = Math.max(0, Math.min(90, thrustAvg * 1.0));
-
     ctx.fillStyle = 'rgba(90,170,255,0.75)';
-    ctx.fillRect(boxX + 120, boxY + 13, Math.max(0, liftBar), 6);
-
+    ctx.fillRect(boxX + 122, boxY + 13, Math.max(0, liftBar), 6);
     ctx.fillStyle = 'rgba(255,150,190,0.75)';
-    ctx.fillRect(boxX + 120, boxY + 35, thrustBar, 6);
+    ctx.fillRect(boxX + 122, boxY + 35, thrustBar, 6);
   }
 
-  function drawLabel(){
+  function drawLabel() {
     ctx.fillStyle = 'rgba(210,225,240,0.22)';
     ctx.font = '12px system-ui, sans-serif';
-    ctx.fillText('線画後流モデル + メーター 完全版', 10, H - 12);
+    ctx.fillText('鳥の羽リアル版 + メーター', 10, H - 12);
   }
 
   let lastStamp = performance.now();
-
-  function loop(now){
+  function loop(now) {
     const dt = Math.min(0.033, (now - lastStamp) / 1000);
     lastStamp = now;
 
@@ -449,60 +500,46 @@
     drawBackground();
     drawTracers();
     drawVortices();
-    drawWing();
+    drawBirdWing();
     drawMeter();
     drawLabel();
 
     requestAnimationFrame(loop);
   }
 
-  function pointerPos(ev){
+  function pointerPos(ev) {
     const r = canvas.getBoundingClientRect();
-    if(ev.touches && ev.touches.length){
-      return Array.from(ev.touches).map(t => ({
-        x: t.clientX - r.left,
-        y: t.clientY - r.top
-      }));
+    if (ev.touches && ev.touches.length) {
+      return Array.from(ev.touches).map(t => ({ x: t.clientX - r.left, y: t.clientY - r.top }));
     }
-    return [{
-      x: ev.clientX - r.left,
-      y: ev.clientY - r.top
-    }];
+    return [{ x: ev.clientX - r.left, y: ev.clientY - r.top }];
   }
 
   let lastTouchPts = [];
-
-  function handleTouch(ev){
+  function handleTouch(ev) {
     const pts = pointerPos(ev);
     const next = [];
-
-    for(let i = 0; i < pts.length; i++){
+    for (let i=0; i<pts.length; i++) {
       const p = pts[i];
       const prev = lastTouchPts[i] || p;
       next.push(p);
-
       touches.push({
-        x: p.x,
-        y: p.y,
+        x: p.x, y: p.y,
         vx: (p.x - prev.x) * 7,
         vy: (p.y - prev.y) * 7,
         life: 0.20
       });
     }
-
     lastTouchPts = next;
     ev.preventDefault();
   }
+  function endTouch() { lastTouchPts = []; }
 
-  function endTouch(){
-    lastTouchPts = [];
-  }
-
-  canvas.addEventListener('touchstart', handleTouch, { passive: false });
-  canvas.addEventListener('touchmove', handleTouch, { passive: false });
-  canvas.addEventListener('touchend', endTouch, { passive: false });
+  canvas.addEventListener('touchstart', handleTouch, { passive:false });
+  canvas.addEventListener('touchmove', handleTouch, { passive:false });
+  canvas.addEventListener('touchend', endTouch, { passive:false });
   canvas.addEventListener('mousedown', (e) => handleTouch(e));
-  canvas.addEventListener('mousemove', (e) => { if(e.buttons) handleTouch(e); });
+  canvas.addEventListener('mousemove', (e) => { if (e.buttons) handleTouch(e); });
   canvas.addEventListener('mouseup', endTouch);
 
   resetBtn.addEventListener('click', resetAll);
