@@ -67,7 +67,7 @@
         <button id="reset">リセット</button>
       </div>
     </div>
-    <div id="msg">前面ビューと側面ビューで、圧力場・等圧線・流線をそれぞれ独立に計算します。UIは折りたたみ可能で、スマホ画面でも可視領域を広く取れるよう調整しています。</div>
+    <div class="toggles" style="margin-top:2px"><label><input id="showBird" type="checkbox" checked> 鳥描画</label><label><input id="showMask" type="checkbox"> マスク</label><label><input id="showPoints" type="checkbox"> 骨格点</label><label><input id="showForce" type="checkbox"> 力点</label></div><div id="msg">デバッグ版です。鳥描画・マスク・骨格点・力点を切り替えて、ズレの原因を切り分けます。</div>
   </div>
   <div id="stage"><canvas id="cv"></canvas></div>
   <div id="fabBar">
@@ -94,6 +94,10 @@ const dom = {
   fabToggleUi: document.getElementById('fabToggleUi'),
   fabReset: document.getElementById('fabReset'),
   ui: document.getElementById('ui'),
+  showBird: document.getElementById('showBird'),
+  showMask: document.getElementById('showMask'),
+  showPoints: document.getElementById('showPoints'),
+  showForce: document.getElementById('showForce'),
 };
 const ctx = dom.canvas.getContext('2d', { alpha:false });
 
@@ -289,136 +293,6 @@ function sideKinematics(s,R){
   return {bodyCx,bodyCy,tilt,shoulderX,shoulderY,ex,ey,wx,wy,tx,ty,a1,a2,a3};
 }
 
-
-function pointInPoly(px, py, pts){
-  let inside = false;
-  for(let i=0, j=pts.length-1; i<pts.length; j=i++){
-    const xi = pts[i].x, yi = pts[i].y;
-    const xj = pts[j].x, yj = pts[j].y;
-    const intersect = ((yi > py) !== (yj > py)) &&
-      (px < (xj - xi) * (py - yi) / ((yj - yi) + 1e-9) + xi);
-    if(intersect) inside = !inside;
-  }
-  return inside;
-}
-
-function markPolygon(field, pts, vx, vy, R){
-  const c = field.cell, NX = field.NX, NY = field.NY;
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for(const p of pts){
-    if(p.x < minX) minX = p.x;
-    if(p.y < minY) minY = p.y;
-    if(p.x > maxX) maxX = p.x;
-    if(p.y > maxY) maxY = p.y;
-  }
-  const minI = clamp(Math.floor((minX - R.x) / c) - 2, 0, NX - 1);
-  const maxI = clamp(Math.ceil((maxX - R.x) / c) + 2, 0, NX - 1);
-  const minJ = clamp(Math.floor((minY - R.y) / c) - 2, 0, NY - 1);
-  const maxJ = clamp(Math.ceil((maxY - R.y) / c) + 2, 0, NY - 1);
-
-  for(let j=minJ; j<=maxJ; j++){
-    for(let i=minI; i<=maxI; i++){
-      const px = R.x + (i + 0.5) * c;
-      const py = R.y + (j + 0.5) * c;
-      if(pointInPoly(px, py, pts)){
-        const id = idx(field, i, j);
-        field.solid[id] = 1;
-        field.svx[id] = vx;
-        field.svy[id] = vy;
-      }
-    }
-  }
-}
-
-function markEllipse(field, cx, cy, rx, ry, vx, vy, R){
-  const c = field.cell, NX = field.NX, NY = field.NY;
-  const minI = clamp(Math.floor((cx - rx - R.x) / c) - 2, 0, NX - 1);
-  const maxI = clamp(Math.ceil((cx + rx - R.x) / c) + 2, 0, NX - 1);
-  const minJ = clamp(Math.floor((cy - ry - R.y) / c) - 2, 0, NY - 1);
-  const maxJ = clamp(Math.ceil((cy + ry - R.y) / c) + 2, 0, NY - 1);
-
-  for(let j=minJ; j<=maxJ; j++){
-    for(let i=minI; i<=maxI; i++){
-      const px = R.x + (i + 0.5) * c;
-      const py = R.y + (j + 0.5) * c;
-      const dx = (px - cx) / (rx + 1e-9);
-      const dy = (py - cy) / (ry + 1e-9);
-      if(dx*dx + dy*dy <= 1){
-        const id = idx(field, i, j);
-        field.solid[id] = 1;
-        field.svx[id] = vx;
-        field.svy[id] = vy;
-      }
-    }
-  }
-}
-
-function avgVel(points, prevPoints, dt){
-  if(!prevPoints || !dt) return {vx:0, vy:0};
-  let vx=0, vy=0, n=0;
-  for(let i=0;i<Math.min(points.length, prevPoints.length);i++){
-    vx += (points[i].x - prevPoints[i].x) / dt;
-    vy += (points[i].y - prevPoints[i].y) / dt;
-    n++;
-  }
-  return n ? {vx:vx/n, vy:vy/n} : {vx:0, vy:0};
-}
-
-function makeFrontWingShape(w, side, sc){
-  const dir=side==='left'?-1:1;
-  const spread = Math.min(1.25, Math.max(0.0, (w.tipX-w.wristX)*dir/18));
-
-  const upper = [
-    {x:w.shX + dir*(2.0*sc), y:w.shY - 5.2*sc},
-    {x:lerp(w.shX,w.elbowX,0.20) + dir*(2.8*sc), y:lerp(w.shY,w.elbowY,0.20) - 6.6*sc},
-    {x:lerp(w.shX,w.elbowX,0.62) + dir*(3.4*sc), y:lerp(w.shY,w.elbowY,0.62) - 7.0*sc},
-    {x:lerp(w.elbowX,w.wristX,0.14) + dir*(4.2*sc), y:lerp(w.elbowY,w.wristY,0.14) - 8.0*sc},
-    {x:lerp(w.elbowX,w.wristX,0.52) + dir*(5.2*sc), y:lerp(w.elbowY,w.wristY,0.52) - 7.4*sc},
-    {x:lerp(w.elbowX,w.wristX,0.88) + dir*(6.2*sc), y:lerp(w.elbowY,w.wristY,0.88) - 6.3*sc},
-    {x:lerp(w.wristX,w.tipX,0.22) + dir*(7.0+1.5*spread)*sc, y:lerp(w.wristY,w.tipY,0.22) - 5.4*sc},
-    {x:lerp(w.wristX,w.tipX,0.60) + dir*(9.8+2.0*spread)*sc, y:lerp(w.wristY,w.tipY,0.60) - 3.8*sc},
-    {x:w.tipX + dir*(11.5+3.0*spread)*sc, y:w.tipY - 1.4*sc},
-  ];
-
-  const lower = [
-    {x:w.tipX + dir*(6.6+1.0*spread)*sc, y:w.tipY + 5.4*sc},
-    {x:lerp(w.wristX,w.tipX,0.72) + dir*(4.4+0.8*spread)*sc, y:lerp(w.wristY,w.tipY,0.72) + 6.8*sc},
-    {x:lerp(w.wristX,w.tipX,0.30) + dir*(2.1*sc), y:lerp(w.wristY,w.tipY,0.30) + 7.2*sc},
-    {x:lerp(w.elbowX,w.wristX,0.92) + dir*(1.4*sc), y:lerp(w.elbowY,w.wristY,0.92) + 7.0*sc},
-    {x:lerp(w.elbowX,w.wristX,0.58) + dir*(0.3*sc), y:lerp(w.elbowY,w.wristY,0.58) + 7.0*sc},
-    {x:lerp(w.elbowX,w.wristX,0.18) - dir*(0.6*sc), y:lerp(w.elbowY,w.wristY,0.18) + 6.0*sc},
-    {x:lerp(w.shX,w.elbowX,0.64) - dir*(1.0*sc), y:lerp(w.shY,w.elbowY,0.64) + 4.6*sc},
-    {x:lerp(w.shX,w.elbowX,0.24) - dir*(1.3*sc), y:lerp(w.shY,w.elbowY,0.24) + 3.5*sc},
-    {x:w.shX - dir*(1.0*sc), y:w.shY + 2.6*sc},
-  ];
-
-  return {upper, lower, poly: upper.concat(lower)};
-}
-
-function makeSideWingShape(K, sc){
-  const upper = [
-    {x:K.shoulderX + 0.8*sc, y:K.shoulderY - 4.0*sc},
-    {x:lerp(K.shoulderX,K.ex,0.24) + 1.8*sc, y:lerp(K.shoulderY,K.ey,0.24) - 5.6*sc},
-    {x:lerp(K.shoulderX,K.ex,0.66) + 2.8*sc, y:lerp(K.shoulderY,K.ey,0.66) - 6.7*sc},
-    {x:lerp(K.ex,K.wx,0.20) + 3.8*sc, y:lerp(K.ey,K.wy,0.20) - 8.3*sc},
-    {x:lerp(K.ex,K.wx,0.62) + 5.4*sc, y:lerp(K.ey,K.wy,0.62) - 7.4*sc},
-    {x:lerp(K.wx,K.tx,0.28) + 7.4*sc, y:lerp(K.wy,K.ty,0.28) - 5.2*sc},
-    {x:lerp(K.wx,K.tx,0.68) + 9.0*sc, y:lerp(K.wy,K.ty,0.68) - 3.3*sc},
-    {x:K.tx + 10.5*sc, y:K.ty - 1.4*sc},
-  ];
-  const lower = [
-    {x:K.tx + 5.6*sc, y:K.ty + 4.4*sc},
-    {x:lerp(K.wx,K.tx,0.70) + 2.5*sc, y:lerp(K.wy,K.ty,0.70) + 5.5*sc},
-    {x:lerp(K.wx,K.tx,0.30) + 1.2*sc, y:lerp(K.wy,K.ty,0.30) + 5.7*sc},
-    {x:lerp(K.ex,K.wx,0.78) + 1.0*sc, y:lerp(K.ey,K.wy,0.78) + 6.1*sc},
-    {x:lerp(K.ex,K.wx,0.30) + 0.0*sc, y:lerp(K.ey,K.wy,0.30) + 6.0*sc},
-    {x:lerp(K.shoulderX,K.ex,0.60) - 0.7*sc, y:lerp(K.shoulderY,K.ey,0.60) + 4.0*sc},
-    {x:lerp(K.shoulderX,K.ex,0.20) - 1.0*sc, y:lerp(K.shoulderY,K.ey,0.20) + 3.0*sc},
-    {x:K.shoulderX - 0.8*sc, y:K.shoulderY + 2.4*sc},
-  ];
-  return {upper, lower, poly: upper.concat(lower)};
-}
-
 function markCap(field, x1,y1,x2,y2,rad,vx,vy,R){
   const c=field.cell, NX=field.NX, NY=field.NY;
   const lx1=(x1-R.x)/c, ly1=(y1-R.y)/c, lx2=(x2-R.x)/c, ly2=(y2-R.y)/c;
@@ -436,33 +310,29 @@ function markCap(field, x1,y1,x2,y2,rad,vx,vy,R){
 
 function buildFrontMask(field,Lw,Rw,R,dt,s,prevL,prevR){
   field.solid.fill(0); field.svx.fill(0); field.svy.fill(0);
-  const sc = s.scale;
-
-  const leftShape = makeFrontWingShape(Lw, 'left', sc);
-  const rightShape = makeFrontWingShape(Rw, 'right', sc);
-  const prevLeftShape = prevL ? makeFrontWingShape(prevL, 'left', sc) : null;
-  const prevRightShape = prevR ? makeFrontWingShape(prevR, 'right', sc) : null;
-
-  const lv = avgVel(leftShape.poly, prevLeftShape ? prevLeftShape.poly : null, dt);
-  const rv = avgVel(rightShape.poly, prevRightShape ? prevRightShape.poly : null, dt);
-
-  markPolygon(field, leftShape.poly, lv.vx, lv.vy, R);
-  markPolygon(field, rightShape.poly, rv.vx, rv.vy, R);
-  markEllipse(field, s.bodyX, s.bodyY + 5*sc, 15*sc, 22*sc, 0, 0, R);
-  markEllipse(field, s.bodyX, s.bodyY - 10*sc, 6.5*sc, 7.2*sc, 0, 0, R);
+  const sc=s.scale;
+  const segs=[
+    [Lw.shX,Lw.shY,Lw.elbowX,Lw.elbowY,6*sc, prevL?(Lw.shX-prevL.shX)/dt:0, prevL?(Lw.shY-prevL.shY)/dt:0],
+    [Lw.elbowX,Lw.elbowY,Lw.wristX,Lw.wristY,8*sc, prevL?(Lw.elbowX-prevL.elbowX)/dt:0, prevL?(Lw.elbowY-prevL.elbowY)/dt:0],
+    [Lw.wristX,Lw.wristY,Lw.tipX,Lw.tipY,6*sc, prevL?(Lw.wristX-prevL.wristX)/dt:0, prevL?(Lw.wristY-prevL.wristY)/dt:0],
+    [Rw.shX,Rw.shY,Rw.elbowX,Rw.elbowY,6*sc, prevR?(Rw.shX-prevR.shX)/dt:0, prevR?(Rw.shY-prevR.shY)/dt:0],
+    [Rw.elbowX,Rw.elbowY,Rw.wristX,Rw.wristY,8*sc, prevR?(Rw.elbowX-prevR.elbowX)/dt:0, prevR?(Rw.elbowY-prevR.elbowY)/dt:0],
+    [Rw.wristX,Rw.wristY,Rw.tipX,Rw.tipY,6*sc, prevR?(Rw.wristX-prevR.wristX)/dt:0, prevR?(Rw.wristY-prevR.wristY)/dt:0],
+    [s.bodyX-8*sc,s.bodyY+4*sc,s.bodyX+8*sc,s.bodyY+4*sc,12*sc,0,0]
+  ];
+  for(const seg of segs) markCap(field, ...seg, R);
 }
 
 function buildSideMask(field,K,R,dt,s,prevK){
   field.solid.fill(0); field.svx.fill(0); field.svy.fill(0);
-  const sc = s.scale;
-
-  const shape = makeSideWingShape(K, sc);
-  const prevShape = prevK ? makeSideWingShape(prevK, sc) : null;
-  const vv = avgVel(shape.poly, prevShape ? prevShape.poly : null, dt);
-
-  markPolygon(field, shape.poly, vv.vx, vv.vy, R);
-  markEllipse(field, K.bodyCx, K.bodyCy + 3*sc, 16*sc, 10*sc, 0, 0, R);
-  markEllipse(field, K.bodyCx - 9*sc, K.bodyCy - 8*sc, 5.3*sc, 4.3*sc, 0, 0, R);
+  const sc=s.scale;
+  const segs=[
+    [K.shoulderX,K.shoulderY,K.ex,K.ey,6*sc, prevK?(K.shoulderX-prevK.shoulderX)/dt:0, prevK?(K.shoulderY-prevK.shoulderY)/dt:0],
+    [K.ex,K.ey,K.wx,K.wy,8*sc, prevK?(K.ex-prevK.ex)/dt:0, prevK?(K.ey-prevK.ey)/dt:0],
+    [K.wx,K.wy,K.tx,K.ty,6*sc, prevK?(K.wx-prevK.wx)/dt:0, prevK?(K.wy-prevK.wy)/dt:0],
+    [K.bodyCx-10*sc,K.bodyCy+2*sc,K.bodyCx+10*sc,K.bodyCy+2*sc,12*sc,0,0]
+  ];
+  for(const seg of segs) markCap(field, ...seg, R);
 }
 
 function samp(field,arr,x,y){
@@ -798,47 +668,38 @@ function arrow(x1,y1,x2,y2,color,label){
 }
 
 function drawFrontWing(w,side,sc=1){
-  const shape = makeFrontWingShape(w, side, sc);
-  const pts = shape.poly;
-
-  ctx.save();
-  ctx.fillStyle='rgba(235,240,245,.96)';
-  ctx.beginPath();
-  ctx.moveTo(pts[0].x, pts[0].y);
-  for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x, pts[i].y);
-  ctx.closePath();
-  ctx.fill();
-
-  const grad = ctx.createLinearGradient(w.shX,w.shY,w.tipX,w.tipY);
-  grad.addColorStop(0,'rgba(252,252,250,0.98)');
-  grad.addColorStop(0.7,'rgba(240,242,240,0.96)');
-  grad.addColorStop(1,'rgba(206,214,224,0.84)');
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.moveTo(shape.upper[0].x, shape.upper[0].y);
-  for(let i=1;i<shape.upper.length;i++) ctx.lineTo(shape.upper[i].x, shape.upper[i].y);
-  for(let i=0;i<shape.lower.length;i++) ctx.lineTo(shape.lower[i].x, shape.lower[i].y);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.strokeStyle='rgba(160,166,176,0.25)';
-  ctx.lineWidth=Math.max(0.8,1.1*sc);
-  ctx.beginPath();
-  ctx.moveTo(w.shX,w.shY); ctx.lineTo(w.elbowX,w.elbowY); ctx.lineTo(w.wristX,w.wristY); ctx.lineTo(w.tipX,w.tipY);
-  ctx.stroke();
-
-  // feather texture based on the same shape
-  for(let i=0;i<shape.upper.length-1;i++){
-    const p = shape.upper[i];
-    const q = shape.lower[Math.min(shape.lower.length-1, shape.lower.length-1-i)];
-    ctx.strokeStyle='rgba(255,255,255,0.45)';
-    ctx.lineWidth=Math.max(0.5,0.9*sc);
-    ctx.beginPath();
-    ctx.moveTo(p.x,p.y);
-    ctx.lineTo(q.x,q.y);
-    ctx.stroke();
+  const dir=side==='left'?-1:1;
+  const spread = Math.min(1.25, Math.max(0.0, (w.tipX-w.wristX)*dir/18));
+  ctx.strokeStyle='rgba(226,233,240,.96)'; ctx.lineWidth=5.8*sc; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(w.shX,w.shY); ctx.lineTo(w.elbowX,w.elbowY); ctx.lineTo(w.wristX,w.wristY); ctx.stroke();
+  ctx.strokeStyle='rgba(79,168,161,.55)'; ctx.lineWidth=1.6*Math.max(0.7,sc); ctx.beginPath(); ctx.moveTo(w.shX,w.shY); ctx.lineTo(w.elbowX,w.elbowY); ctx.stroke();
+  ctx.save(); ctx.fillStyle='rgba(205,212,220,0.14)'; ctx.beginPath();
+  ctx.moveTo(w.elbowX,w.elbowY);
+  ctx.quadraticCurveTo((w.elbowX+w.wristX)/2+dir*(4+5*spread),(w.elbowY+w.wristY)/2+3,w.wristX,w.wristY);
+  ctx.quadraticCurveTo((w.wristX+w.tipX)/2+dir*(8+10*spread),(w.wristY+w.tipY)/2+8,w.tipX,w.tipY);
+  ctx.quadraticCurveTo((w.elbowX+w.tipX)/2,(w.elbowY+w.tipY)/2+11,w.elbowX,w.elbowY); ctx.fill(); ctx.restore();
+  function featherStroke(bx,by,a,length,wid,shade=1,tipDark=false){
+    ctx.save(); ctx.translate(bx,by); ctx.rotate(a);
+    const grad = ctx.createLinearGradient(0,0,length,0);
+    grad.addColorStop(0,'rgba(252,252,250,0.98)');
+    grad.addColorStop(0.65, shade>0.8 ? 'rgba(243,244,242,0.98)' : 'rgba(232,236,242,0.95)');
+    grad.addColorStop(1, tipDark ? 'rgba(186,193,202,0.78)' : 'rgba(224,228,234,0.86)');
+    ctx.strokeStyle=grad; ctx.lineWidth=wid; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(length,0); ctx.stroke();
+    ctx.strokeStyle='rgba(160,166,176,0.26)'; ctx.lineWidth=Math.max(0.7, wid*0.16); ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(length,0); ctx.stroke();
+    ctx.restore();
   }
-  ctx.restore();
+  for(let i=0;i<4;i++){
+    const k=i/3, bx=lerp(w.shX,w.elbowX,0.18+0.62*k), by=lerp(w.shY,w.elbowY,0.18+0.62*k), a=w.a1 + dir*(-0.26 + 0.10*i);
+    featherStroke(bx,by,a,8+4*k,3.2-0.25*k,0.7,false);
+  }
+  for(let i=0;i<7;i++){
+    const k=i/6, bx=lerp(w.elbowX,w.wristX,0.05+0.84*k), by=lerp(w.elbowY,w.wristY,0.05+0.84*k), a=w.a2 + dir*(-0.18 - 0.05*spread + 0.07*i);
+    featherStroke(bx,by,a,(12+11*k+2*spread)*sc,(3.7-0.28*k)*Math.max(0.65,sc),0.85,false);
+  }
+  for(let i=0;i<10;i++){
+    const k=i/9, bx=lerp(w.wristX,w.tipX,0.04+0.72*k), by=lerp(w.wristY,w.tipY,0.04+0.72*k);
+    const jitter=(k-0.5)*(0.06+0.06*spread), a=w.a3 + dir*(-0.18 - 0.18*spread + 0.075*i) + dir*jitter;
+    featherStroke(bx,by,a,(16+16*k+7*spread + (i%2===0 ? 1.8 : -0.6))*sc,(4.1-0.30*k)*Math.max(0.65,sc),1.0,k>0.72);
+  }
 }
 
 function drawFrontBird(s,Lw,Rw,R){
@@ -876,41 +737,18 @@ function drawSideBird(s,R){
   ctx.fillStyle='#7b7e85'; ctx.beginPath(); ctx.moveTo(-10.0*sc,-7.7*sc); ctx.lineTo(-14.8*sc,-6.9*sc); ctx.lineTo(-10.0*sc,-6.0*sc); ctx.closePath(); ctx.fill();
   ctx.strokeStyle='rgba(220,226,232,.90)'; ctx.lineWidth=1.0; for(let i=0;i<4;i++){ const k=i/3; ctx.beginPath(); ctx.moveTo(10*sc,6*sc+k*0.6*sc); ctx.lineTo(15*sc+k*2*sc,8*sc+k*1.4*sc); ctx.stroke(); }
   ctx.restore();
-  const wingShape = makeSideWingShape(K, sc);
-  const pts = wingShape.poly;
-  ctx.fillStyle='rgba(235,240,245,.96)';
-  ctx.beginPath();
-  ctx.moveTo(pts[0].x, pts[0].y);
-  for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x, pts[i].y);
-  ctx.closePath();
-  ctx.fill();
-
-  const wingGrad=ctx.createLinearGradient(K.shoulderX,K.shoulderY,K.tx,K.ty);
-  wingGrad.addColorStop(0,'rgba(251,251,249,0.98)');
-  wingGrad.addColorStop(0.7,'rgba(240,242,240,0.96)');
-  wingGrad.addColorStop(1,'rgba(206,214,224,0.84)');
-  ctx.fillStyle=wingGrad;
-  ctx.beginPath();
-  ctx.moveTo(wingShape.upper[0].x, wingShape.upper[0].y);
-  for(let i=1;i<wingShape.upper.length;i++) ctx.lineTo(wingShape.upper[i].x, wingShape.upper[i].y);
-  for(let i=0;i<wingShape.lower.length;i++) ctx.lineTo(wingShape.lower[i].x, wingShape.lower[i].y);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.strokeStyle='rgba(160,166,176,0.24)';
-  ctx.lineWidth=Math.max(0.8,1.0*sc);
-  ctx.beginPath(); ctx.moveTo(K.shoulderX,K.shoulderY); ctx.lineTo(K.ex,K.ey); ctx.lineTo(K.wx,K.wy); ctx.lineTo(K.tx,K.ty); ctx.stroke();
-
-  for(let i=0;i<wingShape.upper.length-1;i++){
-    const p = wingShape.upper[i];
-    const q = wingShape.lower[Math.min(wingShape.lower.length-1, wingShape.lower.length-1-i)];
-    ctx.strokeStyle='rgba(255,255,255,0.42)';
-    ctx.lineWidth=Math.max(0.5,0.8*sc);
-    ctx.beginPath();
-    ctx.moveTo(p.x,p.y);
-    ctx.lineTo(q.x,q.y);
-    ctx.stroke();
+  ctx.strokeStyle='rgba(235,240,245,.92)'; ctx.lineWidth=5.0*Math.max(0.65,sc); ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(K.shoulderX,K.shoulderY); ctx.lineTo(K.ex,K.ey); ctx.lineTo(K.wx,K.wy); ctx.stroke();
+  ctx.strokeStyle='rgba(79,168,161,.72)'; ctx.lineWidth=1.9*Math.max(0.65,sc); ctx.beginPath(); ctx.moveTo(K.shoulderX,K.shoulderY); ctx.lineTo(K.ex,K.ey); ctx.stroke();
+  function featherStroke(bx,by,a,length,wid,tipDark=false){
+    ctx.save(); ctx.translate(bx,by); ctx.rotate(a);
+    const grad=ctx.createLinearGradient(0,0,length,0); grad.addColorStop(0,'rgba(251,251,249,0.98)'); grad.addColorStop(0.65,'rgba(240,242,240,0.96)'); grad.addColorStop(1,tipDark?'rgba(182,190,200,0.76)':'rgba(224,228,234,0.84)');
+    ctx.strokeStyle=grad; ctx.lineWidth=wid; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(length,0); ctx.stroke();
+    ctx.strokeStyle='rgba(160,166,176,0.24)'; ctx.lineWidth=Math.max(0.7, wid*0.16); ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(length,0); ctx.stroke();
+    ctx.restore();
   }
+  for(let i=0;i<3;i++){ const k=i/2, bx=lerp(K.shoulderX,K.ex,0.20+0.55*k), by=lerp(K.shoulderY,K.ey,0.20+0.55*k), a=K.a1 + (-0.16 + 0.08*i); featherStroke(bx,by,a,(7+2*k)*sc,(2.8-0.2*k)*Math.max(0.65,sc),false); }
+  for(let i=0;i<6;i++){ const k=i/5, bx=lerp(K.ex,K.wx,0.08+0.78*k), by=lerp(K.ey,K.wy,0.08+0.78*k), a=K.a2 + (-0.14 - 0.08*openAmt + 0.07*i); featherStroke(bx,by,a,(8+7*k+2*openAmt)*sc,(2.9-0.22*k)*Math.max(0.65,sc),false); }
+  for(let i=0;i<8;i++){ const k=i/7,bx=lerp(K.wx,K.tx,.08+.62*k),by=lerp(K.wy,K.ty,.08+.62*k),a=K.a3+(-.12-.18*openAmt+.08*i)+(k-0.5)*0.04; featherStroke(bx,by,a,(10+10*k+3*openAmt+(i%2===0?1.0:-0.3))*sc,(3.3-.25*k)*Math.max(0.65,sc),k>0.7); }
   arrow(R.x+R.w-76,R.y+28,R.x+R.w-76,R.y+28-Math.min(38,8+lift*15),'#5b84c8','揚力');
   arrow(R.x+R.w-76,R.y+54,R.x+R.w-76+Math.min(40,8+thrust*16),R.y+54,'#d48ab0','推力');
   arrow(R.x+12,R.y+R.h-18,R.x+88,R.y+R.h-18,'#5b84c8','前から来る空気');
@@ -935,8 +773,17 @@ function renderFrontView(rect,state,leftWing,rightWing,flags){
   if(flags.pressure) drawPressureMap(frontField,sr,1);
   if(flags.contours) drawContours(frontField,sr);
   if(flags.flow) drawFlowLines(frontField,sr,1);
-  drawFrontBird(state,leftWing,rightWing,sr);
-  drawLegend(sr);
+
+  ctx.save();
+  ctx.beginPath(); rr(sr.x,sr.y,sr.w,sr.h,16); ctx.clip();
+  if(dom.showBird && dom.showBird.checked) drawFrontBird(state,leftWing,rightWing,sr);
+  if(dom.showMask && dom.showMask.checked) drawSolidOverlay(frontField,sr);
+  if(dom.showPoints && dom.showPoints.checked) drawFrontDebugPoints(leftWing,rightWing);
+  if(dom.showForce && dom.showForce.checked) drawFrontForcePoints(state,leftWing,rightWing);
+  arrow(sr.x+12,sr.y+sr.h-18,sr.x+88,sr.y+sr.h-18,'#5b84c8','前から来る空気');
+  ctx.restore();
+
+  drawLegend(sr.x + sr.w - 64, sr.y + 18);
 }
 
 function renderSideView(rect,state,flags){
@@ -944,8 +791,21 @@ function renderSideView(rect,state,flags){
   if(flags.pressure) drawPressureMap(sideField,sr,.92);
   if(flags.contours) drawContours(sideField,sr);
   if(flags.flow) drawFlowLines(sideField,sr,.72);
-  drawSideBird(state,sr);
-  drawLegend(sr);
+
+  const K = sideKinematics(state,sr);
+
+  ctx.save();
+  ctx.beginPath(); rr(sr.x,sr.y,sr.w,sr.h,16); ctx.clip();
+  if(dom.showBird && dom.showBird.checked) drawSideBird(state,sr);
+  if(dom.showMask && dom.showMask.checked) drawSolidOverlay(sideField,sr);
+  if(dom.showPoints && dom.showPoints.checked) drawSideDebugPoints(K);
+  if(dom.showForce && dom.showForce.checked) drawSideForcePoints(state,K);
+  arrow(sr.x+sr.w-76,sr.y+28,sr.x+sr.w-76,sr.y+28-Math.min(38,8+lift*15),'#5b84c8','揚力');
+  arrow(sr.x+sr.w-76,sr.y+54,sr.x+sr.w-76+Math.min(40,8+thrust*16),sr.y+54,'#d48ab0','推力');
+  arrow(sr.x+12,sr.y+sr.h-18,sr.x+88,sr.y+sr.h-18,'#5b84c8','前から来る空気');
+  ctx.restore();
+
+  drawLegend(sr.x + sr.w - 64, sr.y + 18);
 }
 
 
@@ -971,6 +831,74 @@ async function toggleFullscreen(){
   }catch(e){
     console.warn('fullscreen failed', e);
   }
+}
+
+
+function drawSolidOverlay(field, R){
+  const sx = R.w / (field.NX * field.cell);
+  const sy = R.h / (field.NY * field.cell);
+  ctx.save();
+  ctx.beginPath(); rr(R.x,R.y,R.w,R.h,16); ctx.clip();
+  ctx.fillStyle = 'rgba(255, 64, 64, 0.24)';
+  for(let j=0;j<field.NY;j++){
+    for(let i=0;i<field.NX;i++){
+      if(!field.solid[idx(field,i,j)]) continue;
+      ctx.fillRect(
+        R.x + i * field.cell * sx,
+        R.y + j * field.cell * sy,
+        Math.ceil(field.cell * sx),
+        Math.ceil(field.cell * sy)
+      );
+    }
+  }
+  ctx.restore();
+}
+
+function debugPoint(x,y,color='yellow',r=3){
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(x,y,r,0,Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawFrontDebugPoints(Lw, Rw){
+  debugPoint(Lw.shX,Lw.shY,'yellow',3);
+  debugPoint(Lw.elbowX,Lw.elbowY,'orange',3);
+  debugPoint(Lw.wristX,Lw.wristY,'red',3);
+  debugPoint(Lw.tipX,Lw.tipY,'cyan',3);
+
+  debugPoint(Rw.shX,Rw.shY,'yellow',3);
+  debugPoint(Rw.elbowX,Rw.elbowY,'orange',3);
+  debugPoint(Rw.wristX,Rw.wristY,'red',3);
+  debugPoint(Rw.tipX,Rw.tipY,'cyan',3);
+}
+
+function drawSideDebugPoints(K){
+  debugPoint(K.shoulderX,K.shoulderY,'yellow',3);
+  debugPoint(K.ex,K.ey,'orange',3);
+  debugPoint(K.wx,K.wy,'red',3);
+  debugPoint(K.tx,K.ty,'cyan',3);
+}
+
+function drawFrontForcePoints(state, Lw, Rw){
+  if(state.down <= .05) return;
+  for(const wing of [Lw,Rw]){
+    const p1 = {x:lerp(wing.shX,wing.elbowX,.28), y:lerp(wing.shY,wing.elbowY,.28)};
+    const p2 = {x:lerp(wing.shX,wing.elbowX,.58), y:lerp(wing.shY,wing.elbowY,.58)};
+    debugPoint(p1.x,p1.y,'lime',4);
+    debugPoint(p2.x,p2.y,'lime',4);
+  }
+}
+
+function drawSideForcePoints(state, K){
+  const pts = [
+    {x:lerp(K.shoulderX,K.ex,.35), y:lerp(K.shoulderY,K.ey,.35)},
+    {x:lerp(K.ex,K.wx,.45), y:lerp(K.ey,K.wy,.45)},
+    {x:lerp(K.wx,K.tx,.55), y:lerp(K.wy,K.ty,.55)},
+  ];
+  for(const p of pts) debugPoint(p.x,p.y,'lime',4);
 }
 
 function resize(){
@@ -1039,7 +967,7 @@ function bindUI(){
   if(dom.toggleUi) dom.toggleUi.addEventListener('click', ()=>setUiCollapsed(!uiCollapsed));
   if(dom.fabToggleUi) dom.fabToggleUi.addEventListener('click', ()=>setUiCollapsed(!uiCollapsed));
   if(dom.fullscreen) dom.fullscreen.addEventListener('click', toggleFullscreen);
-  [dom.showPressure, dom.showContours, dom.showFlow, dom.birdScale, dom.wind, dom.amp, dom.freq, dom.pitch].forEach(el => {
+  [dom.showPressure, dom.showContours, dom.showFlow, dom.birdScale, dom.wind, dom.amp, dom.freq, dom.pitch, dom.showBird, dom.showMask, dom.showPoints, dom.showForce].forEach(el => {
     el.addEventListener('input', ()=>{ invalidatePressureMap(frontField); invalidatePressureMap(sideField); draw(0); });
     el.addEventListener('change', ()=>{ invalidatePressureMap(frontField); invalidatePressureMap(sideField); draw(0); });
   });
