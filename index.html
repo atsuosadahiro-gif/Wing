@@ -2,750 +2,90 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>2D格子流体 + 翼マスク境界条件版</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>正面羽ばたき修正版</title>
 <style>
-  :root{
-    --bg1:#eef5fb; --bg2:#dbe8f3; --bg3:#c6dceb;
-    --ink:#173047; --muted:#4a6277; --line:#00000014;
-  }
-  html,body{
-    margin:0; padding:0; width:100%; height:100%; overflow:hidden;
-    font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
-    color:var(--ink);
-    background:linear-gradient(180deg,var(--bg1),var(--bg2) 45%,var(--bg3));
-  }
-  #wrap{position:fixed; inset:0; display:flex; flex-direction:column;}
-  #ui{
-    flex:0 0 auto; background:rgba(255,255,255,.84); backdrop-filter: blur(10px);
-    border-bottom:1px solid var(--line); padding:10px 12px 8px; z-index:10;
-  }
-  .row{display:flex; align-items:center; gap:10px; margin:8px 0; flex-wrap:wrap;}
-  label{min-width:122px; font-size:15px;}
-  input[type="range"]{width:180px; max-width:42vw;}
-  button{background:#26435e; color:#eef7ff; border:none; border-radius:12px; padding:10px 16px; font-size:15px;}
-  .pill{display:inline-block; font-size:12px; padding:3px 8px; border-radius:999px; background:rgba(38,67,94,.10); color:#26435e; border:1px solid rgba(38,67,94,.15);}
-  #msg{font-size:13px; line-height:1.35; color:var(--muted); margin-top:6px;}
-  #stage{flex:1 1 auto; min-height:300px; position:relative; overflow:hidden;}
-  canvas{position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none;}
+  html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(180deg,#eef5fb,#dbe8f3 45%,#c6dceb);}
+  #wrap{position:fixed;inset:0;display:flex;flex-direction:column;}
+  #ui{flex:0 0 auto;background:rgba(255,255,255,.86);backdrop-filter:blur(10px);border-bottom:1px solid rgba(0,0,0,.08);padding:10px 12px 8px;z-index:10}
+  .row{display:flex;align-items:center;gap:10px;margin:8px 0;flex-wrap:wrap}
+  label{min-width:122px;font-size:15px}
+  input[type="range"]{width:180px;max-width:42vw}
+  button{background:#26435e;color:#eef7ff;border:none;border-radius:12px;padding:10px 16px;font-size:15px}
+  .pill{display:inline-block;font-size:12px;padding:3px 8px;border-radius:999px;background:rgba(38,67,94,.10);color:#26435e;border:1px solid rgba(38,67,94,.15)}
+  #msg{font-size:13px;line-height:1.35;color:#4a6277;margin-top:6px}
+  #stage{flex:1 1 auto;min-height:300px;position:relative;overflow:hidden}
+  canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
 </style>
 </head>
 <body>
 <div id="wrap">
   <div id="ui">
-    <div class="row">
-      <label>前からの風</label>
-      <input id="wind" type="range" min="5" max="50" value="18" />
-    </div>
-    <div class="row">
-      <label>羽ばたき振幅</label>
-      <input id="amp" type="range" min="8" max="70" value="26" />
-    </div>
-    <div class="row">
-      <label>周波数</label>
-      <input id="freq" type="range" min="20" max="120" value="42" />
-    </div>
-    <div class="row">
-      <label>翼の迎角変化</label>
-      <input id="pitch" type="range" min="0" max="100" value="42" />
-      <button id="reset">リセット</button>
-      <span class="pill">格子流体 + 物体境界</span>
-    </div>
-    <div id="msg">
-      2D格子上で流速場と圧力補正を解く簡易流体版です。翼はマスク境界として扱い、空気が翼を通り抜けにくいようにしています。左が前面、右が側面です。
-    </div>
+    <div class="row"><label>前からの風</label><input id="wind" type="range" min="5" max="50" value="18"></div>
+    <div class="row"><label>羽ばたき振幅</label><input id="amp" type="range" min="8" max="80" value="36"></div>
+    <div class="row"><label>周波数</label><input id="freq" type="range" min="20" max="120" value="46"></div>
+    <div class="row"><label>翼の迎角変化</label><input id="pitch" type="range" min="0" max="100" value="54"><button id="reset">リセット</button><span class="pill">正面動作修正版</span></div>
+    <div id="msg">正面ビューの翼角を別波形で再定義し、左右に開閉する羽ばたきがはっきり見えるようにした版です。流体は2D格子＋翼境界条件です。</div>
   </div>
   <div id="stage"><canvas id="cv"></canvas></div>
 </div>
-
 <script>
-(() => {
-  const canvas = document.getElementById('cv');
-  const stage = document.getElementById('stage');
-  const ctx = canvas.getContext('2d', { alpha:false });
-
-  const windEl = document.getElementById('wind');
-  const ampEl = document.getElementById('amp');
-  const freqEl = document.getElementById('freq');
-  const pitchEl = document.getElementById('pitch');
-  const resetBtn = document.getElementById('reset');
-
-  let W = 0, H = 0, DPR = Math.min(devicePixelRatio || 1, 2);
-  let startTime = 0, lastT = 0, simT = 0;
-
-  let NX = 0, NY = 0;
-  let u = null, v = null, u2 = null, v2 = null, pField = null, div = null;
-  let solid = null, solidVX = null, solidVY = null;
-  let cell = 7;
-  let frontTracers = [];
-  let sideTracers = [];
-  let liftVal = 0, thrustVal = 0;
-  let prevLeftWing = null, prevRightWing = null;
-
-  const clamp = (x,a,b) => Math.max(a, Math.min(b, x));
-  const lerp = (a,b,t) => a + (b-a)*t;
-  const rand = (a,b) => a + Math.random() * (b-a);
-
-  function panelPadding(){ return Math.max(10, Math.min(22, W*0.015)); }
-  function panelGap(){ return Math.max(10, Math.min(18, W*0.014)); }
-  function panelTop(){ return Math.max(12, Math.min(18, H*0.03)); }
-  function panelWidth(){ return (W - panelPadding()*2 - panelGap()) / 2; }
-  function panelHeight(){ return H - panelTop()*2; }
-  function panelRects(){
-    const pad=panelPadding(), gap=panelGap(), top=panelTop(), pw=panelWidth(), ph=panelHeight();
-    return {
-      left:{x:pad,y:top,w:pw,h:ph},
-      right:{x:pad+pw+gap,y:top,w:pw,h:ph}
-    };
-  }
-
-  function idx(i,j){ return i + j * NX; }
-
-  function params(){
-    return {
-      wind: +windEl.value * 0.8,
-      amp: +ampEl.value,
-      freq: +freqEl.value / 60,
-      pitch: +pitchEl.value / 100,
-    };
-  }
-
-  function roundRect(ctx,x,y,w,h,r){
-    ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
-    ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
-    ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
-    ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y);
-  }
-
-  function drawCard(ctx,r,title,subtitle){
-    ctx.save();
-    ctx.fillStyle='rgba(255,255,255,0.38)';
-    ctx.beginPath(); roundRect(ctx,r.x+4,r.y+8,r.w,r.h,18); ctx.fill();
-    ctx.fillStyle='rgba(255,255,255,0.72)';
-    ctx.beginPath(); roundRect(ctx,r.x,r.y,r.w,r.h,18); ctx.fill();
-    ctx.strokeStyle='rgba(70,90,110,0.10)';
-    ctx.lineWidth=1; ctx.beginPath(); roundRect(ctx,r.x,r.y,r.w,r.h,18); ctx.stroke();
-
-    const gg=ctx.createLinearGradient(r.x,r.y,r.x,r.y+r.h);
-    gg.addColorStop(0,'rgba(244,248,252,0.88)');
-    gg.addColorStop(0.45,'rgba(220,232,243,0.80)');
-    gg.addColorStop(1,'rgba(201,220,235,0.76)');
-    ctx.fillStyle=gg; ctx.beginPath(); roundRect(ctx,r.x+1,r.y+1,r.w-2,r.h-2,17); ctx.fill();
-
-    ctx.fillStyle='rgba(23,48,71,0.82)';
-    ctx.font='600 15px system-ui, sans-serif';
-    ctx.fillText(title, r.x+14, r.y+22);
-    ctx.fillStyle='rgba(74,98,119,0.85)';
-    ctx.font='12px system-ui, sans-serif';
-    ctx.fillText(subtitle, r.x+14, r.y+40);
-    ctx.restore();
-  }
-
-  function initFluid(){
-    const r = panelRects().left;
-    NX = Math.max(56, Math.floor(r.w / cell));
-    NY = Math.max(44, Math.floor(r.h / cell));
-    const n = NX * NY;
-    u = new Float32Array(n); v = new Float32Array(n);
-    u2 = new Float32Array(n); v2 = new Float32Array(n);
-    pField = new Float32Array(n); div = new Float32Array(n);
-    solid = new Uint8Array(n);
-    solidVX = new Float32Array(n); solidVY = new Float32Array(n);
-  }
-
-  function resetSim(){
-    u.fill(0); v.fill(0); u2.fill(0); v2.fill(0); pField.fill(0); div.fill(0);
-    solid.fill(0); solidVX.fill(0); solidVY.fill(0);
-    frontTracers = [];
-    sideTracers = [];
-    const n = 720;
-    for(let i=0;i<n;i++){
-      frontTracers.push({x:rand(0,NX-1), y:rand(0,NY-1), age:rand(0,120), life:rand(50,150)});
-      sideTracers.push({x:rand(0,NX-1), y:rand(0,NY-1), age:rand(0,120), life:rand(50,150)});
-    }
-    liftVal = 0;
-    thrustVal = 0;
-    prevLeftWing = null;
-    prevRightWing = null;
-  }
-
-  function resize(){
-    const rect = stage.getBoundingClientRect();
-    W = Math.max(320, Math.floor(rect.width));
-    H = Math.max(300, Math.floor(rect.height));
-    canvas.width = Math.floor(W * DPR);
-    canvas.height = Math.floor(H * DPR);
-    canvas.style.width = W + 'px';
-    canvas.style.height = H + 'px';
-    ctx.setTransform(DPR,0,0,DPR,0,0);
-    initFluid();
-    resetSim();
-    drawFrame(0);
-  }
-
-  function birdState(t, r){
-    const p = params();
-    const ph = t * p.freq * Math.PI * 2;
-    const down = Math.max(0, Math.sin(ph));
-    const up = Math.max(0, -Math.sin(ph));
-
-    const bodyX = r.x + r.w*0.40 + 5*down - 2*up;
-    const bodyY = r.y + r.h*0.56 + Math.sin(ph-0.2)*p.amp*0.05;
-    const fold = 0.18 + 0.62*up;
-    const open = 0.70 + 0.42*down;
-
-    const shSpread = Math.min(24, r.w*0.075);
-    const shoulderY = bodyY - 8 + Math.sin(ph)*p.amp*0.28 + 4*down;
-
-    const hum = Math.min(34, r.w*0.10);
-    const fore = Math.min(76, r.w*0.22)*(1.0 - 0.18*fold);
-    const hand = Math.min(80, r.w*0.24)*(1.0 - 0.16*fold);
-
-    const rightBase = -1.10 + 0.48*Math.sin(ph) + 0.07*Math.sin(2*ph);
-    const elbowRel = 0.16 + 0.22*p.pitch*(0.2 + 0.9*down) - 0.16*fold;
-    const wristRel = 0.12 + 0.28*p.pitch*(0.2 + 1.0*down) - 0.20*fold;
-
-    const rightA1 = clamp(rightBase, -1.55, -0.38);
-    const rightA2 = clamp(rightA1 + elbowRel, -1.30, 0.22);
-    const rightA3 = clamp(rightA2 + wristRel, -1.10, 0.52);
-    const leftA1 = Math.PI - rightA1;
-    const leftA2 = Math.PI - rightA2;
-    const leftA3 = Math.PI - rightA3;
-    const vy = p.amp * p.freq * Math.PI * 2 * Math.cos(ph);
-
-    return {ph,down,up,bodyX,bodyY,shSpread,shoulderY,hum,fore,hand,leftA1,leftA2,leftA3,rightA1,rightA2,rightA3,vy,fold,open};
-  }
-
-  function wingJoints(s, side){
-    const shX = s.bodyX + (side==='left' ? -s.shSpread : s.shSpread);
-    const shY = s.shoulderY;
-    const a1 = side==='left' ? s.leftA1 : s.rightA1;
-    const a2 = side==='left' ? s.leftA2 : s.rightA2;
-    const a3 = side==='left' ? s.leftA3 : s.rightA3;
-    const elbowX = shX + Math.cos(a1)*s.hum, elbowY = shY + Math.sin(a1)*s.hum;
-    const wristX = elbowX + Math.cos(a2)*s.fore, wristY = elbowY + Math.sin(a2)*s.fore;
-    const tipX = wristX + Math.cos(a3)*s.hand, tipY = wristY + Math.sin(a3)*s.hand;
-    return {shX,shY,elbowX,elbowY,wristX,wristY,tipX,tipY,a1,a2,a3};
-  }
-
-  function markCapsule(x1,y1,x2,y2,rad, vx, vy, leftRect){
-    const lx1 = (x1 - leftRect.x) / cell, ly1 = (y1 - leftRect.y) / cell;
-    const lx2 = (x2 - leftRect.x) / cell, ly2 = (y2 - leftRect.y) / cell;
-    const minI = clamp(Math.floor(Math.min(lx1,lx2) - rad/cell - 2), 0, NX-1);
-    const maxI = clamp(Math.ceil (Math.max(lx1,lx2) + rad/cell + 2), 0, NX-1);
-    const minJ = clamp(Math.floor(Math.min(ly1,ly2) - rad/cell - 2), 0, NY-1);
-    const maxJ = clamp(Math.ceil (Math.max(ly1,ly2) + rad/cell + 2), 0, NY-1);
-    const dx = lx2-lx1, dy=ly2-ly1;
-    const l2 = dx*dx+dy*dy + 1e-6;
-    const rr = (rad/cell)*(rad/cell);
-    for(let j=minJ;j<=maxJ;j++){
-      for(let i=minI;i<=maxI;i++){
-        const px=i+0.5, py=j+0.5;
-        let t=((px-lx1)*dx + (py-ly1)*dy)/l2;
-        t=clamp(t,0,1);
-        const qx=lx1+t*dx, qy=ly1+t*dy;
-        const rx=px-qx, ry=py-qy;
-        if(rx*rx+ry*ry <= rr){
-          const id=idx(i,j);
-          solid[id]=1;
-          solidVX[id]=vx;
-          solidVY[id]=vy;
-        }
-      }
-    }
-  }
-
-  function buildSolidMask(leftWing, rightWing, prevLeftWing, prevRightWing, leftRect, dt){
-    solid.fill(0); solidVX.fill(0); solidVY.fill(0);
-    const segs = [
-      [leftWing.shX,leftWing.shY,leftWing.elbowX,leftWing.elbowY,10,
-       prevLeftWing ? (leftWing.shX-prevLeftWing.shX)/dt : 0,
-       prevLeftWing ? (leftWing.shY-prevLeftWing.shY)/dt : 0],
-      [leftWing.elbowX,leftWing.elbowY,leftWing.wristX,leftWing.wristY,12,
-       prevLeftWing ? (leftWing.elbowX-prevLeftWing.elbowX)/dt : 0,
-       prevLeftWing ? (leftWing.elbowY-prevLeftWing.elbowY)/dt : 0],
-      [leftWing.wristX,leftWing.wristY,leftWing.tipX,leftWing.tipY,9,
-       prevLeftWing ? (leftWing.wristX-prevLeftWing.wristX)/dt : 0,
-       prevLeftWing ? (leftWing.wristY-prevLeftWing.wristY)/dt : 0],
-      [rightWing.shX,rightWing.shY,rightWing.elbowX,rightWing.elbowY,10,
-       prevRightWing ? (rightWing.shX-prevRightWing.shX)/dt : 0,
-       prevRightWing ? (rightWing.shY-prevRightWing.shY)/dt : 0],
-      [rightWing.elbowX,rightWing.elbowY,rightWing.wristX,rightWing.wristY,12,
-       prevRightWing ? (rightWing.elbowX-prevRightWing.elbowX)/dt : 0,
-       prevRightWing ? (rightWing.elbowY-prevRightWing.elbowY)/dt : 0],
-      [rightWing.wristX,rightWing.wristY,rightWing.tipX,rightWing.tipY,9,
-       prevRightWing ? (rightWing.wristX-prevRightWing.wristX)/dt : 0,
-       prevRightWing ? (rightWing.wristY-prevRightWing.wristY)/dt : 0],
-    ];
-    for(const [x1,y1,x2,y2,r,vx,vy] of segs) markCapsule(x1,y1,x2,y2,r,vx,vy,leftRect);
-  }
-
-  function sample(arr, x, y){
-    x = clamp(x, 0.5, NX-1.5);
-    y = clamp(y, 0.5, NY-1.5);
-    const i0 = Math.floor(x), j0 = Math.floor(y), i1 = i0+1, j1 = j0+1;
-    const sx = x-i0, sy = y-j0;
-    const a = arr[idx(i0,j0)], b = arr[idx(i1,j0)], c = arr[idx(i0,j1)], d = arr[idx(i1,j1)];
-    return lerp(lerp(a,b,sx), lerp(c,d,sx), sy);
-  }
-
-  function advect(dt){
-    const p = params();
-    for(let j=0;j<NY;j++){
-      for(let i=0;i<NX;i++){
-        const id = idx(i,j);
-        if(solid[id]){
-          u2[id] = solidVX[id] / cell;
-          v2[id] = solidVY[id] / cell;
-          continue;
-        }
-        const x = i + 0.5, y = j + 0.5;
-        const bx = x - u[id] * dt;
-        const by = y - v[id] * dt;
-        u2[id] = sample(u, bx, by);
-        v2[id] = sample(v, bx, by);
-        u2[id] = 0.96*u2[id] + 0.04*(p.wind / cell);
-      }
-    }
-    [u, u2] = [u2, u];
-    [v, v2] = [v2, v];
-  }
-
-  function applyForcing(s, leftWing, rightWing, leftRect, dt){
-    const p = params();
-    for(let j=0;j<NY;j++){
-      for(let i=0;i<3;i++){
-        const id=idx(i,j);
-        if(!solid[id]){ u[id] = p.wind / cell; v[id] = 0; }
-      }
-    }
-
-    const wings = [leftWing, rightWing];
-    if(s.down > 0.08){
-      for(const wing of wings){
-        const pts = [
-          {x: lerp(wing.shX, wing.elbowX, 0.25), y: lerp(wing.shY, wing.elbowY, 0.25)},
-          {x: lerp(wing.shX, wing.elbowX, 0.55), y: lerp(wing.shY, wing.elbowY, 0.55)}
-        ];
-        for(const pt of pts){
-          const cx = (pt.x - leftRect.x)/cell, cy = (pt.y - leftRect.y)/cell;
-          const rad = 5 + 4*p.pitch;
-          for(let j=Math.max(0,Math.floor(cy-rad)); j<=Math.min(NY-1,Math.ceil(cy+rad)); j++){
-            for(let i=Math.max(0,Math.floor(cx-rad)); i<=Math.min(NX-1,Math.ceil(cx+rad)); i++){
-              const dx=i+0.5-cx, dy=j+0.5-cy;
-              const d2=dx*dx+dy*dy+1e-6;
-              if(d2<rad*rad){
-                const id=idx(i,j);
-                if(solid[id]) continue;
-                const swirl = (0.7 + 0.8*p.pitch) * (1 - d2/(rad*rad));
-                const sign = wing === leftWing ? 1 : -1;
-                u[id] += -dy * swirl * sign * dt;
-                v[id] +=  dx * swirl * sign * dt;
-                v[id] +=  0.5 * (1 - d2/(rad*rad)) * dt;
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-
-  function computeDivergence(){
-    for(let j=1;j<NY-1;j++){
-      for(let i=1;i<NX-1;i++){
-        const id=idx(i,j);
-        if(solid[id]){ div[id]=0; continue; }
-        const ux = u[idx(i+1,j)] - u[idx(i-1,j)];
-        const vy = v[idx(i,j+1)] - v[idx(i,j-1)];
-        div[id] = -0.5 * (ux + vy);
-        pField[id] = 0;
-      }
-    }
-  }
-
-  function project(iter=24){
-    computeDivergence();
-    for(let k=0;k<iter;k++){
-      for(let j=1;j<NY-1;j++){
-        for(let i=1;i<NX-1;i++){
-          const id=idx(i,j);
-          if(solid[id]) continue;
-          let sum=0, cnt=0;
-          const nbs=[idx(i+1,j),idx(i-1,j),idx(i,j+1),idx(i,j-1)];
-          for(const n of nbs){ if(!solid[n]){ sum += pField[n]; cnt++; } }
-          if(cnt>0) pField[id] = (div[id] + sum) / cnt;
-        }
-      }
-    }
-    for(let j=1;j<NY-1;j++){
-      for(let i=1;i<NX-1;i++){
-        const id=idx(i,j);
-        if(solid[id]){
-          u[id] = solidVX[id] / cell;
-          v[id] = solidVY[id] / cell;
-          continue;
-        }
-        u[id] -= 0.5 * (pField[idx(i+1,j)] - pField[idx(i-1,j)]);
-        v[id] -= 0.5 * (pField[idx(i,j+1)] - pField[idx(i,j-1)]);
-      }
-    }
-  }
-
-  function vorticityConfinement(dt){
-    const curl = new Float32Array(NX*NY);
-    for(let j=1;j<NY-1;j++){
-      for(let i=1;i<NX-1;i++){
-        const id=idx(i,j);
-        const du_dy = (u[idx(i,j+1)] - u[idx(i,j-1)]) * 0.5;
-        const dv_dx = (v[idx(i+1,j)] - v[idx(i-1,j)]) * 0.5;
-        curl[id] = dv_dx - du_dy;
-      }
-    }
-    for(let j=2;j<NY-2;j++){
-      for(let i=2;i<NX-2;i++){
-        const id=idx(i,j);
-        if(solid[id]) continue;
-        const nx = Math.abs(curl[idx(i+1,j)]) - Math.abs(curl[idx(i-1,j)]);
-        const ny = Math.abs(curl[idx(i,j+1)]) - Math.abs(curl[idx(i,j-1)]);
-        const len = Math.hypot(nx,ny) + 1e-6;
-        const eps = 0.12;
-        const fx = eps * (ny/len) * curl[id];
-        const fy = eps * (-nx/len) * curl[id];
-        u[id] += fx * dt;
-        v[id] += fy * dt;
-      }
-    }
-  }
-
-  function boundaryConditions(){
-    const p = params();
-    for(let j=0;j<NY;j++){
-      u[idx(0,j)] = p.wind / cell;
-      v[idx(0,j)] = 0;
-      u[idx(NX-1,j)] = u[idx(NX-2,j)];
-      v[idx(NX-1,j)] = v[idx(NX-2,j)];
-    }
-    for(let i=0;i<NX;i++){
-      v[idx(i,0)] = 0;
-      v[idx(i,NY-1)] = 0;
-      u[idx(i,0)] = u[idx(i,1)];
-      u[idx(i,NY-1)] = u[idx(i,NY-2)];
-    }
-    for(let j=0;j<NY;j++){
-      for(let i=0;i<NX;i++){
-        const id=idx(i,j);
-        if(solid[id]){
-          u[id] = solidVX[id] / cell;
-          v[id] = solidVY[id] / cell;
-        }
-      }
-    }
-  }
-
-  function stepFluid(dt, leftWing, rightWing, leftRect, s){
-    buildSolidMask(leftWing, rightWing, prevLeftWing, prevRightWing, leftRect, Math.max(dt,1/60));
-    boundaryConditions();
-    applyForcing(s, leftWing, rightWing, leftRect, dt);
-    advect(dt);
-    boundaryConditions();
-    vorticityConfinement(dt);
-    project(24);
-    boundaryConditions();
-  }
-
-  function updateTracers(dt){
-    for(const group of [frontTracers, sideTracers]){
-      for(const tr of group){
-        tr.age += dt*60;
-        tr.px = tr.x; tr.py = tr.y;
-        const vel = {u: sample(u,tr.x,tr.y), v: sample(v,tr.x,tr.y)};
-        tr.x += vel.u * dt * 28;
-        tr.y += vel.v * dt * 28;
-        if(tr.x < -2 || tr.x > NX+2 || tr.y < -2 || tr.y > NY+2 || tr.age > tr.life){
-          tr.x = rand(-3, 0);
-          tr.y = rand(0, NY);
-          tr.px = tr.x; tr.py = tr.y;
-          tr.age = 0; tr.life = rand(50,150);
-        }
-      }
-    }
-  }
-
-  function computeForces(leftWing,rightWing,leftRect){
-    let lift = 0, thrust = 0, n = 0;
-    for(const wing of [leftWing,rightWing]){
-      const pts = [
-        {x:lerp(wing.shX,wing.wristX,0.35), y:lerp(wing.shY,wing.wristY,0.35)},
-        {x:lerp(wing.elbowX,wing.tipX,0.45), y:lerp(wing.elbowY,wing.tipY,0.45)}
-      ];
-      for(const pt of pts){
-        const gx=(pt.x-leftRect.x)/cell, gy=(pt.y-leftRect.y)/cell;
-        const upv = sample(v, gx, gy-3);
-        const downv = sample(v, gx, gy+3);
-        const frontu = sample(u, gx-4, gy);
-        const backu = sample(u, gx+4, gy);
-        lift += (downv - upv);
-        thrust += (backu - frontu);
-        n++;
-      }
-    }
-    if(n>0){
-      liftVal = 0.88*liftVal + 0.12*Math.max(0, lift/n);
-      thrustVal = 0.88*thrustVal + 0.12*Math.max(0, thrust/n + 0.3);
-    }
-  }
-
-  function drawFlow(rect, tracerSet){
-    ctx.save();
-    ctx.beginPath(); roundRect(ctx,rect.x,rect.y,rect.w,rect.h,18); ctx.clip();
-
-    for(const tr of tracerSet){
-      const k=1-tr.age/tr.life;
-      ctx.strokeStyle=`rgba(135,160,190,${0.10 + 0.05*k})`;
-      ctx.lineWidth=1;
-      ctx.beginPath();
-      ctx.moveTo(rect.x + tr.px*cell, rect.y + tr.py*cell);
-      ctx.lineTo(rect.x + tr.x*cell, rect.y + tr.y*cell);
-      ctx.stroke();
-    }
-
-    for(let j=2;j<NY-2;j+=2){
-      for(let i=2;i<NX-2;i+=2){
-        const id=idx(i,j);
-        if(solid[id]) continue;
-        const du_dy = (u[idx(i,j+1)] - u[idx(i,j-1)]) * 0.5;
-        const dv_dx = (v[idx(i+1,j)] - v[idx(i-1,j)]) * 0.5;
-        const curl = dv_dx - du_dy;
-        const a = Math.min(0.12, Math.abs(curl)*0.06);
-        if(a < 0.015) continue;
-        ctx.fillStyle = curl > 0 ? `rgba(112,160,224,${a})` : `rgba(214,142,174,${a})`;
-        ctx.beginPath();
-        ctx.arc(rect.x + (i+0.5)*cell, rect.y + (j+0.5)*cell, 1.8, 0, Math.PI*2);
-        ctx.fill();
-      }
-    }
-
-    ctx.fillStyle='rgba(79,168,161,0.14)';
-    for(let j=1;j<NY-1;j++){
-      for(let i=1;i<NX-1;i++){
-        const id=idx(i,j);
-        if(solid[id]) continue;
-        const nearSolid = solid[idx(i+1,j)]||solid[idx(i-1,j)]||solid[idx(i,j+1)]||solid[idx(i,j-1)];
-        if(!nearSolid) continue;
-        const du_dy = (u[idx(i,j+1)] - u[idx(i,j-1)]) * 0.5;
-        const dv_dx = (v[idx(i+1,j)] - v[idx(i-1,j)]) * 0.5;
-        const curl = Math.abs(dv_dx - du_dy);
-        if(curl < 0.25) continue;
-        ctx.beginPath();
-        ctx.arc(rect.x + (i+0.5)*cell, rect.y + (j+0.5)*cell, 2.0, 0, Math.PI*2);
-        ctx.fill();
-      }
-    }
-    ctx.restore();
-  }
-
-  function drawBirdFront(s,left,right,rect){
-    ctx.save();
-    ctx.beginPath(); roundRect(ctx,rect.x,rect.y,rect.w,rect.h,18); ctx.clip();
-
-    ctx.strokeStyle='rgba(215,220,228,0.95)';
-    ctx.lineWidth=2;
-    for(let i=0;i<9;i++){
-      const k=i/8;
-      const x=s.bodyX+(k-0.5)*16, y=s.bodyY+36, tx=x+(k-0.5)*10, ty=y+18;
-      ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(tx,ty); ctx.stroke();
-    }
-
-    const bg=ctx.createRadialGradient(s.bodyX-6,s.bodyY-12,2,s.bodyX,s.bodyY,62);
-    bg.addColorStop(0,'rgba(255,255,255,0.98)');
-    bg.addColorStop(0.55,'rgba(248,248,246,0.98)');
-    bg.addColorStop(0.9,'rgba(226,230,236,0.98)');
-    bg.addColorStop(1,'rgba(205,214,224,0.92)');
-    ctx.fillStyle=bg;
-    ctx.beginPath(); ctx.ellipse(s.bodyX,s.bodyY+12,34,52,0,0,Math.PI*2); ctx.fill();
-
-    ctx.fillStyle='rgba(255,255,255,0.98)';
-    ctx.beginPath(); ctx.ellipse(s.bodyX,s.bodyY-18,16,18,0,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle='#cf9a66'; ctx.beginPath(); ctx.arc(s.bodyX+4,s.bodyY-21,5,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(s.bodyX+4,s.bodyY-21,2.1,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle='#777b82';
-    ctx.beginPath(); ctx.moveTo(s.bodyX-1,s.bodyY-19); ctx.lineTo(s.bodyX-14,s.bodyY-17); ctx.lineTo(s.bodyX-1,s.bodyY-15); ctx.closePath(); ctx.fill();
-
-    drawWing(left,'left');
-    drawWing(right,'right');
-    drawArrow(rect.x+18, rect.y+rect.h-28, rect.x+94, rect.y+rect.h-28, '#5b84c8', '前から来る空気');
-    ctx.restore();
-  }
-
-  function drawWing(w,side){
-    const dir=side==='left' ? -1 : 1;
-    ctx.strokeStyle='rgba(236,240,245,0.96)';
-    ctx.lineWidth=10; ctx.lineCap='round';
-    ctx.beginPath(); ctx.moveTo(w.shX,w.shY); ctx.lineTo(w.elbowX,w.elbowY); ctx.lineTo(w.wristX,w.wristY); ctx.stroke();
-
-    ctx.strokeStyle='rgba(79,168,161,0.48)';
-    ctx.lineWidth=2;
-    ctx.beginPath(); ctx.moveTo(w.shX,w.shY); ctx.lineTo(w.elbowX,w.elbowY); ctx.stroke();
-
-    for(let i=0;i<12;i++){
-      const k=i/11;
-      const bx=lerp(w.wristX,w.tipX,0.04+0.56*k), by=lerp(w.wristY,w.tipY,0.04+0.56*k);
-      const a=w.a3 + dir*(-0.10 + 0.05*i);
-      const len=36+18*k, wid=7.8-1.2*k;
-      ctx.save(); ctx.translate(bx,by); ctx.rotate(a);
-      ctx.strokeStyle='rgba(248,248,246,0.98)';
-      ctx.lineWidth=wid; ctx.lineCap='round';
-      ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(len,0); ctx.stroke();
-      ctx.strokeStyle='rgba(180,184,190,0.30)';
-      ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(len,0); ctx.stroke();
-      if(k>0.84){ ctx.fillStyle='rgba(120,126,138,0.42)'; ctx.beginPath(); ctx.arc(len,0,3.2,0,Math.PI*2); ctx.fill(); }
-      ctx.restore();
-    }
-  }
-
-  function drawBirdSide(s,rect){
-    ctx.save();
-    ctx.beginPath(); roundRect(ctx,rect.x,rect.y,rect.w,rect.h,18); ctx.clip();
-
-    const cx=rect.x+rect.w*0.43, cy=s.bodyY+6, bodyTilt=-0.10+0.08*s.down-0.04*s.up;
-    ctx.save(); ctx.translate(cx,cy); ctx.rotate(bodyTilt);
-
-    const bg=ctx.createRadialGradient(-6,-10,2,0,0,58);
-    bg.addColorStop(0,'rgba(255,255,255,0.98)');
-    bg.addColorStop(0.55,'rgba(248,248,246,0.98)');
-    bg.addColorStop(0.9,'rgba(226,230,236,0.98)');
-    bg.addColorStop(1,'rgba(205,214,224,0.92)');
-    ctx.fillStyle=bg;
-    ctx.beginPath(); ctx.ellipse(0,8,42,28,0.08,0,Math.PI*2); ctx.fill();
-
-    ctx.save(); ctx.translate(-26,-10); ctx.rotate(-0.10+0.06*Math.sin(s.ph-0.3));
-    ctx.strokeStyle='rgba(230,232,236,0.95)';
-    ctx.lineWidth=12; ctx.beginPath(); ctx.moveTo(8,10); ctx.quadraticCurveTo(0,-6,-2,-18); ctx.stroke();
-    ctx.fillStyle='rgba(255,255,255,0.99)';
-    ctx.beginPath(); ctx.ellipse(0,-22,14,12,0,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle='#cf9a66'; ctx.beginPath(); ctx.arc(4,-24,4.2,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(4,-24,1.8,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle='#7b7e85'; ctx.beginPath(); ctx.moveTo(-2,-21); ctx.lineTo(-16,-19); ctx.lineTo(-2,-17); ctx.closePath(); ctx.fill();
-    ctx.restore();
-    ctx.restore();
-
-    const wingY=s.shoulderY;
-    const baseX=rect.x+rect.w*0.44;
-    const shoulderX=baseX-4, shoulderY2=wingY;
-    const sideMain=-1.00+0.46*Math.sin(s.ph);
-    const sideFore=sideMain+0.18*(0.25+0.9*s.down)-0.14*s.fold;
-    const sideTip=sideFore+0.24*(0.25+1.0*s.down)-0.18*s.fold;
-
-    const elbowX=shoulderX+Math.cos(sideMain)*34, elbowY=shoulderY2+Math.sin(sideMain)*34;
-    const wristX=elbowX+Math.cos(sideFore)*(70*(1-0.16*s.fold)), wristY=elbowY+Math.sin(sideFore)*(70*(1-0.16*s.fold));
-    const tipX=wristX+Math.cos(sideTip)*(78*(1-0.14*s.fold)), tipY=wristY+Math.sin(sideTip)*(78*(1-0.14*s.fold));
-
-    ctx.strokeStyle='rgba(235,240,245,0.86)';
-    ctx.lineWidth=10; ctx.lineCap='round';
-    ctx.beginPath(); ctx.moveTo(shoulderX,shoulderY2); ctx.lineTo(elbowX,elbowY); ctx.lineTo(wristX,wristY); ctx.stroke();
-
-    ctx.strokeStyle='rgba(79,168,161,0.48)';
-    ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(shoulderX,shoulderY2); ctx.lineTo(elbowX,elbowY); ctx.stroke();
-
-    for(let i=0;i<12;i++){
-      const k=i/11;
-      const bx=lerp(wristX,tipX,0.04+0.56*k), by=lerp(wristY,tipY,0.04+0.56*k);
-      const a=sideTip+(-0.10+0.05*i)+0.12*s.down-0.08*s.up;
-      const len=30+16*k+10*s.open, wid=7.0-1.0*k;
-      drawFeatherSimple(bx,by,a,len,wid,0.9);
-    }
-
-    drawArrow(rect.x+rect.w-104, rect.y+34, rect.x+rect.w-104, rect.y+34 - Math.min(62, 10+liftVal*26), '#5b84c8', '揚力');
-    drawArrow(rect.x+rect.w-104, rect.y+72, rect.x+rect.w-104 + Math.min(62, 10+thrustVal*26), rect.y+72, '#d48ab0', '推力');
-    drawArrow(rect.x+18, rect.y+rect.h-28, rect.x+94, rect.y+rect.h-28, '#5b84c8', '前から来る空気');
-
-    ctx.fillStyle='rgba(79,168,161,0.9)';
-    ctx.font='12px system-ui, sans-serif';
-    ctx.fillText('LEV', rect.x+rect.w-46, rect.y+108);
-    ctx.restore();
-  }
-
-  function drawFeatherSimple(x,y,a,len,wid,alpha){
-    ctx.save(); ctx.translate(x,y); ctx.rotate(a); ctx.globalAlpha=alpha;
-    ctx.strokeStyle='rgba(248,248,246,0.98)';
-    ctx.lineWidth=wid; ctx.lineCap='round';
-    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(len,0); ctx.stroke();
-    ctx.strokeStyle='rgba(180,184,190,0.26)';
-    ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(len,0); ctx.stroke();
-    ctx.restore();
-  }
-
-  function drawArrow(x1,y1,x2,y2,color,label){
-    ctx.save();
-    ctx.strokeStyle=color; ctx.fillStyle=color; ctx.lineWidth=3;
-    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
-    const a=Math.atan2(y2-y1,x2-x1), h=8;
-    ctx.beginPath(); ctx.moveTo(x2,y2);
-    ctx.lineTo(x2-h*Math.cos(a-0.4), y2-h*Math.sin(a-0.4));
-    ctx.lineTo(x2-h*Math.cos(a+0.4), y2-h*Math.sin(a+0.4));
-    ctx.closePath(); ctx.fill();
-    ctx.font='12px system-ui, sans-serif';
-    ctx.fillText(label, x2+6, y2-4);
-    ctx.restore();
-  }
-
-  function drawLegend(rect){
-    const x=rect.x+14, y=rect.y+56;
-    ctx.fillStyle='rgba(255,255,255,0.58)';
-    ctx.fillRect(x,y,174,68);
-    ctx.strokeStyle='rgba(70,90,110,0.10)';
-    ctx.strokeRect(x,y,174,68);
-    ctx.fillStyle='rgba(23,48,71,0.78)';
-    ctx.font='12px system-ui, sans-serif';
-    ctx.fillText('青/桃: 渦度の向き', x+10, y+18);
-    ctx.fillStyle='rgba(79,168,161,0.9)';
-    ctx.fillText('緑青: 前縁渦 LEV', x+10, y+36);
-    ctx.fillStyle='rgba(74,98,119,0.78)';
-    ctx.fillText('流線: 格子流体の流れ', x+10, y+54);
-  }
-
-  function drawFrame(dt){
-    const rects=panelRects();
-    ctx.clearRect(0,0,W,H);
-    drawCard(ctx,rects.left,'前面ビュー','格子流体・渦度・前縁渦');
-    drawCard(ctx,rects.right,'側面ビュー','同じ流れ場からみた力と運動');
-
-    const s=birdState(simT,rects.left);
-    const left=wingJoints(s,'left'), right=wingJoints(s,'right');
-    if(dt>0){
-      stepFluid(dt,left,right,rects.left,s);
-      updateTracers(dt);
-      computeForces(left,right,rects.left);
-    }
-    prevLeftWing = left;
-    prevRightWing = right;
-
-    drawFlow(rects.left, frontTracers);
-    drawBirdFront(s,left,right,rects.left);
-    drawLegend(rects.left);
-
-    ctx.save(); ctx.globalAlpha=0.42; drawFlow(rects.right, sideTracers); ctx.restore();
-    drawBirdSide(s,rects.right);
-  }
-
-  function loop(now){
-    if(!startTime){ startTime=now; lastT=now; }
-    simT=(now-startTime)/1000;
-    const dt=Math.min(0.025,(now-lastT)/1000);
-    lastT=now;
-    drawFrame(dt);
-    requestAnimationFrame(loop);
-  }
-
-  resetBtn.addEventListener('click', ()=>{
-    startTime=0; simT=0; lastT=0; resetSim(); drawFrame(0);
-  });
-
-  window.addEventListener('resize', resize);
-  resize();
-  drawFrame(0);
-  setTimeout(()=>requestAnimationFrame(loop),80);
+(()=>{
+const cv=document.getElementById('cv'), st=document.getElementById('stage'), ctx=cv.getContext('2d',{alpha:false});
+const windEl=document.getElementById('wind'), ampEl=document.getElementById('amp'), freqEl=document.getElementById('freq'), pitchEl=document.getElementById('pitch');
+const resetBtn=document.getElementById('reset');
+let W=0,H=0,DPR=Math.min(devicePixelRatio||1,2),t0=0,last=0,simT=0;
+let NX=0,NY=0,cell=7,u,v,u2,v2,pf,dv,solid,svx,svy,frontTr=[],sideTr=[],lift=0,thrust=0,prevL=null,prevR=null;
+const clamp=(x,a,b)=>Math.max(a,Math.min(b,x)), lerp=(a,b,t)=>a+(b-a)*t, rand=(a,b)=>a+Math.random()*(b-a), idx=(i,j)=>i+j*NX;
+const p=()=>({wind:+windEl.value*0.8,amp:+ampEl.value,freq:+freqEl.value/60,pitch:+pitchEl.value/100});
+function pad(){return Math.max(10,Math.min(22,W*0.015))} function gap(){return Math.max(10,Math.min(18,W*0.014))} function topm(){return Math.max(12,Math.min(18,H*0.03))}
+function rects(){const pd=pad(),gp=gap(),tp=topm(),pw=(W-pd*2-gp)/2,ph=H-tp*2;return{L:{x:pd,y:tp,w:pw,h:ph},R:{x:pd+pw+gp,y:tp,w:pw,h:ph}}}
+function rr(x,y,w,h,r){ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y)}
+function card(r,title,sub){ctx.save();ctx.fillStyle='rgba(255,255,255,.38)';ctx.beginPath();rr(r.x+4,r.y+8,r.w,r.h,18);ctx.fill();ctx.fillStyle='rgba(255,255,255,.74)';ctx.beginPath();rr(r.x,r.y,r.w,r.h,18);ctx.fill();ctx.strokeStyle='rgba(70,90,110,.10)';ctx.lineWidth=1;ctx.beginPath();rr(r.x,r.y,r.w,r.h,18);ctx.stroke();const g=ctx.createLinearGradient(r.x,r.y,r.x,r.y+r.h);g.addColorStop(0,'rgba(244,248,252,.88)');g.addColorStop(.45,'rgba(220,232,243,.80)');g.addColorStop(1,'rgba(201,220,235,.76)');ctx.fillStyle=g;ctx.beginPath();rr(r.x+1,r.y+1,r.w-2,r.h-2,17);ctx.fill();ctx.fillStyle='rgba(23,48,71,.82)';ctx.font='600 15px system-ui';ctx.fillText(title,r.x+14,r.y+22);ctx.fillStyle='rgba(74,98,119,.85)';ctx.font='12px system-ui';ctx.fillText(sub,r.x+14,r.y+40);ctx.restore()}
+function initFluid(){const r=rects().L;NX=Math.max(56,Math.floor(r.w/cell));NY=Math.max(44,Math.floor(r.h/cell));const n=NX*NY;u=new Float32Array(n);v=new Float32Array(n);u2=new Float32Array(n);v2=new Float32Array(n);pf=new Float32Array(n);dv=new Float32Array(n);solid=new Uint8Array(n);svx=new Float32Array(n);svy=new Float32Array(n)}
+function reset(){u.fill(0);v.fill(0);u2.fill(0);v2.fill(0);pf.fill(0);dv.fill(0);solid.fill(0);svx.fill(0);svy.fill(0);frontTr=[];sideTr=[];for(let i=0;i<760;i++){frontTr.push({x:rand(0,NX-1),y:rand(0,NY-1),px:0,py:0,age:rand(0,120),life:rand(50,150)});sideTr.push({x:rand(0,NX-1),y:rand(0,NY-1),px:0,py:0,age:rand(0,120),life:rand(50,150)})}prevL=null;prevR=null;lift=0;thrust=0}
+function resize(){const r=st.getBoundingClientRect();W=Math.max(320,Math.floor(r.width));H=Math.max(300,Math.floor(r.height));cv.width=Math.floor(W*DPR);cv.height=Math.floor(H*DPR);cv.style.width=W+'px';cv.style.height=H+'px';ctx.setTransform(DPR,0,0,DPR,0,0);initFluid();reset();draw(0)}
+function bird(t,r){const P=p(),ph=t*P.freq*Math.PI*2,down=Math.max(0,Math.sin(ph)),up=Math.max(0,-Math.sin(ph));
+const bodyX=r.x+r.w*.40+4*down-2*up, bodyY=r.y+r.h*.56+Math.sin(ph-.2)*P.amp*.05;
+const fold=.18+.60*up, open=.76+.30*down, shSpread=Math.min(26,r.w*.09), shoulderY=bodyY-8+Math.sin(ph)*P.amp*.30+4*down;
+const hum=Math.min(34,r.w*.10), fore=Math.min(78,r.w*.24)*(1-.18*fold), hand=Math.min(88,r.w*.27)*(1-.14*fold);
+const rightA1=clamp(-0.90 + 0.85*Math.sin(ph), -1.75, -0.02);
+const rightA2=clamp(rightA1 + 0.30 + 0.28*P.pitch + 0.10*down, -1.20, 0.65);
+const rightA3=clamp(rightA2 + 0.22 + 0.22*P.pitch + 0.05*Math.sin(ph+0.5), -0.90, 1.00);
+return {ph,down,up,bodyX,bodyY,shSpread,shoulderY,hum,fore,hand,leftA1:Math.PI-rightA1,leftA2:Math.PI-rightA2,leftA3:Math.PI-rightA3,rightA1,rightA2,rightA3,vy:P.amp*P.freq*Math.PI*2*Math.cos(ph),fold,open}}
+function wing(s,side){const shX=s.bodyX+(side==='left'?-s.shSpread:s.shSpread), shY=s.shoulderY, a1=side==='left'?s.leftA1:s.rightA1, a2=side==='left'?s.leftA2:s.rightA2, a3=side==='left'?s.leftA3:s.rightA3; const ex=shX+Math.cos(a1)*s.hum, ey=shY+Math.sin(a1)*s.hum, wx=ex+Math.cos(a2)*s.fore, wy=ey+Math.sin(a2)*s.fore, tx=wx+Math.cos(a3)*s.hand, ty=wy+Math.sin(a3)*s.hand; return {shX,shY,elbowX:ex,elbowY:ey,wristX:wx,wristY:wy,tipX:tx,tipY:ty,a1,a2,a3}}
+function markCap(x1,y1,x2,y2,rad,vx,vy,L){const lx1=(x1-L.x)/cell, ly1=(y1-L.y)/cell, lx2=(x2-L.x)/cell, ly2=(y2-L.y)/cell; const minI=clamp(Math.floor(Math.min(lx1,lx2)-rad/cell-2),0,NX-1), maxI=clamp(Math.ceil(Math.max(lx1,lx2)+rad/cell+2),0,NX-1), minJ=clamp(Math.floor(Math.min(ly1,ly2)-rad/cell-2),0,NY-1), maxJ=clamp(Math.ceil(Math.max(ly1,ly2)+rad/cell+2),0,NY-1); const dx=lx2-lx1, dy=ly2-ly1, l2=dx*dx+dy*dy+1e-6, rr=(rad/cell)*(rad/cell); for(let j=minJ;j<=maxJ;j++){for(let i=minI;i<=maxI;i++){const px=i+.5,py=j+.5; let t=((px-lx1)*dx+(py-ly1)*dy)/l2; t=clamp(t,0,1); const qx=lx1+t*dx,qy=ly1+t*dy,rx=px-qx,ry=py-qy; if(rx*rx+ry*ry<=rr){const id=idx(i,j); solid[id]=1; svx[id]=vx; svy[id]=vy;}}}}
+function buildMask(Lw,Rw,L,dt){solid.fill(0);svx.fill(0);svy.fill(0); const segs=[[Lw.shX,Lw.shY,Lw.elbowX,Lw.elbowY,10,prevL?(Lw.shX-prevL.shX)/dt:0,prevL?(Lw.shY-prevL.shY)/dt:0],[Lw.elbowX,Lw.elbowY,Lw.wristX,Lw.wristY,12,prevL?(Lw.elbowX-prevL.elbowX)/dt:0,prevL?(Lw.elbowY-prevL.elbowY)/dt:0],[Lw.wristX,Lw.wristY,Lw.tipX,Lw.tipY,9,prevL?(Lw.wristX-prevL.wristX)/dt:0,prevL?(Lw.wristY-prevL.wristY)/dt:0],[Rw.shX,Rw.shY,Rw.elbowX,Rw.elbowY,10,prevR?(Rw.shX-prevR.shX)/dt:0,prevR?(Rw.shY-prevR.shY)/dt:0],[Rw.elbowX,Rw.elbowY,Rw.wristX,Rw.wristY,12,prevR?(Rw.elbowX-prevR.elbowX)/dt:0,prevR?(Rw.elbowY-prevR.elbowY)/dt:0],[Rw.wristX,Rw.wristY,Rw.tipX,Rw.tipY,9,prevR?(Rw.wristX-prevR.wristX)/dt:0,prevR?(Rw.wristY-prevR.wristY)/dt:0]]; for(const s of segs) markCap(...s,L)}
+function samp(arr,x,y){x=clamp(x,.5,NX-1.5); y=clamp(y,.5,NY-1.5); const i0=Math.floor(x),j0=Math.floor(y),i1=i0+1,j1=j0+1,sx=x-i0,sy=y-j0; const a=arr[idx(i0,j0)],b=arr[idx(i1,j0)],c=arr[idx(i0,j1)],d=arr[idx(i1,j1)]; return lerp(lerp(a,b,sx),lerp(c,d,sx),sy)}
+function adv(dt){const P=p(); for(let j=0;j<NY;j++){for(let i=0;i<NX;i++){const id=idx(i,j); if(solid[id]){u2[id]=svx[id]/cell; v2[id]=svy[id]/cell; continue;} const x=i+.5,y=j+.5,bx=x-u[id]*dt,by=y-v[id]*dt; u2[id]=samp(u,bx,by); v2[id]=samp(v,bx,by); u2[id]=.97*u2[id]+.03*(P.wind/cell);}} [u,u2]=[u2,u]; [v,v2]=[v2,v]}
+function repel(){for(let j=1;j<NY-1;j++){for(let i=1;i<NX-1;i++){const id=idx(i,j); if(solid[id]) continue; let fx=0,fy=0; for(const [ni,nj] of [[1,0],[-1,0],[0,1],[0,-1]]){if(solid[idx(i+ni,j+nj)]){fx-=ni*.22; fy-=nj*.22;}} u[id]+=fx; v[id]+=fy;}}}
+function forceField(s,Lw,Rw,L,dt){const P=p(); for(let j=0;j<NY;j++){for(let i=0;i<3;i++){const id=idx(i,j); if(!solid[id]){u[id]=P.wind/cell; v[id]=0;}}}
+if(s.down>.05){for(const wing of [Lw,Rw]){const pts=[{x:lerp(wing.shX,wing.elbowX,.28),y:lerp(wing.shY,wing.elbowY,.28)},{x:lerp(wing.shX,wing.elbowX,.58),y:lerp(wing.shY,wing.elbowY,.58)}]; for(const pt of pts){const cx=(pt.x-L.x)/cell, cy=(pt.y-L.y)/cell, rad=5+5*P.pitch; for(let j=Math.max(0,Math.floor(cy-rad)); j<=Math.min(NY-1,Math.ceil(cy+rad)); j++){for(let i=Math.max(0,Math.floor(cx-rad)); i<=Math.min(NX-1,Math.ceil(cx+rad)); i++){const dx=i+.5-cx, dy=j+.5-cy, d2=dx*dx+dy*dy+1e-6; if(d2<rad*rad){const id=idx(i,j); if(solid[id]) continue; const swirl=(.9+1.1*P.pitch)*(1-d2/(rad*rad)), sign=wing===Lw?1:-1; u[id]+=-dy*swirl*sign*dt; v[id]+=dx*swirl*sign*dt; v[id]+=.8*(1-d2/(rad*rad))*dt; }}}}}}}
+function divergence(){for(let j=1;j<NY-1;j++){for(let i=1;i<NX-1;i++){const id=idx(i,j); if(solid[id]){dv[id]=0; pf[id]=0; continue;} dv[id]=-.5*((u[idx(i+1,j)]-u[idx(i-1,j)])+(v[idx(i,j+1)]-v[idx(i,j-1)])); pf[id]=0;}}}
+function proj(iter=28){divergence(); for(let k=0;k<iter;k++){for(let j=1;j<NY-1;j++){for(let i=1;i<NX-1;i++){const id=idx(i,j); if(solid[id]) continue; let sum=0,c=0; for(const n of [idx(i+1,j),idx(i-1,j),idx(i,j+1),idx(i,j-1)]){if(!solid[n]){sum+=pf[n]; c++;}} if(c>0) pf[id]=(dv[id]+sum)/c;}}} for(let j=1;j<NY-1;j++){for(let i=1;i<NX-1;i++){const id=idx(i,j); if(solid[id]){u[id]=svx[id]/cell; v[id]=svy[id]/cell; continue;} u[id]-=.5*(pf[idx(i+1,j)]-pf[idx(i-1,j)]); v[id]-=.5*(pf[idx(i,j+1)]-pf[idx(i,j-1)]);}}}
+function conf(dt){const curl=new Float32Array(NX*NY); for(let j=1;j<NY-1;j++){for(let i=1;i<NX-1;i++){curl[idx(i,j)]=.5*(v[idx(i+1,j)]-v[idx(i-1,j)]-u[idx(i,j-1)]+u[idx(i,j+1)])}} for(let j=2;j<NY-2;j++){for(let i=2;i<NX-2;i++){const id=idx(i,j); if(solid[id]) continue; const nx=Math.abs(curl[idx(i+1,j)])-Math.abs(curl[idx(i-1,j)]), ny=Math.abs(curl[idx(i,j+1)])-Math.abs(curl[idx(i,j-1)]), L=Math.hypot(nx,ny)+1e-6, eps=.10; u[id]+=eps*(ny/L)*curl[id]*dt; v[id]+=eps*(-nx/L)*curl[id]*dt;}}}
+function bc(){const P=p(); for(let j=0;j<NY;j++){u[idx(0,j)]=P.wind/cell; v[idx(0,j)]=0; u[idx(NX-1,j)]=u[idx(NX-2,j)]; v[idx(NX-1,j)]=v[idx(NX-2,j)]} for(let i=0;i<NX;i++){v[idx(i,0)]=0; v[idx(i,NY-1)]=0; u[idx(i,0)]=u[idx(i,1)]; u[idx(i,NY-1)]=u[idx(i,NY-2)]} for(let j=0;j<NY;j++){for(let i=0;i<NX;i++){const id=idx(i,j); if(solid[id]){u[id]=svx[id]/cell; v[id]=svy[id]/cell;}}}}
+function fluid(dt,Lw,Rw,L,s){buildMask(Lw,Rw,L,Math.max(dt,1/60)); bc(); forceField(s,Lw,Rw,L,dt); repel(); adv(dt); bc(); conf(dt); proj(28); bc()}
+function tracers(dt){for(const group of [frontTr,sideTr]){for(const tr of group){tr.age+=dt*60; tr.px=tr.x; tr.py=tr.y; const uu=samp(u,tr.x,tr.y), vv=samp(v,tr.x,tr.y); tr.x+=uu*dt*28; tr.y+=vv*dt*28; if(tr.x<-2||tr.x>NX+2||tr.y<-2||tr.y>NY+2||tr.age>tr.life){tr.x=rand(-3,0); tr.y=rand(0,NY); tr.px=tr.x; tr.py=tr.y; tr.age=0; tr.life=rand(50,150)}}}}
+function forces(Lw,Rw,L){let lf=0,th=0,n=0; for(const wing of [Lw,Rw]){for(const pt of [{x:lerp(wing.shX,wing.wristX,.35),y:lerp(wing.shY,wing.wristY,.35)},{x:lerp(wing.elbowX,wing.tipX,.45),y:lerp(wing.elbowY,wing.tipY,.45)}]){const gx=(pt.x-L.x)/cell, gy=(pt.y-L.y)/cell; lf += samp(v,gx,gy+3)-samp(v,gx,gy-3); th += samp(u,gx+4,gy)-samp(u,gx-4,gy); n++}} if(n>0){lift=.86*lift+.14*Math.max(0,lf/n); thrust=.86*thrust+.14*Math.max(0,th/n+.15)}}
+function drawFlow(r,set){ctx.save(); ctx.beginPath(); rr(r.x,r.y,r.w,r.h,18); ctx.clip(); for(const tr of set){const k=1-tr.age/tr.life; ctx.strokeStyle=`rgba(135,160,190,${0.10+0.05*k})`; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(r.x+tr.px*cell,r.y+tr.py*cell); ctx.lineTo(r.x+tr.x*cell,r.y+tr.y*cell); ctx.stroke()} for(let j=2;j<NY-2;j+=2){for(let i=2;i<NX-2;i+=2){const id=idx(i,j); if(solid[id]) continue; const curl=.5*(v[idx(i+1,j)]-v[idx(i-1,j)]-u[idx(i,j-1)]+u[idx(i,j+1)]), a=Math.min(.12,Math.abs(curl)*.06); if(a<.015) continue; ctx.fillStyle=curl>0?`rgba(112,160,224,${a})`:`rgba(214,142,174,${a})`; ctx.beginPath(); ctx.arc(r.x+(i+.5)*cell,r.y+(j+.5)*cell,1.8,0,Math.PI*2); ctx.fill()}} ctx.fillStyle='rgba(79,168,161,.14)'; for(let j=1;j<NY-1;j++){for(let i=1;i<NX-1;i++){const id=idx(i,j); if(solid[id]) continue; const near=solid[idx(i+1,j)]||solid[idx(i-1,j)]||solid[idx(i,j+1)]||solid[idx(i,j-1)]; if(!near) continue; const curl=Math.abs(.5*(v[idx(i+1,j)]-v[idx(i-1,j)]-u[idx(i,j-1)]+u[idx(i,j+1)])); if(curl<.22) continue; ctx.beginPath(); ctx.arc(r.x+(i+.5)*cell,r.y+(j+.5)*cell,2.0,0,Math.PI*2); ctx.fill()}} ctx.restore()}
+function drawWing(w,side){const dir=side==='left'?-1:1; ctx.strokeStyle='rgba(236,240,245,.96)'; ctx.lineWidth=10; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(w.shX,w.shY); ctx.lineTo(w.elbowX,w.elbowY); ctx.lineTo(w.wristX,w.wristY); ctx.stroke(); ctx.strokeStyle='rgba(79,168,161,.48)'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(w.shX,w.shY); ctx.lineTo(w.elbowX,w.elbowY); ctx.stroke(); for(let i=0;i<12;i++){const k=i/11,bx=lerp(w.wristX,w.tipX,.04+.56*k),by=lerp(w.wristY,w.tipY,.04+.56*k),a=w.a3+dir*(-.12+.06*i),len=38+20*k,wid=7.8-1.2*k; ctx.save(); ctx.translate(bx,by); ctx.rotate(a); ctx.strokeStyle='rgba(248,248,246,.98)'; ctx.lineWidth=wid; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(len,0); ctx.stroke(); ctx.strokeStyle='rgba(180,184,190,.30)'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(len,0); ctx.stroke(); if(k>.84){ctx.fillStyle='rgba(120,126,138,.42)'; ctx.beginPath(); ctx.arc(len,0,3.2,0,Math.PI*2); ctx.fill()} ctx.restore()}}
+function arrow(x1,y1,x2,y2,color,label){ctx.save(); ctx.strokeStyle=color; ctx.fillStyle=color; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); const a=Math.atan2(y2-y1,x2-x1),h=8; ctx.beginPath(); ctx.moveTo(x2,y2); ctx.lineTo(x2-h*Math.cos(a-.4),y2-h*Math.sin(a-.4)); ctx.lineTo(x2-h*Math.cos(a+.4),y2-h*Math.sin(a+.4)); ctx.closePath(); ctx.fill(); ctx.font='12px system-ui'; ctx.fillText(label,x2+6,y2-4); ctx.restore()}
+function frontBird(s,Lw,Rw,r){ctx.save(); ctx.beginPath(); rr(r.x,r.y,r.w,r.h,18); ctx.clip(); ctx.strokeStyle='rgba(215,220,228,.95)'; ctx.lineWidth=2; for(let i=0;i<9;i++){const k=i/8,x=s.bodyX+(k-.5)*16,y=s.bodyY+36,tx=x+(k-.5)*10,ty=y+18; ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(tx,ty); ctx.stroke()} const g=ctx.createRadialGradient(s.bodyX-6,s.bodyY-12,2,s.bodyX,s.bodyY,62); g.addColorStop(0,'rgba(255,255,255,.98)'); g.addColorStop(.55,'rgba(248,248,246,.98)'); g.addColorStop(.9,'rgba(226,230,236,.98)'); g.addColorStop(1,'rgba(205,214,224,.92)'); ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(s.bodyX,s.bodyY+12,34,52,0,0,Math.PI*2); ctx.fill(); ctx.fillStyle='rgba(255,255,255,.98)'; ctx.beginPath(); ctx.ellipse(s.bodyX,s.bodyY-18,16,18,0,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#cf9a66'; ctx.beginPath(); ctx.arc(s.bodyX+4,s.bodyY-21,5,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(s.bodyX+4,s.bodyY-21,2.1,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#777b82'; ctx.beginPath(); ctx.moveTo(s.bodyX-1,s.bodyY-19); ctx.lineTo(s.bodyX-14,s.bodyY-17); ctx.lineTo(s.bodyX-1,s.bodyY-15); ctx.closePath(); ctx.fill(); drawWing(Lw,'left'); drawWing(Rw,'right'); arrow(r.x+18,r.y+r.h-28,r.x+94,r.y+r.h-28,'#5b84c8','前から来る空気'); ctx.restore()}
+function feather(x,y,a,len,wid,alpha){ctx.save(); ctx.translate(x,y); ctx.rotate(a); ctx.globalAlpha=alpha; ctx.strokeStyle='rgba(248,248,246,.98)'; ctx.lineWidth=wid; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(len,0); ctx.stroke(); ctx.strokeStyle='rgba(180,184,190,.26)'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(len,0); ctx.stroke(); ctx.restore()}
+function sideBird(s,r){ctx.save(); ctx.beginPath(); rr(r.x,r.y,r.w,r.h,18); ctx.clip(); const cx=r.x+r.w*.43, cy=s.bodyY+6, tilt=-.10+.08*s.down-.04*s.up; ctx.save(); ctx.translate(cx,cy); ctx.rotate(tilt); const g=ctx.createRadialGradient(-6,-10,2,0,0,58); g.addColorStop(0,'rgba(255,255,255,.98)'); g.addColorStop(.55,'rgba(248,248,246,.98)'); g.addColorStop(.9,'rgba(226,230,236,.98)'); g.addColorStop(1,'rgba(205,214,224,.92)'); ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(0,8,42,28,.08,0,Math.PI*2); ctx.fill(); ctx.save(); ctx.translate(-26,-10); ctx.rotate(-.10+.06*Math.sin(s.ph-.3)); ctx.strokeStyle='rgba(230,232,236,.95)'; ctx.lineWidth=12; ctx.beginPath(); ctx.moveTo(8,10); ctx.quadraticCurveTo(0,-6,-2,-18); ctx.stroke(); ctx.fillStyle='rgba(255,255,255,.99)'; ctx.beginPath(); ctx.ellipse(0,-22,14,12,0,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#cf9a66'; ctx.beginPath(); ctx.arc(4,-24,4.2,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(4,-24,1.8,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#7b7e85'; ctx.beginPath(); ctx.moveTo(-2,-21); ctx.lineTo(-16,-19); ctx.lineTo(-2,-17); ctx.closePath(); ctx.fill(); ctx.restore(); ctx.restore();
+const wingY=s.shoulderY, baseX=r.x+r.w*.44, sx=baseX-4, sy=wingY, a1=-.95+.54*Math.sin(s.ph), a2=a1+.24*(.25+.9*s.down)-.14*s.fold, a3=a2+.28*(.25+1*s.down)-.18*s.fold;
+const ex=sx+Math.cos(a1)*34, ey=sy+Math.sin(a1)*34, wx=ex+Math.cos(a2)*(70*(1-.16*s.fold)), wy=ey+Math.sin(a2)*(70*(1-.16*s.fold)), tx=wx+Math.cos(a3)*(78*(1-.14*s.fold)), ty=wy+Math.sin(a3)*(78*(1-.14*s.fold));
+ctx.strokeStyle='rgba(235,240,245,.86)'; ctx.lineWidth=10; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(ex,ey); ctx.lineTo(wx,wy); ctx.stroke(); ctx.strokeStyle='rgba(79,168,161,.48)'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(ex,ey); ctx.stroke();
+for(let i=0;i<12;i++){const k=i/11,bx=lerp(wx,tx,.04+.56*k),by=lerp(wy,ty,.04+.56*k),a=a3+(-.10+.05*i)+.12*s.down-.08*s.up,len=30+16*k+10*s.open,wid=7-1*k; feather(bx,by,a,len,wid,.9)}
+arrow(r.x+r.w-104,r.y+34,r.x+r.w-104,r.y+34-Math.min(62,10+lift*26),'#5b84c8','揚力'); arrow(r.x+r.w-104,r.y+72,r.x+r.w-104+Math.min(62,10+thrust*26),r.y+72,'#d48ab0','推力'); arrow(r.x+18,r.y+r.h-28,r.x+94,r.y+r.h-28,'#5b84c8','前から来る空気'); ctx.fillStyle='rgba(79,168,161,.9)'; ctx.font='12px system-ui'; ctx.fillText('LEV',r.x+r.w-46,r.y+108); ctx.restore()}
+function legend(r){const x=r.x+14,y=r.y+56; ctx.fillStyle='rgba(255,255,255,.58)'; ctx.fillRect(x,y,174,68); ctx.strokeStyle='rgba(70,90,110,.10)'; ctx.strokeRect(x,y,174,68); ctx.fillStyle='rgba(23,48,71,.78)'; ctx.font='12px system-ui'; ctx.fillText('青/桃: 渦度の向き',x+10,y+18); ctx.fillStyle='rgba(79,168,161,.9)'; ctx.fillText('緑青: 前縁渦 LEV',x+10,y+36); ctx.fillStyle='rgba(74,98,119,.78)'; ctx.fillText('流線: 格子流体の流れ',x+10,y+54)}
+function draw(dt){const R=rects(); ctx.clearRect(0,0,W,H); card(R.L,'前面ビュー','格子流体・渦度・前縁渦'); card(R.R,'側面ビュー','同じ流れ場からみた力と運動'); const s=bird(simT,R.L), Lw=wing(s,'left'), Rw=wing(s,'right'); if(dt>0){fluid(dt,Lw,Rw,R.L,s); tracers(dt); forces(Lw,Rw,R.L)} prevL=Lw; prevR=Rw; drawFlow(R.L,frontTr); frontBird(s,Lw,Rw,R.L); legend(R.L); ctx.save(); ctx.globalAlpha=.42; drawFlow(R.R,sideTr); ctx.restore(); sideBird(s,R.R)}
+function loop(now){if(!t0){t0=now; last=now} simT=(now-t0)/1000; const dt=Math.min(.025,(now-last)/1000); last=now; draw(dt); requestAnimationFrame(loop)}
+resetBtn.addEventListener('click',()=>{t0=0; simT=0; last=0; reset(); draw(0)});
+window.addEventListener('resize',resize);
+resize(); draw(0); setTimeout(()=>requestAnimationFrame(loop),80);
 })();
 </script>
 </body>
