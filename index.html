@@ -489,6 +489,37 @@ function drawLegend(R){
   ctx.fillStyle='rgba(74,98,119,.78)'; ctx.fillText('流線: 周囲流れ',x+10,y+90);
 }
 
+
+function drawContours(R){
+  ctx.save();
+  ctx.beginPath(); rr(R.x,R.y,R.w,R.h,18); ctx.clip();
+
+  const levels = [-0.6,-0.3,-0.1,0.1,0.3,0.6];
+
+  for(const level of levels){
+    ctx.strokeStyle = level>0 ? 'rgba(180,60,60,0.6)' : 'rgba(60,80,180,0.6)';
+    ctx.lineWidth = 1;
+
+    for(let j=1;j<NY-1;j++){
+      ctx.beginPath();
+      let started=false;
+      for(let i=1;i<NY-1;i++){
+        const v1 = pf[idx(i,j)];
+        const v2 = pf[idx(i+1,j)];
+        if((v1<level && v2>=level)||(v1>=level && v2<level)){
+          const x = R.x + i*cell;
+          const y = R.y + j*cell;
+          if(!started){ ctx.moveTo(x,y); started=true; }
+          else ctx.lineTo(x,y);
+        }
+      }
+      if(started) ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+
 function draw(dt){
   const R=rects();
   ctx.clearRect(0,0,W,H);
@@ -500,11 +531,13 @@ function draw(dt){
   prevL=Lw; prevR=Rw;
 
   drawPressureMap(R.F);
+  drawContours(R.F);
   drawFlowLines(R.F,frontTr);
   drawFrontBird(s,Lw,Rw,R.F);
   drawLegend(R.F);
 
-  ctx.save(); ctx.globalAlpha=.84; drawPressureMap(R.S); ctx.restore();
+  ctx.save(); ctx.globalAlpha=.84; drawPressureMap(R.S);
+  drawContours(R.S); ctx.restore();
   ctx.save(); ctx.globalAlpha=.62; drawFlowLines(R.S,sideTr); ctx.restore();
   drawSideBird(s,R.S);
 }
