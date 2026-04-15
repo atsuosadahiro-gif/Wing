@@ -4,23 +4,16 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>羽ばたき後流 渦あり版 調整版</title>
+<title>羽ばたき後流 渦あり版 線画モード</title>
 <style>
-  :root{
-    --bg:#041019;
-    --panel:#071b2c;
-    --text:#eaf6ff;
-    --muted:#b7c9d8;
-  }
   html,body{
-    margin:0; padding:0; width:100%; height:100%;
-    background: radial-gradient(circle at 50% 10%, #08243a 0%, #041019 45%, #020a10 100%);
-    color:var(--text); font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-    overflow:hidden;
+    margin:0; padding:0; width:100%; height:100%; overflow:hidden;
+    background:#05111a; color:#eaf6ff;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   }
   #wrap{ position:fixed; inset:0; display:grid; grid-template-rows:auto 1fr; }
   #ui{
-    background:linear-gradient(180deg, rgba(4,16,25,.95), rgba(5,20,32,.88));
+    background:linear-gradient(180deg, rgba(4,16,25,.96), rgba(5,20,32,.90));
     border-bottom:1px solid rgba(255,255,255,.08);
     padding:10px 12px 8px;
     backdrop-filter: blur(6px);
@@ -32,13 +25,12 @@
   button{
     background:#113042; color:#d7e9ff; border:1px solid rgba(255,255,255,.12);
     border-radius:12px; padding:10px 16px; font-size:15px;
-    box-shadow: inset 0 0 0 1px rgba(255,255,255,.05);
   }
   .pill{
     display:inline-block; font-size:12px; padding:3px 8px; border-radius:999px;
     background:rgba(77,163,255,.10); border:1px solid rgba(77,163,255,.22); color:#cfe6ff;
   }
-  #msg{ color:var(--muted); font-size:13px; line-height:1.35; margin-top:6px; }
+  #msg{ color:#b7c9d8; font-size:13px; line-height:1.35; margin-top:6px; }
   canvas{ width:100%; height:100%; display:block; touch-action:none; }
 </style>
 </head>
@@ -47,23 +39,23 @@
   <div id="ui">
     <div class="row">
       <label>羽ばたき振幅</label>
-      <input id="amp" type="range" min="10" max="120" value="42" />
+      <input id="amp" type="range" min="10" max="120" value="40" />
     </div>
     <div class="row">
       <label>周波数</label>
-      <input id="freq" type="range" min="20" max="180" value="58" />
+      <input id="freq" type="range" min="20" max="180" value="52" />
     </div>
     <div class="row">
       <label>迎角ねじり</label>
-      <input id="twist" type="range" min="0" max="100" value="35" />
+      <input id="twist" type="range" min="0" max="100" value="28" />
     </div>
     <div class="row">
       <label>渦の強さ</label>
-      <input id="strength" type="range" min="10" max="160" value="52" />
+      <input id="strength" type="range" min="10" max="160" value="42" />
       <button id="reset">リセット</button>
-      <span class="pill">白飛び調整版</span>
+      <span class="pill">白飛び抑制</span>
     </div>
-    <div id="msg">発光を抑え、渦核と流線が見やすくなるよう調整した版です。指でなぞると流れを乱せます。</div>
+    <div id="msg">発光をほぼやめて、線と薄い渦核だけで後流を見せる版です。指でなぞると流れを乱せます。</div>
   </div>
   <canvas id="cv"></canvas>
 </div>
@@ -71,7 +63,7 @@
 <script>
 (() => {
   const canvas = document.getElementById('cv');
-  const ctx = canvas.getContext('2d', { alpha: true });
+  const ctx = canvas.getContext('2d', { alpha: false });
 
   const ampEl = document.getElementById('amp');
   const freqEl = document.getElementById('freq');
@@ -80,21 +72,17 @@
   const resetBtn = document.getElementById('reset');
 
   let W = 0, H = 0, DPR = Math.min(devicePixelRatio || 1, 2);
-
   let vortices = [];
   let tracers = [];
-  let mist = [];
   let touches = [];
   let simT = 0;
   let prevStrokeVel = 0;
   let emissionCooldown = 0;
-  let frame = 0;
 
-  const MAX_VORTICES = 48;
-  const MAX_TRACERS = 560;
-  const MAX_MIST = 360;
+  const MAX_VORTICES = 36;
+  const MAX_TRACERS = 520;
 
-  function rand(a,b){ return a + Math.random()*(b-a); }
+  const rand = (a,b) => a + Math.random() * (b-a);
 
   function resize(){
     const uiH = document.getElementById('ui').getBoundingClientRect().height;
@@ -117,25 +105,28 @@
     };
   }
 
+  function wingState(t){
+    const p = params();
+    const x = W * 0.18;
+    const y0 = H * 0.46;
+    const y = y0 + p.amp * Math.sin(t * p.freq * Math.PI * 2);
+    const vy = p.amp * p.freq * Math.PI * 2 * Math.cos(t * p.freq * Math.PI * 2);
+    const chord = Math.max(26, Math.min(52, W * 0.055));
+    const ang = 0.18 * p.twist * Math.sin(t * p.freq * Math.PI * 2 + Math.PI/2);
+    return {x,y,vy,chord,ang};
+  }
+
   function seed(){
     tracers.length = 0;
-    mist.length = 0;
     vortices.length = 0;
     for(let i=0;i<MAX_TRACERS;i++){
       tracers.push({
         x: rand(0,W), y: rand(0,H), px: 0, py: 0,
-        age: rand(0,180), life: rand(70,170),
-        a: rand(0.05, 0.18)
+        age: rand(0,160), life: rand(70,150),
+        a: rand(0.04, 0.12)
       });
       tracers[i].px = tracers[i].x;
       tracers[i].py = tracers[i].y;
-    }
-    for(let i=0;i<MAX_MIST;i++){
-      mist.push({
-        x: rand(0,W), y: rand(0,H), vx:0, vy:0,
-        age: rand(0,120), life: rand(45,110),
-        s: rand(0.7,1.7), a: rand(0.015, 0.05)
-      });
     }
   }
 
@@ -147,25 +138,16 @@
     seed();
   }
 
-  function wingState(t){
-    const p = params();
-    const x = W * 0.18;
-    const y0 = H * 0.46;
-    const y = y0 + p.amp * Math.sin(t * p.freq * Math.PI * 2);
-    const vy = p.amp * p.freq * Math.PI * 2 * Math.cos(t * p.freq * Math.PI * 2);
-    const chord = Math.max(28, Math.min(54, W * 0.06));
-    const ang = 0.22 * p.twist * Math.sin(t * p.freq * Math.PI * 2 + Math.PI/2);
-    return {x,y,y0,vy,chord,ang};
-  }
-
   function emitVortex(x, y, gamma, r){
-    vortices.push({ x, y, gamma, r, age:0, life:rand(3.2, 5.6) });
-    if(vortices.length > MAX_VORTICES) vortices.splice(0, vortices.length - MAX_VORTICES);
+    vortices.push({x,y,gamma,r,age:0,life:rand(2.8,4.8)});
+    if(vortices.length > MAX_VORTICES){
+      vortices.splice(0, vortices.length - MAX_VORTICES);
+    }
   }
 
   function velocityAt(x,y){
     const p = params();
-    let u = 24 + p.freq * 12;
+    let u = 22 + p.freq * 10;
     let v = 0;
 
     for(const q of vortices){
@@ -178,18 +160,10 @@
 
     for(const tp of touches){
       const dx = x - tp.x, dy = y - tp.y;
-      const rr = dx*dx + dy*dy + 200;
-      const pull = 700 / rr;
+      const rr = dx*dx + dy*dy + 220;
+      const pull = 600 / rr;
       u += tp.vx * pull;
       v += tp.vy * pull;
-    }
-
-    const ws = wingState(simT);
-    const dxw = x - ws.x, dyw = y - ws.y;
-    if(dxw > 0){
-      const g = Math.exp(-(dxw*dxw)/(W*0.14) - (dyw*dyw)/(H*0.035));
-      u += 10 * g;
-      v += ws.vy * 0.10 * g;
     }
 
     return {u,v};
@@ -197,82 +171,68 @@
 
   function step(dt){
     simT += dt;
-    frame++;
     const p = params();
     const ws = wingState(simT);
-
     emissionCooldown -= dt;
+
     const strokeSign = Math.sign(ws.vy || 1);
     const signFlip = Math.sign(prevStrokeVel || 1) !== strokeSign;
     prevStrokeVel = ws.vy;
 
-    if(signFlip || (Math.abs(ws.vy) > 70 && emissionCooldown <= 0)){
-      const teX = ws.x + Math.cos(ws.ang) * ws.chord * 0.7;
-      const teY = ws.y + Math.sin(ws.ang) * ws.chord * 0.7;
-      const gamma = (-strokeSign) * (34 + 105 * p.strength + 45 * p.twist);
-      const r = 16 + 10 * p.twist;
+    if(signFlip || (Math.abs(ws.vy) > 60 && emissionCooldown <= 0)){
+      const teX = ws.x + Math.cos(ws.ang) * ws.chord * 0.68;
+      const teY = ws.y + Math.sin(ws.ang) * ws.chord * 0.68;
+      const gamma = (-strokeSign) * (24 + 70 * p.strength + 28 * p.twist);
+      const r = 14 + 8 * p.twist;
       emitVortex(teX, teY, gamma, r);
-      emitVortex(teX + rand(8,14), teY + strokeSign * rand(6,10), -gamma * 0.34, r*0.85);
-      emissionCooldown = 0.17 + (1.0 - p.freq) * 0.05;
+      emitVortex(teX + rand(7,12), teY + strokeSign * rand(5,9), -gamma * 0.28, r*0.82);
+      emissionCooldown = 0.19 + (1.0 - p.freq) * 0.05;
     }
 
     for(let i=vortices.length-1;i>=0;i--){
       const q = vortices[i];
       q.age += dt;
-      if(q.age > q.life){ vortices.splice(i,1); continue; }
+      if(q.age > q.life){
+        vortices.splice(i,1);
+        continue;
+      }
 
-      let u = 26 + p.freq * 15;
+      let u = 24 + p.freq * 11;
       let v = 0;
       for(let j=0;j<vortices.length;j++){
-        if(i===j) continue;
+        if(i === j) continue;
         const o = vortices[j];
         const dx = q.x - o.x, dy = q.y - o.y;
         const rr = dx*dx + dy*dy + o.r*o.r;
         const f = o.gamma / rr;
-        u += -dy * f * 0.42;
-        v +=  dx * f * 0.42;
+        u += -dy * f * 0.30;
+        v +=  dx * f * 0.30;
       }
       q.x += u * dt;
       q.y += v * dt;
-      q.gamma *= Math.pow(0.988, dt*60);
-      q.r += 1.3 * dt * 60;
+      q.gamma *= Math.pow(0.985, dt*60);
+      q.r += 1.0 * dt * 60;
 
-      if(q.x > W + 60 || q.y < -80 || q.y > H + 80){
+      if(q.x > W + 60 || q.y < -70 || q.y > H + 70){
         vortices.splice(i,1);
       }
     }
 
     for(const tr of tracers){
       tr.age += dt * 60;
-      tr.px = tr.x; tr.py = tr.y;
+      tr.px = tr.x;
+      tr.py = tr.y;
       const vel = velocityAt(tr.x, tr.y);
       tr.x += vel.u * dt;
       tr.y += vel.v * dt;
 
       if(tr.x < -15 || tr.x > W + 15 || tr.y < -15 || tr.y > H + 15 || tr.age > tr.life){
-        tr.x = rand(-10, W*0.18);
+        tr.x = rand(-10, W * 0.16);
         tr.y = rand(0,H);
-        tr.px = tr.x; tr.py = tr.y;
-        tr.age = 0; tr.life = rand(80,170);
-      }
-    }
-
-    for(const m of mist){
-      m.age += dt * 60;
-      const vel = velocityAt(m.x, m.y);
-      m.vx = m.vx * 0.90 + vel.u * 0.10;
-      m.vy = m.vy * 0.90 + vel.v * 0.10;
-      m.x += m.vx * dt;
-      m.y += m.vy * dt;
-
-      if(m.x < -15 || m.x > W + 15 || m.y < -15 || m.y > H + 15 || m.age > m.life){
-        m.x = ws.x + rand(-10, 8);
-        m.y = ws.y + rand(-10, 10);
-        m.vx = 14 + rand(-3, 5);
-        m.vy = ws.vy * 0.03 + rand(-5, 5);
-        m.age = 0; m.life = rand(40,100);
-        m.s = rand(0.7,1.7);
-        m.a = rand(0.015,0.05);
+        tr.px = tr.x;
+        tr.py = tr.y;
+        tr.age = 0;
+        tr.life = rand(70,150);
       }
     }
 
@@ -283,75 +243,52 @@
   }
 
   function drawBackground(){
-    ctx.clearRect(0,0,W,H);
-    const g = ctx.createLinearGradient(0,0,0,H);
-    g.addColorStop(0, 'rgba(5,18,28,1)');
-    g.addColorStop(1, 'rgba(2,10,16,1)');
-    ctx.fillStyle = g;
+    ctx.fillStyle = '#07111b';
     ctx.fillRect(0,0,W,H);
 
-    ctx.strokeStyle = 'rgba(70,140,210,0.04)';
+    ctx.strokeStyle = 'rgba(70,140,210,0.035)';
     ctx.lineWidth = 1;
-    for(let y=0;y<H;y+=16){
+    for(let y=0; y<H; y+=18){
       ctx.beginPath();
-      ctx.moveTo(0,y+Math.sin((y+simT*20)*0.03)*1.5);
-      for(let x=0;x<=W;x+=24){
-        ctx.lineTo(x, y + Math.sin((x*0.02)+(y*0.016)+simT*1.1)*1.7);
+      ctx.moveTo(0, y);
+      for(let x=0; x<=W; x+=24){
+        ctx.lineTo(x, y + Math.sin((x*0.018)+(y*0.014)+simT*0.9)*1.2);
       }
       ctx.stroke();
     }
   }
 
-  function drawMist(){
-    ctx.save();
-    ctx.globalCompositeOperation = 'screen';
-    for(const m of mist){
-      const alpha = m.a * (1 - m.age / m.life);
-      ctx.fillStyle = `rgba(120,190,255,${alpha})`;
-      ctx.beginPath();
-      ctx.arc(m.x, m.y, m.s, 0, Math.PI*2);
-      ctx.fill();
-    }
-    ctx.restore();
-  }
-
   function drawTracers(){
-    ctx.save();
     ctx.globalCompositeOperation = 'source-over';
     for(const tr of tracers){
-      const lifeK = 1 - tr.age / tr.life;
-      ctx.strokeStyle = `rgba(220,238,255,${0.05 + tr.a * lifeK})`;
+      const k = 1 - tr.age / tr.life;
+      ctx.strokeStyle = `rgba(220,235,255,${0.04 + tr.a * k})`;
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(tr.px, tr.py);
       ctx.lineTo(tr.x, tr.y);
       ctx.stroke();
     }
-    ctx.restore();
   }
 
-  function drawVortexCores(){
+  function drawVortices(){
     for(const q of vortices){
-      const a = 0.11 * (1 - q.age / q.life);
-      const r = Math.max(5, q.r*0.42);
-      const grad = ctx.createRadialGradient(q.x,q.y,0,q.x,q.y,r*1.8);
-      if(q.gamma > 0){
-        grad.addColorStop(0, `rgba(100,180,255,${a})`);
-        grad.addColorStop(0.45, `rgba(100,180,255,${a*0.35})`);
-      } else {
-        grad.addColorStop(0, `rgba(255,120,180,${a})`);
-        grad.addColorStop(0.45, `rgba(255,120,180,${a*0.35})`);
-      }
-      grad.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = grad;
+      const k = 1 - q.age / q.life;
+      const r = Math.max(4, q.r * 0.38);
+
+      ctx.fillStyle = q.gamma > 0
+        ? `rgba(110,180,255,${0.05 * k})`
+        : `rgba(255,135,180,${0.05 * k})`;
       ctx.beginPath();
-      ctx.arc(q.x, q.y, r*1.8, 0, Math.PI*2);
+      ctx.arc(q.x, q.y, r*1.5, 0, Math.PI*2);
       ctx.fill();
 
-      ctx.strokeStyle = q.gamma > 0 ? 'rgba(120,190,255,0.16)' : 'rgba(255,145,190,0.16)';
+      ctx.strokeStyle = q.gamma > 0
+        ? `rgba(130,190,255,${0.14 * k})`
+        : `rgba(255,150,190,${0.14 * k})`;
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.arc(q.x, q.y, r, 0, Math.PI*1.6);
+      ctx.arc(q.x, q.y, r, 0, Math.PI * 1.5);
       ctx.stroke();
     }
   }
@@ -362,20 +299,20 @@
     ctx.translate(ws.x, ws.y);
     ctx.rotate(ws.ang);
 
-    const rx = Math.max(14, Math.min(22, W*0.022));
-    const ry = Math.max(20, Math.min(28, H*0.03));
+    const rx = Math.max(13, Math.min(20, W*0.020));
+    const ry = Math.max(18, Math.min(26, H*0.028));
 
-    const grad = ctx.createRadialGradient(-4,-4,2,0,0,ry*1.6);
-    grad.addColorStop(0,'rgba(185,225,255,0.92)');
-    grad.addColorStop(0.55,'rgba(85,165,245,0.82)');
-    grad.addColorStop(1,'rgba(40,100,185,0.12)');
+    const grad = ctx.createRadialGradient(-3,-3,1,0,0,ry*1.2);
+    grad.addColorStop(0,'rgba(200,230,255,0.85)');
+    grad.addColorStop(0.6,'rgba(95,170,245,0.70)');
+    grad.addColorStop(1,'rgba(40,100,185,0.08)');
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.ellipse(0,0,rx,ry,0,0,Math.PI*2);
     ctx.fill();
 
-    ctx.strokeStyle = 'rgba(225,245,255,0.45)';
-    ctx.lineWidth = 1.1;
+    ctx.strokeStyle = 'rgba(225,245,255,0.35)';
+    ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(-rx*0.55, -ry*0.35);
     ctx.quadraticCurveTo(-rx*0.10, -ry*0.05, rx*0.65, ry*0.55);
@@ -387,18 +324,17 @@
   function drawLabel(){
     ctx.fillStyle = 'rgba(210,225,240,0.22)';
     ctx.font = '12px system-ui, sans-serif';
-    ctx.fillText('渦あり後流モデル 調整版', 10, H - 12);
+    ctx.fillText('線画後流モデル', 10, H - 12);
   }
 
   let lastStamp = performance.now();
   function loop(now){
-    const dt = Math.min(0.033, (now - lastStamp) / 1000);
+    const dt = Math.min(0.033, (now - lastStamp)/1000);
     lastStamp = now;
     step(dt);
     drawBackground();
-    drawMist();
     drawTracers();
-    drawVortexCores();
+    drawVortices();
     drawWing();
     drawLabel();
     requestAnimationFrame(loop);
@@ -422,8 +358,8 @@
       next.push(p);
       touches.push({
         x:p.x, y:p.y,
-        vx:(p.x-prev.x)*8,
-        vy:(p.y-prev.y)*8,
+        vx:(p.x-prev.x)*7,
+        vy:(p.y-prev.y)*7,
         life:0.20
       });
     }
