@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>鳥の2枚翼 リアル強化版 + メーター</title>
+<title>鳥の2枚翼 超リアル版 + メーター</title>
 <style>
   html, body {
     margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
@@ -39,24 +39,24 @@
   <div id="ui">
     <div class="row">
       <label>羽ばたき振幅</label>
-      <input id="amp" type="range" min="10" max="120" value="42" />
+      <input id="amp" type="range" min="10" max="120" value="44" />
     </div>
     <div class="row">
       <label>周波数</label>
-      <input id="freq" type="range" min="20" max="180" value="56" />
+      <input id="freq" type="range" min="20" max="180" value="58" />
     </div>
     <div class="row">
       <label>迎角ねじり</label>
-      <input id="twist" type="range" min="0" max="100" value="40" />
+      <input id="twist" type="range" min="0" max="100" value="44" />
     </div>
     <div class="row">
       <label>渦の強さ</label>
-      <input id="strength" type="range" min="10" max="160" value="48" />
+      <input id="strength" type="range" min="10" max="160" value="52" />
       <button id="reset">リセット</button>
-      <span class="pill">左右2枚翼</span>
+      <span class="pill">超リアル版</span>
     </div>
     <div id="msg">
-      左右2枚翼と胴体を持つ版です。肩・肘・手首の3段関節、翼端羽のしなり、上げ羽での折りたたみを入れています。左上に簡易の揚力・推力メーターを表示します。
+      左右2枚翼に加え、頭・胴体・尾羽・軽い前傾、前後の重なり差、羽根の層、翼端羽のしなりを強化した版です。左上に簡易の揚力・推力メーターを表示します。
     </div>
   </div>
   <canvas id="cv"></canvas>
@@ -82,8 +82,8 @@
   let emissionCooldown = 0;
   let liftVal = 0, thrustVal = 0, liftAvg = 0, thrustAvg = 0;
 
-  const MAX_VORTICES = 54;
-  const MAX_TRACERS = 700;
+  const MAX_VORTICES = 62;
+  const MAX_TRACERS = 760;
   const rand = (a,b) => a + Math.random() * (b-a);
 
   function resize() {
@@ -111,42 +111,48 @@
     const p = params();
     const phase = t * p.freq * Math.PI * 2;
 
-    const bodyX = W * 0.28 + Math.sin(phase) * 2.5;
+    const bodyX = W * 0.30 + Math.sin(phase) * 2.0;
     const bodyY0 = H * 0.50;
-    const bodyY = bodyY0 + p.amp * 0.10 * Math.sin(phase - 0.25);
+    const bob = p.amp * 0.08 * Math.sin(phase - 0.25);
+    const bodyY = bodyY0 + bob;
 
-    const spanOffset = Math.min(20, Math.max(10, W * 0.018));
-    const shoulderLeftX = bodyX - spanOffset;
-    const shoulderRightX = bodyX + spanOffset;
-    const shoulderY = bodyY - 2 + p.amp * 0.86 * Math.sin(phase);
+    const pitch = -0.16 + 0.10 * Math.sin(phase + Math.PI/3);
+    const torsoLean = 0.08 * Math.sin(phase + Math.PI/2);
+
+    const shoulderSpan = Math.min(30, Math.max(14, W * 0.022));
+    const shoulderLeftX = bodyX - shoulderSpan;
+    const shoulderRightX = bodyX + shoulderSpan;
+    const shoulderY = bodyY - 2 + p.amp * 0.84 * Math.sin(phase);
 
     const vy = p.amp * p.freq * Math.PI * 2 * Math.cos(phase);
-
     const downstroke = Math.max(0, Math.sin(phase));
     const upstroke = Math.max(0, -Math.sin(phase));
 
-    const fold = 0.18 + 0.58 * upstroke;
-    const spread = 0.72 + 0.42 * downstroke;
+    const fold = 0.16 + 0.62 * upstroke;
+    const spread = 0.72 + 0.44 * downstroke;
 
-    const innerLen = Math.min(82, Math.max(48, W * 0.095)) * (0.92 + 0.10 * downstroke);
-    const outerLen = Math.min(104, Math.max(62, W * 0.122)) * (1.00 - 0.28 * fold);
-    const handLen  = Math.min(58, Math.max(30, W * 0.068)) * (1.02 - 0.14 * fold);
+    const innerLen = Math.min(88, Math.max(52, W * 0.096)) * (0.92 + 0.10 * downstroke);
+    const outerLen = Math.min(112, Math.max(68, W * 0.124)) * (1.00 - 0.30 * fold);
+    const handLen  = Math.min(66, Math.max(34, W * 0.074)) * (1.03 - 0.16 * fold);
 
-    const base = -0.28 + 0.34 * Math.sin(phase + Math.PI/2);
-    const shoulderPitch = base + 0.18 * p.twist * Math.sin(phase + Math.PI/2);
-
-    const elbowLag = 0.18 * Math.sin(phase + Math.PI/2 - 0.55);
-    const wristLag = 0.22 * Math.sin(phase + Math.PI/2 - 1.0);
+    const base = -0.32 + 0.36 * Math.sin(phase + Math.PI/2);
+    const shoulderPitch = base + 0.22 * p.twist * Math.sin(phase + Math.PI/2);
+    const elbowLag = 0.20 * Math.sin(phase + Math.PI/2 - 0.55);
+    const wristLag = 0.26 * Math.sin(phase + Math.PI/2 - 1.0);
 
     const angInner = shoulderPitch;
-    const angOuter = angInner + 0.30 * p.twist * (0.35 + 0.75 * downstroke) - 0.24 * fold + elbowLag;
-    const angHand  = angOuter + 0.22 * p.twist * (0.20 + 0.90 * downstroke) - 0.30 * fold + wristLag;
+    const angOuter = angInner + 0.34 * p.twist * (0.35 + 0.80 * downstroke) - 0.28 * fold + elbowLag;
+    const angHand  = angOuter + 0.26 * p.twist * (0.20 + 0.95 * downstroke) - 0.36 * fold + wristLag;
+
+    const tailFan = 0.24 + 0.26 * downstroke;
+    const tailAngle = 0.16 + 0.08 * Math.sin(phase + Math.PI * 0.75);
 
     return {
       phase, vy, downstroke, upstroke, fold, spread,
       bodyX, bodyY, shoulderLeftX, shoulderRightX, shoulderY,
       innerLen, outerLen, handLen,
-      angInner, angOuter, angHand
+      angInner, angOuter, angHand,
+      pitch, torsoLean, tailFan, tailAngle
     };
   }
 
@@ -159,7 +165,7 @@
         x, y, px:x, py:y,
         age: rand(0, 160),
         life: rand(70, 150),
-        a: rand(0.04, 0.11)
+        a: rand(0.035, 0.10)
       });
     }
   }
@@ -174,7 +180,7 @@
   }
 
   function emitVortex(x, y, gamma, r) {
-    vortices.push({ x, y, gamma, r, age:0, life:rand(2.8, 4.9) });
+    vortices.push({ x, y, gamma, r, age:0, life:rand(2.8, 5.1) });
     if (vortices.length > MAX_VORTICES) {
       vortices.splice(0, vortices.length - MAX_VORTICES);
     }
@@ -205,7 +211,7 @@
 
   function computeForces() {
     let lift = 0, thrust = 0, n = 0;
-    const x0 = W * 0.18, x1 = W * 0.78;
+    const x0 = W * 0.16, x1 = W * 0.82;
     const y0 = H * 0.18, y1 = H * 0.82;
 
     for (const tr of tracers) {
@@ -222,11 +228,9 @@
   }
 
   function wingJoints(ws, side) {
-    // side: -1 for left, +1 for right
     const shoulderX = side < 0 ? ws.shoulderLeftX : ws.shoulderRightX;
     const shoulderY = ws.shoulderY;
 
-    // mirror angles horizontally
     const a1 = side < 0 ? Math.PI - ws.angInner : ws.angInner;
     const a2 = side < 0 ? Math.PI - ws.angOuter : ws.angOuter;
     const a3 = side < 0 ? Math.PI - ws.angHand  : ws.angHand;
@@ -255,8 +259,8 @@
     prevStrokeVel = ws.vy;
 
     if (signFlip || (Math.abs(ws.vy) > 60 && emissionCooldown <= 0)) {
-      const gamma = (-strokeSign) * (24 + 72 * p.strength + 34 * p.twist);
-      const r = 13 + 9 * p.twist;
+      const gamma = (-strokeSign) * (24 + 76 * p.strength + 36 * p.twist);
+      const r = 13 + 10 * p.twist;
 
       for (const wing of [left, right]) {
         emitVortex(wing.tipX, wing.tipY, gamma, r);
@@ -264,7 +268,7 @@
         emitVortex(wing.wristX + rand(-6, 6), wing.wristY + strokeSign * rand(2, 8), gamma * 0.35, r * 0.72);
       }
 
-      emissionCooldown = 0.17 + (1.0 - p.freq) * 0.05;
+      emissionCooldown = 0.16 + (1.0 - p.freq) * 0.05;
     }
 
     for (let i=vortices.length-1; i>=0; i--) {
@@ -291,7 +295,7 @@
       q.gamma *= Math.pow(0.985, dt * 60);
       q.r += 1.0 * dt * 60;
 
-      if (q.x > W + 70 || q.x < -70 || q.y < -80 || q.y > H + 80) {
+      if (q.x > W + 80 || q.x < -80 || q.y < -90 || q.y > H + 90) {
         vortices.splice(i,1);
       }
     }
@@ -304,7 +308,7 @@
       tr.y += vel.v * dt;
 
       if (tr.x < -15 || tr.x > W + 15 || tr.y < -15 || tr.y > H + 15 || tr.age > tr.life) {
-        tr.x = rand(-10, W * 0.16);
+        tr.x = rand(-10, W * 0.14);
         tr.y = rand(0, H);
         tr.px = tr.x; tr.py = tr.y;
         tr.age = 0; tr.life = rand(70,150);
@@ -323,7 +327,7 @@
     ctx.fillStyle = '#07111b';
     ctx.fillRect(0,0,W,H);
 
-    ctx.strokeStyle = 'rgba(70,140,210,0.032)';
+    ctx.strokeStyle = 'rgba(70,140,210,0.030)';
     ctx.lineWidth = 1;
     for (let y=0; y<H; y+=18) {
       ctx.beginPath();
@@ -338,7 +342,7 @@
   function drawTracers() {
     for (const tr of tracers) {
       const k = 1 - tr.age / tr.life;
-      ctx.strokeStyle = `rgba(220,235,255,${0.04 + tr.a * k})`;
+      ctx.strokeStyle = `rgba(220,235,255,${0.036 + tr.a * k})`;
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(tr.px, tr.py);
@@ -353,15 +357,15 @@
       const r = Math.max(4, q.r * 0.38);
 
       ctx.fillStyle = q.gamma > 0
-        ? `rgba(110,180,255,${0.05 * k})`
-        : `rgba(255,135,180,${0.05 * k})`;
+        ? `rgba(110,180,255,${0.045 * k})`
+        : `rgba(255,135,180,${0.045 * k})`;
       ctx.beginPath();
       ctx.arc(q.x, q.y, r * 1.5, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.strokeStyle = q.gamma > 0
-        ? `rgba(130,190,255,${0.14 * k})`
-        : `rgba(255,150,190,${0.14 * k})`;
+        ? `rgba(130,190,255,${0.13 * k})`
+        : `rgba(255,150,190,${0.13 * k})`;
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.arc(q.x, q.y, r, 0, Math.PI * 1.5);
@@ -369,16 +373,16 @@
     }
   }
 
-  function drawWingFromJoints(ws, joint, side) {
+  function drawWingFromJoints(ws, joint, side, depthScale=1) {
     const shoulderX = joint.shoulderX, shoulderY = joint.shoulderY;
     const elbowX = joint.elbowX, elbowY = joint.elbowY;
     const wristX = joint.wristX, wristY = joint.wristY;
     const tipX = joint.tipX, tipY = joint.tipY;
     const a1 = joint.a1, a2 = joint.a2, a3 = joint.a3;
 
-    const innerWidth = 22 * ws.spread;
-    const outerWidth = 18 * (1 - 0.22 * ws.fold);
-    const handWidth  = 11 * (1 - 0.35 * ws.fold);
+    const innerWidth = 22 * ws.spread * depthScale;
+    const outerWidth = 18 * (1 - 0.22 * ws.fold) * depthScale;
+    const handWidth  = 11 * (1 - 0.35 * ws.fold) * depthScale;
 
     const nx1 = -Math.sin(a1), ny1 = Math.cos(a1);
     const nx2 = -Math.sin(a2), ny2 = Math.cos(a2);
@@ -389,11 +393,12 @@
     ctx.lineCap = 'round';
 
     const g1 = ctx.createLinearGradient(shoulderX, shoulderY, elbowX, elbowY);
-    g1.addColorStop(0, 'rgba(210,235,255,0.92)');
-    g1.addColorStop(1, 'rgba(110,175,245,0.78)');
+    g1.addColorStop(0, `rgba(210,235,255,${0.84*depthScale})`);
+    g1.addColorStop(1, `rgba(110,175,245,${0.72*depthScale})`);
     ctx.fillStyle = g1;
-    ctx.strokeStyle = 'rgba(230,245,255,0.20)';
+    ctx.strokeStyle = `rgba(230,245,255,${0.18*depthScale})`;
     ctx.lineWidth = 1.0;
+
     ctx.beginPath();
     ctx.moveTo(shoulderX + nx1 * innerWidth * 0.40, shoulderY + ny1 * innerWidth * 0.40);
     ctx.quadraticCurveTo(
@@ -412,8 +417,8 @@
     ctx.stroke();
 
     const g2 = ctx.createLinearGradient(elbowX, elbowY, wristX, wristY);
-    g2.addColorStop(0, 'rgba(188,224,255,0.84)');
-    g2.addColorStop(1, 'rgba(88,150,232,0.72)');
+    g2.addColorStop(0, `rgba(188,224,255,${0.78*depthScale})`);
+    g2.addColorStop(1, `rgba(88,150,232,${0.66*depthScale})`);
     ctx.fillStyle = g2;
     ctx.beginPath();
     ctx.moveTo(elbowX + nx2 * outerWidth * 0.36, elbowY + ny2 * outerWidth * 0.36);
@@ -433,8 +438,8 @@
     ctx.stroke();
 
     const g3 = ctx.createLinearGradient(wristX, wristY, tipX, tipY);
-    g3.addColorStop(0, 'rgba(198,230,255,0.82)');
-    g3.addColorStop(1, 'rgba(95,158,238,0.68)');
+    g3.addColorStop(0, `rgba(198,230,255,${0.76*depthScale})`);
+    g3.addColorStop(1, `rgba(95,158,238,${0.62*depthScale})`);
     ctx.fillStyle = g3;
     ctx.beginPath();
     ctx.moveTo(wristX + nx3 * handWidth * 0.34, wristY + ny3 * handWidth * 0.34);
@@ -453,23 +458,52 @@
     ctx.fill();
     ctx.stroke();
 
-    const featherCount = 6;
+    for (let i=0; i<5; i++) {
+      const k = i / 4;
+      const bx = elbowX + Math.cos(a2) * (ws.outerLen * (0.12 + 0.13 * k));
+      const by = elbowY + Math.sin(a2) * (ws.outerLen * (0.12 + 0.13 * k));
+      const dir = side < 0 ? -1 : 1;
+      const fang = a2 + dir * (-0.10 + 0.08 * i) + dir * 0.06 * ws.downstroke;
+      const flen = 18 + 6 * k + 6 * ws.spread;
+      const fwid = 4.6 - 0.6 * k;
+      const tx = bx + Math.cos(fang) * flen;
+      const ty = by + Math.sin(fang) * flen;
+      const fnx = -Math.sin(fang), fny = Math.cos(fang);
+
+      ctx.fillStyle = `rgba(186,222,255,${(0.36 - 0.03 * k)*depthScale})`;
+      ctx.beginPath();
+      ctx.moveTo(bx + fnx * fwid, by + fny * fwid);
+      ctx.quadraticCurveTo(
+        bx + Math.cos(fang) * flen * 0.52 + fnx * fwid * 0.6,
+        by + Math.sin(fang) * flen * 0.52 + fny * fwid * 0.6,
+        tx, ty
+      );
+      ctx.quadraticCurveTo(
+        bx + Math.cos(fang) * flen * 0.42 - fnx * fwid * 0.4,
+        by + Math.sin(fang) * flen * 0.42 - fny * fwid * 0.4,
+        bx - fnx * fwid * 0.7, by - fny * fwid * 0.7
+      );
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    const featherCount = 7;
     for (let i=0; i<featherCount; i++) {
       const k = i / (featherCount - 1);
-      const baseX = wristX + Math.cos(a3) * (ws.handLen * (0.18 + 0.10 * k));
-      const baseY = wristY + Math.sin(a3) * (ws.handLen * (0.18 + 0.10 * k));
+      const baseX = wristX + Math.cos(a3) * (ws.handLen * (0.16 + 0.10 * k));
+      const baseY = wristY + Math.sin(a3) * (ws.handLen * (0.16 + 0.10 * k));
       const dir = side < 0 ? -1 : 1;
-      const fang = a3 + dir * (-0.34 + 0.16 * i) + dir * 0.22 * ws.downstroke - dir * 0.16 * ws.upstroke;
-      const flen = 28 + 14 * k + 12 * ws.spread;
-      const curve = 0.10 + 0.14 * ws.downstroke;
-      const fwid = 5.5 - 0.7 * k;
+      const fang = a3 + dir * (-0.38 + 0.14 * i) + dir * 0.24 * ws.downstroke - dir * 0.18 * ws.upstroke;
+      const flen = 30 + 16 * k + 13 * ws.spread;
+      const curve = 0.12 + 0.16 * ws.downstroke;
+      const fwid = 5.6 - 0.7 * k;
 
       const tx = baseX + Math.cos(fang) * flen;
       const ty = baseY + Math.sin(fang) * flen;
       const fnx = -Math.sin(fang), fny = Math.cos(fang);
 
-      ctx.fillStyle = `rgba(190,224,255,${0.76 - 0.06 * k})`;
-      ctx.strokeStyle = 'rgba(225,242,255,0.14)';
+      ctx.fillStyle = `rgba(190,224,255,${(0.72 - 0.06 * k)*depthScale})`;
+      ctx.strokeStyle = `rgba(225,242,255,${0.13*depthScale})`;
       ctx.lineWidth = 0.8;
 
       ctx.beginPath();
@@ -494,27 +528,74 @@
 
   function drawBody(ws) {
     ctx.save();
+    ctx.translate(ws.bodyX, ws.bodyY);
+    ctx.rotate(ws.pitch);
 
-    const bodyGrad = ctx.createRadialGradient(ws.bodyX - 8, ws.bodyY - 4, 1, ws.bodyX, ws.bodyY, 36);
-    bodyGrad.addColorStop(0, 'rgba(220,238,255,0.92)');
-    bodyGrad.addColorStop(0.42, 'rgba(110,175,245,0.74)');
+    const bodyGrad = ctx.createRadialGradient(-8, -6, 1, 0, 0, 44);
+    bodyGrad.addColorStop(0, 'rgba(226,240,255,0.94)');
+    bodyGrad.addColorStop(0.38, 'rgba(122,182,248,0.76)');
     bodyGrad.addColorStop(1, 'rgba(40,100,185,0.08)');
     ctx.fillStyle = bodyGrad;
     ctx.beginPath();
-    ctx.ellipse(ws.bodyX, ws.bodyY + 1, 28, 34, -0.06, 0, Math.PI * 2);
+    ctx.ellipse(0, 2, 34, 40, 0, 0, Math.PI*2);
     ctx.fill();
 
-    ctx.fillStyle = 'rgba(175,220,255,0.30)';
+    ctx.fillStyle = 'rgba(184,222,255,0.36)';
     ctx.beginPath();
-    ctx.ellipse(ws.bodyX - 22, ws.bodyY - 8, 10, 12, 0.12, 0, Math.PI * 2);
+    ctx.ellipse(-26, -10, 11, 14, 0.15, 0, Math.PI*2);
     ctx.fill();
 
-    ctx.strokeStyle = 'rgba(230,245,255,0.18)';
+    ctx.fillStyle = 'rgba(30,55,84,0.78)';
+    ctx.beginPath();
+    ctx.arc(-30, -12, 1.8, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(220,190,120,0.62)';
+    ctx.beginPath();
+    ctx.moveTo(-38, -10);
+    ctx.lineTo(-48, -8);
+    ctx.lineTo(-38, -4);
+    ctx.closePath();
+    ctx.fill();
+
+    // chest highlight
+    ctx.strokeStyle = 'rgba(235,245,255,0.18)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(ws.bodyX - 22, ws.bodyY + 2);
-    ctx.lineTo(ws.bodyX + 18, ws.bodyY + 2);
+    ctx.moveTo(-20, 0);
+    ctx.quadraticCurveTo(6, 12, 22, 8);
     ctx.stroke();
+
+    // tail
+    const tailBaseX = 24, tailBaseY = 8;
+    const tailCount = 5;
+    for (let i=0; i<tailCount; i++) {
+      const k = i / (tailCount - 1);
+      const fang = Math.PI - 0.20 + (-ws.tailFan + ws.tailFan * 2 * k) + ws.tailAngle;
+      const flen = 24 + 10 * (1 - Math.abs(k - 0.5) * 2);
+      const fwid = 4.5;
+      const bx = tailBaseX;
+      const by = tailBaseY + (k - 0.5) * 4;
+      const tx = bx + Math.cos(fang) * flen;
+      const ty = by + Math.sin(fang) * flen;
+      const fnx = -Math.sin(fang), fny = Math.cos(fang);
+
+      ctx.fillStyle = 'rgba(176,216,252,0.62)';
+      ctx.beginPath();
+      ctx.moveTo(bx + fnx * fwid, by + fny * fwid);
+      ctx.quadraticCurveTo(
+        bx + Math.cos(fang) * flen * 0.56 + fnx * fwid * 0.4,
+        by + Math.sin(fang) * flen * 0.56 + fny * fwid * 0.4,
+        tx, ty
+      );
+      ctx.quadraticCurveTo(
+        bx + Math.cos(fang) * flen * 0.44 - fnx * fwid * 0.35,
+        by + Math.sin(fang) * flen * 0.44 - fny * fwid * 0.35,
+        bx - fnx * fwid * 0.6, by - fny * fwid * 0.6
+      );
+      ctx.closePath();
+      ctx.fill();
+    }
 
     ctx.restore();
   }
@@ -524,10 +605,10 @@
     const left = wingJoints(ws, -1);
     const right = wingJoints(ws, +1);
 
-    // back wing first, then body, then front wing for overlap
-    drawWingFromJoints(ws, left, -1);
+    // slight depth: left wing behind, right wing in front
+    drawWingFromJoints(ws, left, -1, 0.90);
     drawBody(ws);
-    drawWingFromJoints(ws, right, +1);
+    drawWingFromJoints(ws, right, +1, 1.00);
   }
 
   function drawMeter() {
@@ -556,7 +637,7 @@
   function drawLabel() {
     ctx.fillStyle = 'rgba(210,225,240,0.22)';
     ctx.font = '12px system-ui, sans-serif';
-    ctx.fillText('鳥の左右2枚翼 + メーター', 10, H - 12);
+    ctx.fillText('鳥の左右2枚翼 超リアル版 + メーター', 10, H - 12);
   }
 
   let lastStamp = performance.now();
