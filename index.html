@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>上下レイアウト超リアル版</title>
+<title>形変化つき形変化版</title>
 <style>
   html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(180deg,#eef5fb,#dbe8f3 45%,#c6dceb);}
   #wrap{position:fixed;inset:0;display:flex;flex-direction:column;}
@@ -25,8 +25,8 @@
     <div class="row"><label>前からの風</label><input id="wind" type="range" min="5" max="50" value="18"></div>
     <div class="row"><label>羽ばたき振幅</label><input id="amp" type="range" min="8" max="80" value="36"></div>
     <div class="row"><label>周波数</label><input id="freq" type="range" min="20" max="120" value="46"></div>
-    <div class="row"><label>翼の迎角変化</label><input id="pitch" type="range" min="0" max="100" value="54"><button id="reset">リセット</button><span class="pill">超リアル版</span></div>
-    <div id="msg">重なりを避けたレイアウトを保ちながら、鳥の見た目をさらに写実寄りにした版です。胴体の陰影、首と頭のつながり、翼の層感、羽先のばらつき、尾の形を強めています。</div>
+    <div class="row"><label>翼の迎角変化</label><input id="pitch" type="range" min="0" max="100" value="54"><button id="reset">リセット</button><span class="pill">形変化版</span></div>
+    <div id="msg">重なりを避けたレイアウトを保ちながら、羽ばたき途中で翼の形そのものが変わる版です。上げ羽では翼がややたたまれ、下げ羽では翼が広がって反りも少し変わります。</div>
   </div>
   <div id="stage"><canvas id="cv"></canvas></div>
 </div>
@@ -92,7 +92,7 @@ function resize(){
 function birdState(t,r){
   const p=P(), ph=t*p.freq*Math.PI*2, down=Math.max(0,Math.sin(ph)), up=Math.max(0,-Math.sin(ph));
   const bodyX=r.x+r.w*.20+2.0*down-0.8*up, bodyY=r.y+r.h*.66+Math.sin(ph-.2)*p.amp*.03;
-  const fold=.18+.60*up, open=.76+.30*down, shSpread=Math.min(20,r.w*.044), shoulderY=bodyY-5+Math.sin(ph)*p.amp*.17+2.0*down, hum=Math.min(22,r.w*.045), fore=Math.min(54,r.w*.108)*(1-.18*fold), hand=Math.min(66,r.w*.125)*(1-.14*fold);
+  const fold=.14+.78*up, open=.68+.46*down, shSpread=Math.min(20,r.w*.044), shoulderY=bodyY-5+Math.sin(ph)*p.amp*.17+2.0*down, hum=Math.min(22,r.w*.045)*(0.96+0.10*down), fore=Math.min(54,r.w*.108)*(0.82+0.30*down)*(1-.14*fold), hand=Math.min(66,r.w*.125)*(0.76+0.42*down)*(1-.10*fold);
   const rightA1=clamp(-0.90+0.85*Math.sin(ph),-1.75,-0.02), rightA2=clamp(rightA1+0.30+0.28*p.pitch+0.10*down,-1.20,0.65), rightA3=clamp(rightA2+0.22+0.22*p.pitch+0.05*Math.sin(ph+0.5),-0.90,1.00);
   return {ph,down,up,bodyX,bodyY,shSpread,shoulderY,hum,fore,hand,leftA1:Math.PI-rightA1,leftA2:Math.PI-rightA2,leftA3:Math.PI-rightA3,rightA1,rightA2,rightA3,vy:p.amp*p.freq*Math.PI*2*Math.cos(ph),fold,open};
 }
@@ -259,30 +259,28 @@ function drawFlowLines(R,set){
 
 function drawFrontWing(w,side){
   const dir=side==='left'?-1:1;
+  const spread = Math.min(1.2, Math.max(0.0, (w.tipX-w.wristX)*dir/18));
   ctx.strokeStyle='rgba(228,235,242,.96)'; ctx.lineWidth=6; ctx.lineCap='round';
   ctx.beginPath(); ctx.moveTo(w.shX,w.shY); ctx.lineTo(w.elbowX,w.elbowY); ctx.lineTo(w.wristX,w.wristY); ctx.stroke();
 
-  // leading edge / acceleration line
   ctx.strokeStyle='rgba(79,168,161,.55)'; ctx.lineWidth=1.6;
   ctx.beginPath(); ctx.moveTo(w.shX,w.shY); ctx.lineTo(w.elbowX,w.elbowY); ctx.stroke();
 
-  // soft wing membrane shadow
   ctx.save();
   ctx.fillStyle='rgba(210,216,224,0.14)';
   ctx.beginPath();
   ctx.moveTo(w.elbowX,w.elbowY);
-  ctx.quadraticCurveTo((w.elbowX+w.wristX)/2+dir*6,(w.elbowY+w.wristY)/2+3,w.wristX,w.wristY);
-  ctx.quadraticCurveTo((w.wristX+w.tipX)/2+dir*10,(w.wristY+w.tipY)/2+6,w.tipX,w.tipY);
+  ctx.quadraticCurveTo((w.elbowX+w.wristX)/2+dir*(5+4*spread),(w.elbowY+w.wristY)/2+3,w.wristX,w.wristY);
+  ctx.quadraticCurveTo((w.wristX+w.tipX)/2+dir*(7+8*spread),(w.wristY+w.tipY)/2+7,w.tipX,w.tipY);
   ctx.quadraticCurveTo((w.elbowX+w.tipX)/2,(w.elbowY+w.tipY)/2+12,w.elbowX,w.elbowY);
   ctx.fill();
   ctx.restore();
 
-  // secondaries
   for(let i=0;i<6;i++){
     const k=i/5;
     const bx=lerp(w.elbowX,w.wristX,0.08+0.80*k), by=lerp(w.elbowY,w.wristY,0.08+0.80*k);
-    const a=w.a2 + dir*(-0.22 + 0.08*i);
-    const length=14+8*k, wid=3.8-0.35*k;
+    const a=w.a2 + dir*(-0.16 - 0.06*spread + 0.08*i);
+    const length=12+10*k+2*spread, wid=3.8-0.35*k;
     ctx.save(); ctx.translate(bx,by); ctx.rotate(a);
     ctx.strokeStyle='rgba(246,247,245,.98)'; ctx.lineWidth=wid; ctx.lineCap='round';
     ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(length,0); ctx.stroke();
@@ -290,12 +288,11 @@ function drawFrontWing(w,side){
     ctx.restore();
   }
 
-  // primaries with slight spread/jitter
   for(let i=0;i<8;i++){
     const k=i/7;
     const bx=lerp(w.wristX,w.tipX,.08+.56*k), by=lerp(w.wristY,w.tipY,.08+.56*k);
-    const a=w.a3+dir*(-.18+.07*i) + dir*(k-0.5)*0.05;
-    const length=18+12*k, wid=4.2-.55*k;
+    const a=w.a3+dir*(-.10 - .16*spread + .09*i) + dir*(k-0.5)*(0.05+0.04*spread);
+    const length=14+14*k+5*spread, wid=4.2-.55*k;
     ctx.save(); ctx.translate(bx,by); ctx.rotate(a);
     ctx.strokeStyle='rgba(249,249,247,.99)'; ctx.lineWidth=wid; ctx.lineCap='round';
     ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(length,0); ctx.stroke();
@@ -386,7 +383,7 @@ function sideKinematics(s,R){
   const bodyCx=R.x+R.w*.15, bodyCy=R.y+R.h*.67+Math.sin(s.ph-.2)*P().amp*.03;
   const tilt=-.10+.08*s.down-.04*s.up;
   const shoulderX=bodyCx-1.2, shoulderY=bodyCy-1.6;
-  const a1=-.95+.54*Math.sin(s.ph), a2=a1+.24*(.25+.9*s.down)-.14*s.fold, a3=a2+.28*(.25+1*s.down)-.18*s.fold;
+  const a1=-1.00+.60*Math.sin(s.ph)-0.06*s.fold, a2=a1+.20+0.22*s.open-0.18*s.fold, a3=a2+.22+0.30*s.open-0.22*s.fold;
   const ex=shoulderX+Math.cos(a1)*15, ey=shoulderY+Math.sin(a1)*15;
   const wx=ex+Math.cos(a2)*(28*(1-.16*s.fold)), wy=ey+Math.sin(a2)*(28*(1-.16*s.fold));
   const tx=wx+Math.cos(a3)*(34*(1-.14*s.fold)), ty=wy+Math.sin(a3)*(34*(1-.14*s.fold));
@@ -399,8 +396,9 @@ function feather(x,y,a,length,wid,alpha){
 function drawSideBird(s,R){
   ctx.save(); ctx.beginPath(); rr(R.x,R.y,R.w,R.h,18); ctx.clip();
   const K=sideKinematics(s,R);
+  const openAmt = s.open;
+  const foldAmt = s.fold;
 
-  // body + head
   ctx.save(); ctx.translate(K.bodyCx,K.bodyCy); ctx.rotate(K.tilt);
 
   const bodyShadow=ctx.createRadialGradient(4,7,1,4,7,22);
@@ -415,13 +413,11 @@ function drawSideBird(s,R){
   g.addColorStop(1,'rgba(198,207,218,.92)');
   ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(0,3,16,10,0.08,0,Math.PI*2); ctx.fill();
 
-  // neck
-  ctx.save(); ctx.translate(-8,-3); ctx.rotate(-0.18+0.05*Math.sin(s.ph-.3));
+  ctx.save(); ctx.translate(-9,-4); ctx.rotate(-.18+0.05*Math.sin(s.ph-.3));
   ctx.strokeStyle='rgba(228,234,240,.95)'; ctx.lineWidth=3.8;
   ctx.beginPath(); ctx.moveTo(0,0); ctx.quadraticCurveTo(-1,-4,0,-8); ctx.stroke();
   ctx.restore();
 
-  // head
   const hg=ctx.createRadialGradient(-9,-9,1,-9,-8,7);
   hg.addColorStop(0,'rgba(255,255,255,.99)');
   hg.addColorStop(1,'rgba(214,220,228,.95)');
@@ -431,7 +427,6 @@ function drawSideBird(s,R){
   ctx.fillStyle='rgba(255,255,255,.8)'; ctx.beginPath(); ctx.arc(-6.8,-9.1,0.25,0,Math.PI*2); ctx.fill();
   ctx.fillStyle='#7b7e85'; ctx.beginPath(); ctx.moveTo(-10.0,-7.7); ctx.lineTo(-14.8,-6.9); ctx.lineTo(-10.0,-6.0); ctx.closePath(); ctx.fill();
 
-  // tail
   ctx.strokeStyle='rgba(220,226,232,.90)'; ctx.lineWidth=1.0;
   for(let i=0;i<4;i++){
     const k=i/3;
@@ -442,22 +437,18 @@ function drawSideBird(s,R){
   }
   ctx.restore();
 
-  // wing exactly from same kinematics as flow/pressure basis
   ctx.strokeStyle='rgba(235,240,245,.92)'; ctx.lineWidth=5.0; ctx.lineCap='round';
   ctx.beginPath(); ctx.moveTo(K.shoulderX,K.shoulderY); ctx.lineTo(K.ex,K.ey); ctx.lineTo(K.wx,K.wy); ctx.stroke();
 
-  // acceleration region on same segment
   ctx.strokeStyle='rgba(79,168,161,.72)'; ctx.lineWidth=1.9;
   ctx.beginPath(); ctx.moveTo(K.shoulderX,K.shoulderY); ctx.lineTo(K.ex,K.ey); ctx.stroke();
 
-  // secondaries
   for(let i=0;i<5;i++){
-    const k=i/4, bx=lerp(K.ex,K.wx,0.08+0.78*k), by=lerp(K.ey,K.wy,0.08+0.78*k), a=K.a2 + (-0.18 + 0.07*i), length=10+5*k, wid=2.8-0.25*k;
+    const k=i/4, bx=lerp(K.ex,K.wx,0.08+0.78*k), by=lerp(K.ey,K.wy,0.08+0.78*k), a=K.a2 + (-0.14 - 0.08*openAmt + 0.07*i), length=8+6*k+2*openAmt, wid=2.8-0.25*k;
     feather(bx,by,a,length,wid,.96);
   }
-  // primaries
   for(let i=0;i<7;i++){
-    const k=i/6,bx=lerp(K.wx,K.tx,.10+.54*k),by=lerp(K.wy,K.ty,.10+.54*k),a=K.a3+(-.18+.07*i)+(k-0.5)*0.04,length=12+7*k,wid=3.2-.35*k;
+    const k=i/6,bx=lerp(K.wx,K.tx,.10+.54*k),by=lerp(K.wy,K.ty,.10+.54*k),a=K.a3+(-.08-.18*openAmt+.09*i)+(k-0.5)*(0.03+0.03*openAmt),length=10+9*k+3*openAmt,wid=3.2-.35*k;
     feather(bx,by,a,length,wid,.98);
   }
 
