@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>前面・側面 独立流体場版 羽ばたきシミュレーション（水平風・真横側面・両翼投影版）</title>
+<title>前面・側面 独立流体場版 羽ばたきシミュレーション（背景風あり・対称境界・両翼投影版）</title>
 <style>
   :root{--safe-top:max(env(safe-area-inset-top),0px);--safe-bottom:max(env(safe-area-inset-bottom),0px)}
   html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(180deg,#eef5fb,#dbe8f3 45%,#c6dceb)}
@@ -62,7 +62,7 @@
         <button id="reset">リセット</button>
       </div>
     </div>
-    <div id="msg">鳥の描画に使っているPath2Dを、そのままオフスクリーンに塗ってsolidマスクを作る版です。風は正面から水平に固定し、側面は斜めではなく真横表示に寄せています。側面マスクには奥の翼の投影も薄く重ねて、1枚翼の不自然さを減らしています。</div>
+    <div id="msg">鳥の描画に使っているPath2Dを、そのままオフスクリーンに塗ってsolidマスクを作る版です。背景風は残しつつ、左右・上下を同型の対称境界にそろえた版です。側面は真横表示に寄せ、側面マスクには奥の翼の投影も薄く重ねています。</div>
   </div>
   <div id="stage"><canvas id="cv"></canvas></div>
   <div id="fabBar">
@@ -411,10 +411,36 @@ function confine(field,dt){
   for(let j=2;j<field.NY-2;j++) for(let i=2;i<field.NX-2;i++){ const id=idx(field,i,j); if(field.solid[id]) continue; const nx=Math.abs(curl[idx(field,i+1,j)])-Math.abs(curl[idx(field,i-1,j)]), ny=Math.abs(curl[idx(field,i,j+1)])-Math.abs(curl[idx(field,i,j-1)]), L=Math.hypot(nx,ny)+1e-6, eps=.10; field.u[id]+=eps*(ny/L)*curl[id]*dt; field.v[id]+=eps*(-nx/L)*curl[id]*dt; }
 }
 function boundaries(field){
-  const p=P(), c=field.cell;
-  for(let j=0;j<field.NY;j++){ field.u[idx(field,0,j)]=p.wind/c; field.v[idx(field,0,j)]=0; field.u[idx(field,field.NX-1,j)]=field.u[idx(field,field.NX-2,j)]; field.v[idx(field,field.NX-1,j)]=field.v[idx(field,field.NX-2,j)]; }
-  for(let i=0;i<field.NX;i++){ field.v[idx(field,i,0)]=0; field.v[idx(field,i,field.NY-1)]=0; field.u[idx(field,i,0)]=field.u[idx(field,i,1)]; field.u[idx(field,i,field.NY-1)]=field.u[idx(field,i,field.NY-2)]; }
-  for(let j=0;j<field.NY;j++) for(let i=0;i<field.NX;i++){ const id=idx(field,i,j); if(field.solid[id]){ field.u[id]=field.svx[id]/c; field.v[id]=field.svy[id]/c; } }
+  const c=field.cell;
+
+  // 左右とも同じ種類の自由境界にする
+  for(let j=0;j<field.NY;j++){
+    field.u[idx(field,0,j)] = field.u[idx(field,1,j)];
+    field.v[idx(field,0,j)] = field.v[idx(field,1,j)];
+
+    field.u[idx(field,field.NX-1,j)] = field.u[idx(field,field.NX-2,j)];
+    field.v[idx(field,field.NX-1,j)] = field.v[idx(field,field.NX-2,j)];
+  }
+
+  // 上下も同じ種類の自由境界にする
+  for(let i=0;i<field.NX;i++){
+    field.u[idx(field,i,0)] = field.u[idx(field,i,1)];
+    field.v[idx(field,i,0)] = field.v[idx(field,i,1)];
+
+    field.u[idx(field,i,field.NY-1)] = field.u[idx(field,i,field.NY-2)];
+    field.v[idx(field,i,field.NY-1)] = field.v[idx(field,i,field.NY-2)];
+  }
+
+  // solid は常に固体速度を優先
+  for(let j=0;j<field.NY;j++){
+    for(let i=0;i<field.NX;i++){
+      const id=idx(field,i,j);
+      if(field.solid[id]){
+        field.u[id]=field.svx[id]/c;
+        field.v[id]=field.svy[id]/c;
+      }
+    }
+  }
 }
 function fluidStepFront(field,dt,Lw,Rw,R,s){ boundaries(field); forceFieldFront(field,s,Lw,Rw,R,dt); repel(field); advect(field,dt); boundaries(field); confine(field,dt); project(field,28); boundaries(field); invalidatePressureMap(field); }
 function fluidStepSide(field,dt,K,R,s){ boundaries(field); forceFieldSide(field,s,K,R,dt); repel(field); advect(field,dt); boundaries(field); confine(field,dt); project(field,28); boundaries(field); invalidatePressureMap(field); }
@@ -527,7 +553,7 @@ function rebuildMasks(state, frontSimR, sideSimR){
 
 function draw(dt){
   const R=rects(), flags={pressure:dom.showPressure.checked,contours:dom.showContours.checked,flow:dom.showFlow.checked};
-  ctx.clearRect(0,0,W,H); card(R.F,'前面ビュー','水平風・真横側面・両翼投影'); card(R.S,'側面ビュー','水平風・真横側面・両翼投影');
+  ctx.clearRect(0,0,W,H); card(R.F,'前面ビュー','背景風あり・対称境界・両翼投影'); card(R.S,'側面ビュー','背景風あり・対称境界・両翼投影');
   const frontSimR=simRect(frontField,R.F), sideSimR=simRect(sideField,R.S);
   const state=birdState(simT,frontSimR);
   const kin = rebuildMasks(state, frontSimR, sideSimR);
