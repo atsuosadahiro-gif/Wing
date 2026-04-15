@@ -4,25 +4,25 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>鳥の見た目リアル追求版</title>
+<title>鳥の羽 写実寄り版</title>
 <style>
   html,body{
     margin:0; padding:0; width:100%; height:100%; overflow:hidden;
-    background: linear-gradient(180deg,#dfeaf5 0%, #cfe0f0 35%, #b7d1e8 100%);
-    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: linear-gradient(180deg,#eef5fb 0%, #dbe9f4 45%, #c5dceb 100%);
+    font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
     color:#102030;
   }
-  #wrap{ position:fixed; inset:0; display:grid; grid-template-rows:auto 1fr; }
+  #wrap{position:fixed; inset:0; display:grid; grid-template-rows:auto 1fr;}
   #ui{
-    background:rgba(255,255,255,0.76);
-    backdrop-filter: blur(8px);
+    background:rgba(255,255,255,0.78);
+    backdrop-filter: blur(10px);
     border-bottom:1px solid rgba(0,0,0,0.08);
     padding:10px 12px 8px;
     z-index:10;
   }
-  .row{ display:flex; align-items:center; gap:10px; margin:8px 0; flex-wrap:wrap; }
-  label{ min-width:108px; font-size:15px; }
-  input[type="range"]{ width:180px; max-width:46vw; }
+  .row{display:flex; align-items:center; gap:10px; margin:8px 0; flex-wrap:wrap;}
+  label{min-width:108px; font-size:15px;}
+  input[type="range"]{width:180px; max-width:46vw;}
   button{
     background:#26435e; color:#eef7ff; border:none; border-radius:12px;
     padding:10px 16px; font-size:15px;
@@ -31,8 +31,8 @@
     display:inline-block; font-size:12px; padding:3px 8px; border-radius:999px;
     background:rgba(38,67,94,.10); color:#26435e; border:1px solid rgba(38,67,94,.15);
   }
-  #msg{ font-size:13px; line-height:1.35; color:#31465c; margin-top:6px; }
-  canvas{ width:100%; height:100%; display:block; touch-action:none; }
+  #msg{font-size:13px; line-height:1.35; color:#31465c; margin-top:6px;}
+  canvas{width:100%; height:100%; display:block; touch-action:none;}
 </style>
 </head>
 <body>
@@ -40,24 +40,24 @@
   <div id="ui">
     <div class="row">
       <label>羽ばたき振幅</label>
-      <input id="amp" type="range" min="10" max="120" value="42" />
+      <input id="amp" type="range" min="10" max="120" value="40" />
     </div>
     <div class="row">
       <label>周波数</label>
-      <input id="freq" type="range" min="20" max="180" value="58" />
+      <input id="freq" type="range" min="20" max="180" value="56" />
     </div>
     <div class="row">
-      <label>翼の反り</label>
-      <input id="twist" type="range" min="0" max="100" value="54" />
+      <label>羽の反り</label>
+      <input id="twist" type="range" min="0" max="100" value="48" />
     </div>
     <div class="row">
       <label>羽の開き</label>
-      <input id="spread" type="range" min="10" max="160" value="72" />
+      <input id="spread" type="range" min="10" max="160" value="76" />
       <button id="reset">リセット</button>
-      <span class="pill">見た目重視</span>
+      <span class="pill">羽 写実寄り</span>
     </div>
     <div id="msg">
-      写真寄りの見た目を狙った版です。白い羽の層、翼端の分離、半透明の羽ばたき残像、体の陰影を強めています。
+      羽を板ではなく、羽軸・羽枝・先端の擦れ・半透明の重なりとして描く版です。見た目を優先し、白いハト系の翼に寄せています。
     </div>
   </div>
   <canvas id="cv"></canvas>
@@ -67,7 +67,6 @@
 (() => {
   const canvas = document.getElementById('cv');
   const ctx = canvas.getContext('2d', { alpha:false });
-
   const ampEl = document.getElementById('amp');
   const freqEl = document.getElementById('freq');
   const twistEl = document.getElementById('twist');
@@ -76,7 +75,9 @@
 
   let W=0, H=0, DPR=Math.min(devicePixelRatio||1,2);
   let simT=0;
-  let trail = [];
+  let featherCache = new Map();
+
+  const lerp=(a,b,t)=>a+(b-a)*t;
 
   function params(){
     return {
@@ -89,51 +90,68 @@
 
   function resize(){
     const uiH = document.getElementById('ui').getBoundingClientRect().height;
-    W = innerWidth; H = innerHeight - uiH;
+    W = innerWidth;
+    H = innerHeight - uiH;
     canvas.width = Math.floor(W*DPR);
     canvas.height = Math.floor(H*DPR);
     canvas.style.width = W+'px';
     canvas.style.height = H+'px';
     ctx.setTransform(DPR,0,0,DPR,0,0);
-    trail = [];
   }
 
-  function lerp(a,b,t){ return a+(b-a)*t; }
+  function sky(){
+    const g = ctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,'#f4f8fc');
+    g.addColorStop(0.42,'#dce8f3');
+    g.addColorStop(1,'#c7dbeb');
+    ctx.fillStyle = g;
+    ctx.fillRect(0,0,W,H);
+
+    // soft vertical bloom like the reference
+    for(let i=0;i<4;i++){
+      const x = W*(0.14 + i*0.23);
+      const lg = ctx.createLinearGradient(x-70,0,x+70,0);
+      lg.addColorStop(0,'rgba(255,255,255,0)');
+      lg.addColorStop(0.5,'rgba(255,255,255,0.17)');
+      lg.addColorStop(1,'rgba(255,255,255,0)');
+      ctx.fillStyle = lg;
+      ctx.fillRect(x-80,0,160,H);
+    }
+  }
 
   function birdState(t){
     const p = params();
     const ph = t * p.freq * Math.PI * 2;
-
-    const x = W*0.52 + Math.sin(ph*0.5)*6;
-    const y = H*0.48 + Math.sin(ph-0.2)*p.amp*0.08;
+    const x = W*0.53;
+    const y = H*0.46 + Math.sin(ph-0.25)*p.amp*0.06;
 
     const down = Math.max(0, Math.sin(ph));
     const up = Math.max(0, -Math.sin(ph));
-    const fold = 0.18 + 0.55*up;
-    const open = 0.70 + 0.45*down*p.spread;
+    const fold = 0.16 + 0.56*up;
+    const open = 0.74 + 0.42*down*p.spread;
 
-    const shSpread = Math.min(24, Math.max(10, W*0.02));
-    const shoulderY = y - 8 + Math.sin(ph)*p.amp*0.55;
+    const shSpread = Math.min(26, Math.max(11, W*0.020));
+    const shoulderY = y - 6 + Math.sin(ph)*p.amp*0.48;
 
-    const hum = Math.min(44, Math.max(24, W*0.044)) * (0.95 + 0.04*down);
-    const fore = Math.min(88, Math.max(54, W*0.088)) * (1.0 - 0.18*fold);
-    const hand = Math.min(84, Math.max(48, W*0.084)) * (1.02 - 0.16*fold);
+    const hum = Math.min(44, Math.max(24, W*0.045));
+    const fore = Math.min(92, Math.max(58, W*0.094)) * (1.0 - 0.18*fold);
+    const hand = Math.min(94, Math.max(56, W*0.096)) * (1.0 - 0.16*fold);
 
-    const base = -Math.PI/2 + 0.86*Math.sin(ph);
-    const elbow = base + 0.32*p.twist*(0.25 + 0.85*down) - 0.22*fold;
-    const wrist = elbow + 0.28*p.twist*(0.25 + 1.00*down) - 0.34*fold;
+    const a1Base = -Math.PI/2 + 0.78*Math.sin(ph);
+    const a2Base = a1Base + 0.30*p.twist*(0.25 + 0.8*down) - 0.24*fold;
+    const a3Base = a2Base + 0.34*p.twist*(0.25 + 1.05*down) - 0.34*fold;
 
-    return {x,y,ph,down,up,fold,open,shSpread,shoulderY,hum,fore,hand,base,elbow,wrist};
+    return {x,y,ph,down,up,fold,open,shSpread,shoulderY,hum,fore,hand,a1Base,a2Base,a3Base};
   }
 
   function wingJoints(s, side){
-    const dir = side === 'left' ? -1 : 1;
+    const dir = side==='left' ? -1 : 1;
     const shX = s.x + dir*s.shSpread;
     const shY = s.shoulderY;
 
-    const a1 = side === 'left' ? Math.PI - s.base : s.base;
-    const a2 = side === 'left' ? Math.PI - s.elbow : s.elbow;
-    const a3 = side === 'left' ? Math.PI - s.wrist : s.wrist;
+    const a1 = side==='left' ? Math.PI - s.a1Base : s.a1Base;
+    const a2 = side==='left' ? Math.PI - s.a2Base : s.a2Base;
+    const a3 = side==='left' ? Math.PI - s.a3Base : s.a3Base;
 
     const elbowX = shX + Math.cos(a1)*s.hum;
     const elbowY = shY + Math.sin(a1)*s.hum;
@@ -141,27 +159,168 @@
     const wristY = elbowY + Math.sin(a2)*s.fore;
     const tipX = wristX + Math.cos(a3)*s.hand;
     const tipY = wristY + Math.sin(a3)*s.hand;
-
     return {shX,shY,elbowX,elbowY,wristX,wristY,tipX,tipY,a1,a2,a3};
   }
 
-  function sky(){
-    const g = ctx.createLinearGradient(0,0,0,H);
-    g.addColorStop(0,'#eef5fb');
-    g.addColorStop(0.55,'#d7e7f4');
-    g.addColorStop(1,'#bfd8ea');
-    ctx.fillStyle = g;
-    ctx.fillRect(0,0,W,H);
+  function featherTexture(len, width, tipGray=false){
+    const key = `${Math.round(len)}_${Math.round(width*10)}_${tipGray?1:0}`;
+    if(featherCache.has(key)) return featherCache.get(key);
 
-    // very soft vertical light bands like the reference
-    for(let i=0;i<4;i++){
-      const x = W*(0.18 + i*0.2) + Math.sin(simT*0.3+i)*20;
-      const lg = ctx.createLinearGradient(x-40,0,x+40,0);
-      lg.addColorStop(0,'rgba(255,255,255,0)');
-      lg.addColorStop(0.5,'rgba(255,255,255,0.18)');
-      lg.addColorStop(1,'rgba(255,255,255,0)');
-      ctx.fillStyle = lg;
-      ctx.fillRect(x-50,0,100,H);
+    const c = document.createElement('canvas');
+    c.width = Math.max(32, Math.ceil(len + width*4));
+    c.height = Math.max(24, Math.ceil(width*6));
+    const g = c.getContext('2d');
+
+    const cx = width*1.8;
+    const cy = c.height/2;
+    const tx = cx + len;
+
+    // soft body
+    const grad = g.createLinearGradient(cx,0,tx,0);
+    grad.addColorStop(0, 'rgba(255,255,255,0.96)');
+    grad.addColorStop(0.65, 'rgba(248,248,246,0.96)');
+    grad.addColorStop(1, tipGray ? 'rgba(205,208,214,0.92)' : 'rgba(238,240,243,0.94)');
+
+    g.fillStyle = grad;
+    g.beginPath();
+    g.moveTo(cx, cy - width*0.55);
+    g.quadraticCurveTo(cx + len*0.55, cy - width*0.62, tx, cy);
+    g.quadraticCurveTo(cx + len*0.48, cy + width*0.52, cx, cy + width*0.50);
+    g.quadraticCurveTo(cx - width*0.3, cy, cx, cy - width*0.55);
+    g.fill();
+
+    // rachis
+    g.strokeStyle = 'rgba(180,184,190,0.42)';
+    g.lineWidth = Math.max(0.8, width*0.10);
+    g.beginPath();
+    g.moveTo(cx, cy);
+    g.lineTo(tx, cy);
+    g.stroke();
+
+    // barbs
+    for(let i=0;i<18;i++){
+      const k = i/17;
+      const bx = lerp(cx+2, tx-4, k);
+      const barb = width * (0.95 - 0.82*k) * (0.55 + 0.45*Math.sin(k*Math.PI));
+      const tilt = 0.20 + 0.18*k;
+      g.strokeStyle = `rgba(225,228,232,${0.22 + 0.16*(1-k)})`;
+      g.lineWidth = 0.7;
+      g.beginPath();
+      g.moveTo(bx, cy);
+      g.lineTo(bx - barb*0.45, cy - barb*(1.0+tilt));
+      g.stroke();
+      g.beginPath();
+      g.moveTo(bx, cy);
+      g.lineTo(bx - barb*0.42, cy + barb*(0.92+tilt));
+      g.stroke();
+    }
+
+    // tip wear / dark tip
+    if(tipGray){
+      const tg = g.createRadialGradient(tx-3, cy, 1, tx-3, cy, width*1.2);
+      tg.addColorStop(0, 'rgba(130,135,145,0.46)');
+      tg.addColorStop(1, 'rgba(130,135,145,0)');
+      g.fillStyle = tg;
+      g.beginPath();
+      g.arc(tx-3, cy, width*1.2, 0, Math.PI*2);
+      g.fill();
+    }
+
+    // wispy edges
+    g.strokeStyle = 'rgba(255,255,255,0.18)';
+    for(let i=0;i<8;i++){
+      const k = i/7;
+      const bx = lerp(cx+len*0.65, tx, k);
+      g.beginPath();
+      g.moveTo(bx, cy - width*(0.12 + 0.20*k));
+      g.lineTo(bx + width*0.10, cy - width*(0.20 + 0.35*k));
+      g.stroke();
+      g.beginPath();
+      g.moveTo(bx, cy + width*(0.10 + 0.18*k));
+      g.lineTo(bx + width*0.10, cy + width*(0.18 + 0.30*k));
+      g.stroke();
+    }
+
+    featherCache.set(key, c);
+    return c;
+  }
+
+  function drawFeather(x,y,angle,len,width,alpha=1,tipGray=false){
+    const img = featherTexture(len,width,tipGray);
+    ctx.save();
+    ctx.translate(x,y);
+    ctx.rotate(angle);
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(img, -width*1.8, -img.height/2);
+    ctx.restore();
+  }
+
+  function drawWingMass(s, w, side, front=true){
+    const depthAlpha = front ? 1.0 : 0.74;
+
+    // soft translucent wing membrane under feathers
+    const pathAlpha = front ? 0.26 : 0.16;
+    const nx1=-Math.sin(w.a1), ny1=Math.cos(w.a1);
+    const nx2=-Math.sin(w.a2), ny2=Math.cos(w.a2);
+    const nx3=-Math.sin(w.a3), ny3=Math.cos(w.a3);
+
+    ctx.save();
+    ctx.fillStyle = `rgba(255,255,255,${pathAlpha})`;
+    ctx.beginPath();
+    ctx.moveTo(w.shX + nx1*4, w.shY + ny1*4);
+    ctx.lineTo(w.elbowX + nx1*8, w.elbowY + ny1*8);
+    ctx.lineTo(w.wristX + nx2*12, w.wristY + ny2*12);
+    ctx.lineTo(w.tipX + nx3*8, w.tipY + ny3*8);
+    ctx.lineTo(w.tipX - nx3*8, w.tipY - ny3*8);
+    ctx.lineTo(w.wristX - nx2*12, w.wristY - ny2*12);
+    ctx.lineTo(w.elbowX - nx1*6, w.elbowY - ny1*6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // motion ghost
+    const dir = side==='left' ? -1 : 1;
+    for(let g=0; g<2; g++){
+      const shift = (g+1)*0.08*dir*Math.sin(s.ph-0.2);
+      const a = (0.10 - g*0.04) * depthAlpha;
+      drawFeather(w.wristX, w.wristY, w.a3+shift, s.hand*0.88, 10, a, false);
+    }
+
+    // covert layers
+    for(let row=0; row<2; row++){
+      for(let i=0;i<7;i++){
+        const k=i/6;
+        const baseX = lerp(w.elbowX, w.wristX, 0.05 + 0.68*k);
+        const baseY = lerp(w.elbowY, w.wristY, 0.05 + 0.68*k);
+        const fang = w.a2 + dir*(-0.10 + 0.14*k) + dir*0.05*s.down;
+        const flen = 18 + 7*k + 5*s.open - row*3;
+        const fwid = 6.6 - 0.9*k;
+        drawFeather(baseX, baseY, fang, flen, fwid, (0.48 - row*0.12)*depthAlpha, false);
+      }
+    }
+
+    // secondaries
+    for(let i=0;i<12;i++){
+      const k=i/11;
+      const baseX = lerp(w.elbowX, w.wristX, 0.05 + 0.78*k);
+      const baseY = lerp(w.elbowY, w.wristY, 0.05 + 0.78*k);
+      const fang = w.a2 + dir*(-0.16 + 0.18*k) + dir*0.08*s.down;
+      const flen = 38 + 14*k + 14*s.open;
+      const fwid = 8.6 - 1.4*k;
+      drawFeather(baseX, baseY, fang, flen, fwid, 0.90*depthAlpha, false);
+    }
+
+    // primaries
+    for(let i=0;i<14;i++){
+      const k=i/13;
+      const baseX = lerp(w.wristX, w.tipX, 0.03 + 0.60*k);
+      const baseY = lerp(w.wristY, w.tipY, 0.03 + 0.60*k);
+      const twist = (k*k) * (0.20 + 0.32*s.down + 0.20*params().twist);
+      const fang = w.a3 + dir*(-0.32 + 0.05*i) + dir*twist - dir*0.14*s.up;
+      const flen = 44 + 26*k + 18*s.open;
+      const fwid = 9.0 - 1.8*k;
+      const grayTip = k > 0.82;
+      drawFeather(baseX, baseY, fang, flen, fwid, 0.94*depthAlpha, grayTip);
     }
   }
 
@@ -169,221 +328,74 @@
     ctx.save();
     ctx.translate(s.x, s.y);
 
-    // tail behind body
-    for(let i=0;i<8;i++){
-      const k = i/7;
-      const a = Math.PI/2 + (-0.46 + 0.92*k)*(0.4 + 0.4*s.down);
-      feather(0, 42, a, 26 + 14*(1-Math.abs(k-0.5)*2), 8, 'rgba(255,255,255,0.92)', 'rgba(205,205,205,0.35)', true);
+    // tail behind
+    for(let i=0;i<9;i++){
+      const k=i/8;
+      const a = Math.PI/2 + (-0.42 + 0.84*k)*(0.42 + 0.42*s.down);
+      drawFeather((k-0.5)*4, 42, a, 24 + 14*(1-Math.abs(k-0.5)*2), 8.4, 0.88, k<0.1 || k>0.9);
     }
 
-    // body shadow
-    ctx.fillStyle = 'rgba(120,145,170,0.14)';
-    ctx.beginPath();
-    ctx.ellipse(0, 8, 38, 52, 0, 0, Math.PI*2);
-    ctx.fill();
-
-    // body plumage
-    const bg = ctx.createRadialGradient(-8,-10,2,0,0,58);
+    // body
+    const bg = ctx.createRadialGradient(-8,-12,2,0,0,62);
     bg.addColorStop(0,'rgba(255,255,255,0.98)');
-    bg.addColorStop(0.55,'rgba(248,248,246,0.96)');
-    bg.addColorStop(0.9,'rgba(224,230,235,0.96)');
-    bg.addColorStop(1,'rgba(205,214,224,0.9)');
+    bg.addColorStop(0.55,'rgba(248,248,246,0.98)');
+    bg.addColorStop(0.9,'rgba(226,230,236,0.98)');
+    bg.addColorStop(1,'rgba(205,214,224,0.92)');
     ctx.fillStyle = bg;
     ctx.beginPath();
-    ctx.ellipse(0, 12, 34, 50, 0, 0, Math.PI*2);
+    ctx.ellipse(0, 12, 34, 52, 0, 0, Math.PI*2);
     ctx.fill();
 
-    // neck/head
-    const hg = ctx.createRadialGradient(0,-28,1,0,-28,22);
-    hg.addColorStop(0,'rgba(255,255,255,0.98)');
-    hg.addColorStop(0.75,'rgba(240,242,244,0.96)');
-    hg.addColorStop(1,'rgba(208,214,222,0.92)');
+    // body fluff overlay
+    for(let i=0;i<18;i++){
+      const a = i/17 * Math.PI*2;
+      const rx = Math.cos(a)*20;
+      const ry = 10 + Math.sin(a)*26;
+      ctx.fillStyle = 'rgba(255,255,255,0.16)';
+      ctx.beginPath();
+      ctx.ellipse(rx*0.4, ry*0.5, 7, 11, a*0.2, 0, Math.PI*2);
+      ctx.fill();
+    }
+
+    // head
+    const hg = ctx.createRadialGradient(0,-30,1,0,-30,22);
+    hg.addColorStop(0,'rgba(255,255,255,0.99)');
+    hg.addColorStop(0.75,'rgba(242,244,246,0.98)');
+    hg.addColorStop(1,'rgba(210,216,224,0.94)');
     ctx.fillStyle = hg;
     ctx.beginPath();
-    ctx.ellipse(0, -28, 16, 18, 0, 0, Math.PI*2);
+    ctx.ellipse(0, -30, 17, 19, 0, 0, Math.PI*2);
     ctx.fill();
 
-    // eye
-    ctx.fillStyle = '#9f7448';
-    ctx.beginPath(); ctx.arc(4,-31,4.5,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#1a1a1a';
-    ctx.beginPath(); ctx.arc(4,-31,1.8,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#bc8b59';
+    ctx.beginPath(); ctx.arc(4,-33,5,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#1b1b1b';
+    ctx.beginPath(); ctx.arc(4,-33,2,0,Math.PI*2); ctx.fill();
 
-    // beak
-    ctx.fillStyle = '#7e8085';
+    ctx.fillStyle = '#84878c';
     ctx.beginPath();
-    ctx.moveTo(0,-29);
-    ctx.lineTo(-14,-27);
-    ctx.lineTo(0,-23);
+    ctx.moveTo(0,-31);
+    ctx.lineTo(-14,-28.5);
+    ctx.lineTo(0,-25);
     ctx.closePath();
     ctx.fill();
 
-    // subtle chest markings
-    ctx.strokeStyle = 'rgba(140,145,150,0.22)';
+    // neck/chest markings
+    ctx.strokeStyle = 'rgba(145,146,150,0.22)';
     ctx.lineWidth = 2;
-    for(let i=0;i<6;i++){
-      const xx = -12 + i*5;
+    for(let i=0;i<7;i++){
+      const xx = -14 + i*4.8;
       ctx.beginPath();
-      ctx.arc(xx, -2 + (i%2)*6, 4, 0.4, 2.6);
+      ctx.arc(xx, -3 + (i%2)*6, 3.8, 0.4, 2.7);
       ctx.stroke();
     }
 
-    // feet hint
-    ctx.fillStyle = 'rgba(210,120,135,0.75)';
-    ctx.beginPath(); ctx.arc(-8, 44, 6, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(8, 44, 6, 0, Math.PI*2); ctx.fill();
+    // feet
+    ctx.fillStyle = 'rgba(214,126,143,0.75)';
+    ctx.beginPath(); ctx.arc(-8, 46, 6.5, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(8, 46, 6.5, 0, Math.PI*2); ctx.fill();
 
     ctx.restore();
-  }
-
-  function feather(x,y,angle,len,width,fill,stroke,tail=false,alpha=1){
-    const fnx = -Math.sin(angle), fny = Math.cos(angle);
-    const tx = x + Math.cos(angle)*len;
-    const ty = y + Math.sin(angle)*len;
-
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = fill;
-    ctx.strokeStyle = stroke;
-    ctx.lineWidth = tail ? 1.1 : 0.8;
-
-    ctx.beginPath();
-    ctx.moveTo(x + fnx*width*0.55, y + fny*width*0.55);
-    ctx.quadraticCurveTo(
-      x + Math.cos(angle)*len*0.54 + fnx*width*0.45,
-      y + Math.sin(angle)*len*0.54 + fny*width*0.45,
-      tx, ty
-    );
-    ctx.quadraticCurveTo(
-      x + Math.cos(angle)*len*0.44 - fnx*width*0.36,
-      y + Math.sin(angle)*len*0.44 - fny*width*0.36,
-      x - fnx*width*0.45, y - fny*width*0.45
-    );
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-
-    // rachis
-    ctx.strokeStyle = 'rgba(185,190,198,0.30)';
-    ctx.lineWidth = 0.7;
-    ctx.beginPath();
-    ctx.moveTo(x,y);
-    ctx.lineTo(tx,ty);
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  function drawWingSurface(s, w, side, front=true){
-    const dir = side === 'left' ? -1 : 1;
-    const depthAlpha = front ? 0.96 : 0.72;
-
-    // subtle motion blur ghost
-    const ghostShift = 0.14 * Math.sin(s.ph - 0.18);
-    for(let g=0; g<2; g++){
-      const fade = 0.10 - g*0.04;
-      const scale = 1 + g*0.03;
-      const ghostA1 = w.a1 + ghostShift*(g+1)*0.35*dir;
-      const ghostA2 = w.a2 + ghostShift*(g+1)*0.55*dir;
-      const ghostA3 = w.a3 + ghostShift*(g+1)*0.75*dir;
-
-      const shX = w.shX, shY = w.shY;
-      const elbowX = shX + Math.cos(ghostA1)*s.hum;
-      const elbowY = shY + Math.sin(ghostA1)*s.hum;
-      const wristX = elbowX + Math.cos(ghostA2)*s.fore*scale;
-      const wristY = elbowY + Math.sin(ghostA2)*s.fore*scale;
-      const tipX = wristX + Math.cos(ghostA3)*s.hand*scale;
-      const tipY = wristY + Math.sin(ghostA3)*s.hand*scale;
-      const nx1=-Math.sin(ghostA1), ny1=Math.cos(ghostA1);
-      const nx2=-Math.sin(ghostA2), ny2=Math.cos(ghostA2);
-      const nx3=-Math.sin(ghostA3), ny3=Math.cos(ghostA3);
-
-      ctx.save();
-      ctx.globalAlpha = fade;
-      ctx.fillStyle = 'rgba(255,255,255,0.85)';
-      ctx.beginPath();
-      ctx.moveTo(shX + nx1*5, shY + ny1*5);
-      ctx.lineTo(elbowX + nx1*7, elbowY + ny1*7);
-      ctx.lineTo(wristX + nx2*10, wristY + ny2*10);
-      ctx.lineTo(tipX + nx3*7, tipY + ny3*7);
-      ctx.lineTo(tipX - nx3*7, tipY - ny3*7);
-      ctx.lineTo(wristX - nx2*10, wristY - ny2*10);
-      ctx.lineTo(elbowX - nx1*5, elbowY - ny1*5);
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
-    }
-
-    // base surfaces
-    const nx1=-Math.sin(w.a1), ny1=Math.cos(w.a1);
-    const nx2=-Math.sin(w.a2), ny2=Math.cos(w.a2);
-    const nx3=-Math.sin(w.a3), ny3=Math.cos(w.a3);
-
-    // inner wing
-    let grad = ctx.createLinearGradient(w.shX,w.shY,w.elbowX,w.elbowY);
-    grad.addColorStop(0, `rgba(255,255,255,${0.98*depthAlpha})`);
-    grad.addColorStop(1, `rgba(238,241,244,${0.90*depthAlpha})`);
-    ctx.fillStyle = grad;
-    ctx.strokeStyle = `rgba(212,217,224,${0.34*depthAlpha})`;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(w.shX + nx1*5.5, w.shY + ny1*5.5);
-    ctx.quadraticCurveTo(
-      lerp(w.shX,w.elbowX,0.45)+nx1*4,
-      lerp(w.shY,w.elbowY,0.45)+ny1*4,
-      w.elbowX + nx1*7.5, w.elbowY + ny1*7.5
-    );
-    ctx.lineTo(w.elbowX - nx1*9, w.elbowY - ny1*9);
-    ctx.quadraticCurveTo(
-      lerp(w.shX,w.elbowX,0.30)-nx1*12,
-      lerp(w.shY,w.elbowY,0.30)-ny1*12,
-      w.shX - nx1*4.5, w.shY - ny1*4.5
-    );
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-
-    // secondary fan
-    for(let i=0;i<11;i++){
-      const k=i/10;
-      const baseX = lerp(w.elbowX, w.wristX, 0.02 + 0.70*k);
-      const baseY = lerp(w.elbowY, w.wristY, 0.02 + 0.70*k);
-      const fang = w.a2 + dir*(-0.16 + 0.18*k) + dir*0.07*s.down;
-      const flen = 34 + 18*k + 14*s.open;
-      const fwid = 7.0 - 1.4*k;
-      feather(baseX, baseY, fang, flen, fwid, `rgba(255,255,255,${0.92*depthAlpha})`, `rgba(208,214,220,${0.26*depthAlpha})`, false, depthAlpha);
-    }
-
-    // primaries
-    for(let i=0;i<12;i++){
-      const k=i/11;
-      const baseX = lerp(w.wristX, w.tipX, 0.02 + 0.52*k);
-      const baseY = lerp(w.wristY, w.tipY, 0.02 + 0.52*k);
-      const twist = (k*k) * (0.16 + 0.30*s.down + 0.22*params().twist);
-      const fang = w.a3 + dir*(-0.30 + 0.06*i) + dir*twist - dir*0.12*s.up;
-      const flen = 40 + 22*k + 18*s.open;
-      const fwid = 7.2 - 1.8*k;
-      const tipGray = k > 0.84 ? 0.22 : 0.0;
-
-      feather(
-        baseX, baseY, fang, flen, fwid,
-        `rgba(${255-20*tipGray*255},${255-20*tipGray*255},${255-20*tipGray*255},${0.95*depthAlpha})`,
-        `rgba(202,208,215,${0.28*depthAlpha})`,
-        false,
-        depthAlpha
-      );
-
-      if(k > 0.80){
-        const tx = baseX + Math.cos(fang)*flen;
-        const ty = baseY + Math.sin(fang)*flen;
-        ctx.save();
-        ctx.globalAlpha = 0.35*depthAlpha;
-        ctx.fillStyle = 'rgba(110,115,124,0.55)';
-        ctx.beginPath();
-        ctx.arc(tx, ty, 2.4 + 2.6*(k-0.80)*5, 0, Math.PI*2);
-        ctx.fill();
-        ctx.restore();
-      }
-    }
   }
 
   function drawBird(){
@@ -391,95 +403,25 @@
     const left = wingJoints(s,'left');
     const right = wingJoints(s,'right');
 
-    drawWingSurface(s, left, 'left', false);
-    drawWingSurface(s, right, 'right', false);
+    drawWingMass(s,left,'left',false);
+    drawWingMass(s,right,'right',false);
     drawBody(s);
-    drawWingSurface(s, left, 'left', true);
-    drawWingSurface(s, right, 'right', true);
+    drawWingMass(s,left,'left',true);
+    drawWingMass(s,right,'right',true);
   }
 
-  function drawMeter(){
-    const x=10,y=10,w=196,h=88;
-    ctx.fillStyle='rgba(255,255,255,0.58)';
-    ctx.fillRect(x,y,w,h);
-    ctx.strokeStyle='rgba(40,60,80,0.20)';
-    ctx.lineWidth=1;
-    ctx.strokeRect(x,y,w,h);
+  function reset(){ simT=0; }
+  resetBtn.addEventListener('click', reset);
 
-    ctx.fillStyle='#23384a';
-    ctx.font='13px system-ui, sans-serif';
-    ctx.fillText(`↑ 揚力: ${liftVal.toFixed(2)}`, x+10, y+22);
-    ctx.fillText(`→ 推力: ${thrustVal.toFixed(2)}`, x+10, y+44);
-    ctx.fillText(`平均 揚力: ${liftAvg.toFixed(2)}`, x+10, y+66);
-    ctx.fillText(`平均 推力: ${thrustAvg.toFixed(2)}`, x+10, y+84);
-
-    const lb=Math.max(-50,Math.min(50,liftAvg*2.0));
-    const tb=Math.max(0,Math.min(90,thrustAvg*1.0));
-    ctx.fillStyle='rgba(102,155,225,0.75)';
-    ctx.fillRect(x+126,y+13,Math.max(0,lb),6);
-    ctx.fillStyle='rgba(214,132,165,0.75)';
-    ctx.fillRect(x+126,y+35,tb,6);
-  }
-
-  function drawLabel(){
-    ctx.fillStyle='rgba(60,80,100,0.42)';
-    ctx.font='12px system-ui, sans-serif';
-    ctx.fillText('鳥の翼 研究モード C', 10, H-12);
-  }
-
-  let lastStamp=performance.now();
   function loop(now){
-    const dt=Math.min(0.033,(now-lastStamp)/1000);
-    lastStamp=now;
-    step(dt);
+    simT = now/1000;
     sky();
-    drawTracers();
-    drawVortices();
     drawBird();
-    drawMeter();
-    drawLabel();
     requestAnimationFrame(loop);
   }
 
-  function pointerPos(ev){
-    const r=canvas.getBoundingClientRect();
-    if(ev.touches&&ev.touches.length){
-      return Array.from(ev.touches).map(t=>({x:t.clientX-r.left,y:t.clientY-r.top}));
-    }
-    return [{x:ev.clientX-r.left,y:ev.clientY-r.top}];
-  }
-  let lastTouchPts=[];
-  function handleTouch(ev){
-    const pts=pointerPos(ev);
-    const next=[];
-    for(let i=0;i<pts.length;i++){
-      const p=pts[i];
-      const prev=lastTouchPts[i]||p;
-      next.push(p);
-      touches.push({
-        x:p.x,y:p.y,
-        vx:(p.x-prev.x)*7,
-        vy:(p.y-prev.y)*7,
-        life:0.20
-      });
-    }
-    lastTouchPts=next;
-    ev.preventDefault();
-  }
-  function endTouch(){ lastTouchPts=[]; }
-
-  canvas.addEventListener('touchstart',handleTouch,{passive:false});
-  canvas.addEventListener('touchmove',handleTouch,{passive:false});
-  canvas.addEventListener('touchend',endTouch,{passive:false});
-  canvas.addEventListener('mousedown',(e)=>handleTouch(e));
-  canvas.addEventListener('mousemove',(e)=>{ if(e.buttons) handleTouch(e); });
-  canvas.addEventListener('mouseup',endTouch);
-
-  resetBtn.addEventListener('click',resetAll);
-  window.addEventListener('resize',resize);
-
+  window.addEventListener('resize', resize);
   resize();
-  resetAll();
   requestAnimationFrame(loop);
 })();
 </script>
