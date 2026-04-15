@@ -3,23 +3,22 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>前面・側面 独立流体場版 羽ばたきシミュレーション</title>
+<title>前面・側面 独立流体場版 羽ばたきシミュレーション（Path2Dマスク一致版）</title>
 <style>
-  :root{--ui-pad-x:12px;--ui-pad-y:10px;--safe-top:max(env(safe-area-inset-top),0px);--safe-bottom:max(env(safe-area-inset-bottom),0px)}
+  :root{--safe-top:max(env(safe-area-inset-top),0px);--safe-bottom:max(env(safe-area-inset-bottom),0px)}
   html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(180deg,#eef5fb,#dbe8f3 45%,#c6dceb)}
   *{box-sizing:border-box}
   #wrap{position:fixed;inset:0;display:flex;flex-direction:column;min-height:100dvh}
-  #ui{flex:0 0 auto;background:rgba(255,255,255,.92);backdrop-filter:blur(10px);border-bottom:1px solid rgba(0,0,0,.08);padding:calc(6px + var(--safe-top)) 10px 4px;z-index:10;display:flex;flex-direction:column;gap:4px;transition:max-height .25s ease, padding .25s ease, opacity .2s ease;overflow:hidden;max-height:420px}
-  #ui.collapsed{max-height:0;padding-top:0;padding-bottom:0;border-bottom-color:transparent;opacity:.0;pointer-events:none}
+  #ui{flex:0 0 auto;background:rgba(255,255,255,.92);backdrop-filter:blur(10px);border-bottom:1px solid rgba(0,0,0,.08);padding:calc(6px + var(--safe-top)) 10px 4px;z-index:10;display:flex;flex-direction:column;gap:4px;transition:max-height .25s ease,padding .25s ease,opacity .2s ease;overflow:hidden;max-height:420px}
+  #ui.collapsed{max-height:0;padding-top:0;padding-bottom:0;border-bottom-color:transparent;opacity:0;pointer-events:none}
   .toolbar{display:flex;gap:6px;align-items:center;justify-content:space-between}
-  .toolbar-left{display:flex;align-items:center;gap:6px;min-width:0}
-  .toolbar-right{display:flex;align-items:center;gap:6px}
+  .toolbar-left,.toolbar-right{display:flex;align-items:center;gap:6px;min-width:0}
   .mini-btn{background:#26435e;color:#eef7ff;border:none;border-radius:10px;padding:6px 10px;font-size:12px;line-height:1;white-space:nowrap}
   .row{display:grid;grid-template-columns:minmax(80px,110px) 1fr;align-items:center;gap:4px 8px;margin:0}
   .row.controls{grid-template-columns:minmax(80px,110px) 1fr auto;align-items:center}
   .toggles{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-  .toggles label{min-width:auto;font-size:12px;display:flex;align-items:center;gap:4px}
-  label{min-width:0;font-size:12px;line-height:1.1}
+  .toggles label{font-size:12px;display:flex;align-items:center;gap:4px}
+  label{font-size:12px;line-height:1.1}
   input[type="range"]{width:100%;min-width:0;height:18px}
   button{background:#26435e;color:#eef7ff;border:none;border-radius:10px;padding:6px 10px;font-size:13px;white-space:nowrap}
   .pill{display:inline-block;font-size:11px;padding:2px 7px;border-radius:999px;background:rgba(38,67,94,.10);color:#26435e;border:1px solid rgba(38,67,94,.15)}
@@ -28,15 +27,11 @@
   canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
   #fabBar{position:fixed;right:10px;bottom:calc(12px + var(--safe-bottom));z-index:20;display:flex;flex-direction:column;gap:8px}
   .fab{width:44px;height:44px;border-radius:999px;border:none;background:rgba(38,67,94,.92);color:#fff;font-size:18px;box-shadow:0 6px 20px rgba(0,0,0,.18)}
-  body.ui-hidden #stage{padding-top:0}
   @media (max-width:760px){
-    #ui{padding-left:10px;padding-right:10px;max-height:360px}
+    #ui{max-height:360px}
     .row,.row.controls{grid-template-columns:1fr}
     .toggles{gap:6px}
     button{width:100%}
-    .pill{justify-self:start}
-    .toolbar{margin-bottom:2px}
-    .toolbar-right .mini-btn{padding:6px 8px;font-size:11px}
   }
 </style>
 </head>
@@ -45,8 +40,8 @@
   <div id="ui">
     <div class="toolbar">
       <div class="toolbar-left">
-        <span class="pill">仕上げ版</span>
-        <span id="statusText" style="font-size:11px;color:#4a6277;">独立流体場・座標整合済み</span>
+        <span class="pill">Path2D一致版</span>
+        <span style="font-size:11px;color:#4a6277;">描画形状＝マスク形状</span>
       </div>
       <div class="toolbar-right">
         <button id="toggleUi" class="mini-btn" type="button">折りたたむ</button>
@@ -67,12 +62,12 @@
         <button id="reset">リセット</button>
       </div>
     </div>
-    <div class="toggles" style="margin-top:2px"><label><input id="showBird" type="checkbox" checked> 鳥描画</label><label><input id="showMask" type="checkbox"> マスク</label><label><input id="showPoints" type="checkbox"> 骨格点</label><label><input id="showForce" type="checkbox"> 力点</label></div><div id="msg">デバッグ版です。鳥描画・マスク・骨格点・力点を切り替えて、ズレの原因を切り分けます。</div>
+    <div id="msg">鳥の描画に使っているPath2Dを、そのままオフスクリーンに塗ってsolidマスクを作る版です。これで見た目とマスクのズレを断ちます。</div>
   </div>
   <div id="stage"><canvas id="cv"></canvas></div>
   <div id="fabBar">
-    <button id="fabToggleUi" class="fab" type="button" aria-label="UI表示切替">▾</button>
-    <button id="fabReset" class="fab" type="button" aria-label="リセット">↺</button>
+    <button id="fabToggleUi" class="fab" type="button">▾</button>
+    <button id="fabReset" class="fab" type="button">↺</button>
   </div>
 </div>
 <script>
@@ -80,6 +75,7 @@
 const dom = {
   canvas: document.getElementById('cv'),
   stage: document.getElementById('stage'),
+  ui: document.getElementById('ui'),
   wind: document.getElementById('wind'),
   amp: document.getElementById('amp'),
   freq: document.getElementById('freq'),
@@ -93,11 +89,6 @@ const dom = {
   fullscreen: document.getElementById('fullscreen'),
   fabToggleUi: document.getElementById('fabToggleUi'),
   fabReset: document.getElementById('fabReset'),
-  ui: document.getElementById('ui'),
-  showBird: document.getElementById('showBird'),
-  showMask: document.getElementById('showMask'),
-  showPoints: document.getElementById('showPoints'),
-  showForce: document.getElementById('showForce'),
 };
 const ctx = dom.canvas.getContext('2d', { alpha:false });
 
@@ -118,8 +109,7 @@ function getParams(){
   };
 }
 const P = getParams;
-
-let W=0,H=0,DPR=Math.min(devicePixelRatio||1,2),t0=0,last=0,simT=0;
+let W=0,H=0,DPR=Math.min(devicePixelRatio||1,2),t0=0,last=0,simT=0, uiCollapsed=false;
 
 function pad(){return Math.max(10,Math.min(20,W*0.015))}
 function gap(){return Math.max(10,Math.min(18,H*0.02))}
@@ -129,33 +119,15 @@ function rects(){
   const innerW=Math.max(220, W-pd*2);
   const innerH=Math.max(220, H-tp*2);
   const ph=Math.max(120, (innerH-gp)/2);
-  return {
-    F:{x:pd,y:tp,w:innerW,h:ph},
-    S:{x:pd,y:tp+ph+gp,w:innerW,h:ph}
-  };
+  return {F:{x:pd,y:tp,w:innerW,h:ph}, S:{x:pd,y:tp+ph+gp,w:innerW,h:ph}};
 }
-
-function rr(x,y,w,h,r){
-  ctx.moveTo(x+r,y);
-  ctx.lineTo(x+w-r,y);
-  ctx.quadraticCurveTo(x+w,y,x+w,y+r);
-  ctx.lineTo(x+w,y+h-r);
-  ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
-  ctx.lineTo(x+r,y+h);
-  ctx.quadraticCurveTo(x,y+h,x,y+h-r);
-  ctx.lineTo(x,y+r);
-  ctx.quadraticCurveTo(x,y,x+r,y);
-}
-
+function rr(x,y,w,h,r){ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y)}
 function card(r,title,sub){
   ctx.save();
   ctx.fillStyle='rgba(255,255,255,.40)'; ctx.beginPath(); rr(r.x+4,r.y+8,r.w,r.h,18); ctx.fill();
   ctx.fillStyle='rgba(255,255,255,.78)'; ctx.beginPath(); rr(r.x,r.y,r.w,r.h,18); ctx.fill();
   ctx.strokeStyle='rgba(70,90,110,.10)'; ctx.lineWidth=1; ctx.beginPath(); rr(r.x,r.y,r.w,r.h,18); ctx.stroke();
-  const g=ctx.createLinearGradient(r.x,r.y,r.x,r.y+r.h);
-  g.addColorStop(0,'rgba(244,248,252,.88)');
-  g.addColorStop(.45,'rgba(220,232,243,.80)');
-  g.addColorStop(1,'rgba(201,220,235,.76)');
+  const g=ctx.createLinearGradient(r.x,r.y,r.x,r.y+r.h); g.addColorStop(0,'rgba(244,248,252,.88)'); g.addColorStop(.45,'rgba(220,232,243,.80)'); g.addColorStop(1,'rgba(201,220,235,.76)');
   ctx.fillStyle=g; ctx.beginPath(); rr(r.x+1,r.y+1,r.w-2,r.h-2,17); ctx.fill();
   ctx.fillStyle='rgba(23,48,71,.84)'; ctx.font='600 15px system-ui'; ctx.fillText(title,r.x+14,r.y+22);
   ctx.fillStyle='rgba(74,98,119,.86)'; ctx.font='12px system-ui'; ctx.fillText(sub,r.x+14,r.y+40);
@@ -165,174 +137,197 @@ function card(r,title,sub){
 function createField(){
   return {
     NX:120, NY:160, cell:7,
-    u:null, v:null, u2:null, v2:null,
-    pf:null, dv:null, solid:null, svx:null, svy:null,
-    tracers:[],
-    pressureCanvas:null,
-    pressureCtx:null,
-    pressureDirty:true,
+    u:null, v:null, u2:null, v2:null, pf:null, dv:null, solid:null, svx:null, svy:null,
+    tracers:[], pressureCanvas:null, pressureCtx:null, pressureDirty:true,
+    maskCanvas:null, maskCtx:null, dp:null, dpDirty:true
   };
 }
+const frontField=createField(), sideField=createField();
+let lift=0, thrust=0, prevFrontState=null, prevSideState=null;
 
-const frontField = createField();
-const sideField = createField();
-let lift=0, thrust=0;
-let prevFrontL=null, prevFrontR=null, prevSide=null;
-
-function idx(field,i,j){ return i + j * field.NX; }
-
+function idx(field,i,j){return i + j*field.NX;}
 function simRect(field, cardRect){
-  const insetX = 8;
-  const insetBottom = 8;
-  const headerH = 52;
-  const availW = Math.max(40, cardRect.w - insetX*2);
-  const availH = Math.max(40, cardRect.h - headerH - insetBottom);
-
-  const rawW = field.NX * field.cell;
-  const rawH = field.NY * field.cell;
-  const scale = Math.min(availW / rawW, availH / rawH);
-
-  const w = Math.floor(rawW * scale);
-  const h = Math.floor(rawH * scale);
-
-  return {
-    x: cardRect.x + Math.floor((cardRect.w - w) / 2),
-    y: cardRect.y + headerH,
-    w,
-    h
-  };
+  const insetX=8, insetBottom=8, headerH=52;
+  const availW=Math.max(40, cardRect.w - insetX*2), availH=Math.max(40, cardRect.h - headerH - insetBottom);
+  const rawW = field.NX * field.cell, rawH = field.NY * field.cell;
+  const scale = Math.min(availW/rawW, availH/rawH);
+  const w=Math.floor(rawW*scale), h=Math.floor(rawH*scale);
+  return {x:cardRect.x+Math.floor((cardRect.w-w)/2), y:cardRect.y+headerH, w, h};
 }
-
-
-function invalidatePressureMap(field){
-  field.pressureDirty = true;
-}
+function invalidatePressureMap(field){ field.pressureDirty = true; field.dpDirty=true; }
 
 function initField(field, rect, mode){
-  field.NX = Math.max(72, Math.floor(rect.w / field.cell));
-  field.NY = Math.max(38, Math.floor(rect.h / field.cell));
-  const n = field.NX * field.NY;
-  field.u = new Float32Array(n);
-  field.v = new Float32Array(n);
-  field.u2 = new Float32Array(n);
-  field.v2 = new Float32Array(n);
-  field.pf = new Float32Array(n);
-  field.dv = new Float32Array(n);
-  field.solid = new Uint8Array(n);
-  field.svx = new Float32Array(n);
-  field.svy = new Float32Array(n);
-  field.tracers = [];
-  const count = mode === 'front' ? 1300 : 900;
-  for(let i=0;i<count;i++){
-    field.tracers.push({x:rand(0,field.NX-1), y:rand(0,field.NY-1), px:0, py:0, age:rand(0,120), life:rand(90,260)});
-  }
-  field.pressureCanvas = null;
-  field.pressureCtx = null;
-  field.pressureDirty = true;
+  field.NX=Math.max(72,Math.floor(rect.w/field.cell));
+  field.NY=Math.max(38,Math.floor(rect.h/field.cell));
+  const n=field.NX*field.NY;
+  field.u=new Float32Array(n); field.v=new Float32Array(n); field.u2=new Float32Array(n); field.v2=new Float32Array(n);
+  field.pf=new Float32Array(n); field.dv=new Float32Array(n); field.solid=new Uint8Array(n); field.svx=new Float32Array(n); field.svy=new Float32Array(n);
+  field.dp=new Float32Array(n);
+  field.tracers=[];
+  const count = mode==='front'?1300:900;
+  for(let i=0;i<count;i++) field.tracers.push({x:rand(0,field.NX-1),y:rand(0,field.NY-1),px:0,py:0,age:rand(0,120),life:rand(90,260)});
+  field.pressureCanvas=null; field.pressureCtx=null; field.maskCanvas=null; field.maskCtx=null; field.pressureDirty=true; field.dpDirty=true;
 }
-
 function resetField(field){
-  field.u.fill(0); field.v.fill(0); field.u2.fill(0); field.v2.fill(0);
-  field.pf.fill(0); field.dv.fill(0); field.solid.fill(0); field.svx.fill(0); field.svy.fill(0);
-  for(const tr of field.tracers){
-    tr.x=rand(0,field.NX-1); tr.y=rand(0,field.NY-1); tr.px=tr.x; tr.py=tr.y; tr.age=rand(0,120); tr.life=rand(90,260);
-  }
+  field.u.fill(0); field.v.fill(0); field.u2.fill(0); field.v2.fill(0); field.pf.fill(0); field.dv.fill(0); field.solid.fill(0); field.svx.fill(0); field.svy.fill(0);
+  for(const tr of field.tracers){ tr.x=rand(0,field.NX-1); tr.y=rand(0,field.NY-1); tr.px=tr.x; tr.py=tr.y; tr.age=rand(0,120); tr.life=rand(90,260); }
   invalidatePressureMap(field);
 }
 
-function getDisplayFlags(){
-  return {
-    pressure: !!dom.showPressure.checked,
-    contours: !!dom.showContours.checked,
-    flow: !!dom.showFlow.checked,
-  };
-}
-
 function birdState(t,r){
-  const p=P(), ph=t*p.freq*Math.PI*2, down=Math.max(0,Math.sin(ph)), up=Math.max(0,-Math.sin(ph));
-  const sc=p.scale;
-  const bodyX=r.x+r.w*.20+(2.0*down-0.8*up)*sc;
-  const bodyY=r.y+r.h*.66+Math.sin(ph-.2)*p.amp*.03;
-  const fold=.14+.78*up, open=.68+.46*down;
-  const shSpread=Math.min(20,r.w*.044)*sc;
-  const shoulderY=bodyY-5*sc+Math.sin(ph)*p.amp*.17+2.0*down*sc;
-  const hum=Math.min(22,r.w*.045)*(0.96+0.10*down)*sc;
-  const fore=Math.min(54,r.w*.108)*(0.82+0.30*down)*(1-.14*fold)*sc;
-  const hand=Math.min(66,r.w*.125)*(0.76+0.42*down)*(1-.10*fold)*sc;
-  const rightA1=clamp(-0.90+0.85*Math.sin(ph),-1.75,-0.02);
-  const rightA2=clamp(rightA1+0.30+0.28*p.pitch+0.10*down,-1.20,0.65);
-  const rightA3=clamp(rightA2+0.22+0.22*p.pitch+0.05*Math.sin(ph+0.5),-0.90,1.00);
-  return {
-    ph,down,up,bodyX,bodyY,shSpread,shoulderY,hum,fore,hand,
-    leftA1:Math.PI-rightA1,leftA2:Math.PI-rightA2,leftA3:Math.PI-rightA3,
-    rightA1,rightA2,rightA3,
-    vy:p.amp*p.freq*Math.PI*2*Math.cos(ph), fold, open, scale:sc,
-  };
+  const p=P(), ph=t*p.freq*Math.PI*2, down=Math.max(0,Math.sin(ph)), up=Math.max(0,-Math.sin(ph)), sc=p.scale;
+  const bodyX=r.x+r.w*.20+(2.0*down-0.8*up)*sc, bodyY=r.y+r.h*.66+Math.sin(ph-.2)*p.amp*.03;
+  const fold=.14+.78*up, open=.68+.46*down, shSpread=Math.min(20,r.w*.044)*sc, shoulderY=bodyY-5*sc+Math.sin(ph)*p.amp*.17+2.0*down*sc;
+  const hum=Math.min(22,r.w*.045)*(0.96+0.10*down)*sc, fore=Math.min(54,r.w*.108)*(0.82+0.30*down)*(1-.14*fold)*sc, hand=Math.min(66,r.w*.125)*(0.76+0.42*down)*(1-.10*fold)*sc;
+  const rightA1=clamp(-0.90+0.85*Math.sin(ph),-1.75,-0.02), rightA2=clamp(rightA1+0.30+0.28*p.pitch+0.10*down,-1.20,0.65), rightA3=clamp(rightA2+0.22+0.22*p.pitch+0.05*Math.sin(ph+0.5),-0.90,1.00);
+  return {ph,down,up,bodyX,bodyY,shSpread,shoulderY,hum,fore,hand,leftA1:Math.PI-rightA1,leftA2:Math.PI-rightA2,leftA3:Math.PI-rightA3,rightA1,rightA2,rightA3,vy:p.amp*p.freq*Math.PI*2*Math.cos(ph),fold,open,scale:sc};
 }
-
 function wing(s,side){
-  const shX=s.bodyX+(side==='left'?-s.shSpread:s.shSpread), shY=s.shoulderY;
-  const a1=side==='left'?s.leftA1:s.rightA1, a2=side==='left'?s.leftA2:s.rightA2, a3=side==='left'?s.leftA3:s.rightA3;
-  const ex=shX+Math.cos(a1)*s.hum, ey=shY+Math.sin(a1)*s.hum;
-  const wx=ex+Math.cos(a2)*s.fore, wy=ey+Math.sin(a2)*s.fore;
-  const tx=wx+Math.cos(a3)*s.hand, ty=wy+Math.sin(a3)*s.hand;
+  const shX=s.bodyX+(side==='left'?-s.shSpread:s.shSpread), shY=s.shoulderY, a1=side==='left'?s.leftA1:s.rightA1, a2=side==='left'?s.leftA2:s.rightA2, a3=side==='left'?s.leftA3:s.rightA3;
+  const ex=shX+Math.cos(a1)*s.hum, ey=shY+Math.sin(a1)*s.hum, wx=ex+Math.cos(a2)*s.fore, wy=ey+Math.sin(a2)*s.fore, tx=wx+Math.cos(a3)*s.hand, ty=wy+Math.sin(a3)*s.hand;
   return {shX,shY,elbowX:ex,elbowY:ey,wristX:wx,wristY:wy,tipX:tx,tipY:ty,a1,a2,a3};
 }
-
 function sideKinematics(s,R){
   const p=P(), sc=p.scale;
-  const bodyCx=R.x+R.w*.15, bodyCy=R.y+R.h*.67+Math.sin(s.ph-.2)*p.amp*.03;
-  const tilt=-.10+.08*s.down-.04*s.up;
-  const shoulderX=bodyCx-1.2*sc, shoulderY=bodyCy-1.6*sc;
-  const a1=-1.00+.60*Math.sin(s.ph)-0.06*s.fold;
-  const a2=a1+.20+0.22*s.open-0.18*s.fold;
-  const a3=a2+.22+0.30*s.open-0.22*s.fold;
-  const ex=shoulderX+Math.cos(a1)*15*sc, ey=shoulderY+Math.sin(a1)*15*sc;
-  const wx=ex+Math.cos(a2)*(28*(1-.16*s.fold))*sc, wy=ey+Math.sin(a2)*(28*(1-.16*s.fold))*sc;
-  const tx=wx+Math.cos(a3)*(34*(1-.14*s.fold))*sc, ty=wy+Math.sin(a3)*(34*(1-.14*s.fold))*sc;
+  const bodyCx=R.x+R.w*.15, bodyCy=R.y+R.h*.67+Math.sin(s.ph-.2)*p.amp*.03, tilt=-.10+.08*s.down-.04*s.up, shoulderX=bodyCx-1.2*sc, shoulderY=bodyCy-1.6*sc;
+  const a1=-1.00+.60*Math.sin(s.ph)-0.06*s.fold, a2=a1+.20+0.22*s.open-0.18*s.fold, a3=a2+.22+0.30*s.open-0.22*s.fold;
+  const ex=shoulderX+Math.cos(a1)*15*sc, ey=shoulderY+Math.sin(a1)*15*sc, wx=ex+Math.cos(a2)*(28*(1-.16*s.fold))*sc, wy=ey+Math.sin(a2)*(28*(1-.16*s.fold))*sc, tx=wx+Math.cos(a3)*(34*(1-.14*s.fold))*sc, ty=wy+Math.sin(a3)*(34*(1-.14*s.fold))*sc;
   return {bodyCx,bodyCy,tilt,shoulderX,shoulderY,ex,ey,wx,wy,tx,ty,a1,a2,a3};
 }
 
-function markCap(field, x1,y1,x2,y2,rad,vx,vy,R){
-  const c=field.cell, NX=field.NX, NY=field.NY;
-  const lx1=(x1-R.x)/c, ly1=(y1-R.y)/c, lx2=(x2-R.x)/c, ly2=(y2-R.y)/c;
-  const minI=clamp(Math.floor(Math.min(lx1,lx2)-rad/c-2),0,NX-1);
-  const maxI=clamp(Math.ceil(Math.max(lx1,lx2)+rad/c+2),0,NX-1);
-  const minJ=clamp(Math.floor(Math.min(ly1,ly2)-rad/c-2),0,NY-1);
-  const maxJ=clamp(Math.ceil(Math.max(ly1,ly2)+rad/c+2),0,NY-1);
-  const dx=lx2-lx1, dy=ly2-ly1, l2=dx*dx+dy*dy+1e-6, rr2=(rad/c)*(rad/c);
-  for(let j=minJ;j<=maxJ;j++) for(let i=minI;i<=maxI;i++){
-    const px=i+.5, py=j+.5; let t=((px-lx1)*dx+(py-ly1)*dy)/l2; t=clamp(t,0,1);
-    const qx=lx1+t*dx, qy=ly1+t*dy, rx=px-qx, ry=py-qy;
-    if(rx*rx+ry*ry<=rr2){const id=idx(field,i,j); field.solid[id]=1; field.svx[id]=vx; field.svy[id]=vy;}
+function makeFrontWingShape(w, side, sc){
+  const dir=side==='left'?-1:1;
+  const spread = Math.min(1.25, Math.max(0.0, (w.tipX-w.wristX)*dir/18));
+  const upper = [
+    {x:w.shX + dir*(2.0*sc), y:w.shY - 5.2*sc},
+    {x:lerp(w.shX,w.elbowX,0.20) + dir*(2.8*sc), y:lerp(w.shY,w.elbowY,0.20) - 6.6*sc},
+    {x:lerp(w.shX,w.elbowX,0.62) + dir*(3.4*sc), y:lerp(w.shY,w.elbowY,0.62) - 7.0*sc},
+    {x:lerp(w.elbowX,w.wristX,0.14) + dir*(4.2*sc), y:lerp(w.elbowY,w.wristY,0.14) - 8.0*sc},
+    {x:lerp(w.elbowX,w.wristX,0.52) + dir*(5.2*sc), y:lerp(w.elbowY,w.wristY,0.52) - 7.4*sc},
+    {x:lerp(w.elbowX,w.wristX,0.88) + dir*(6.2*sc), y:lerp(w.elbowY,w.wristY,0.88) - 6.3*sc},
+    {x:lerp(w.wristX,w.tipX,0.22) + dir*(7.0+1.5*spread)*sc, y:lerp(w.wristY,w.tipY,0.22) - 5.4*sc},
+    {x:lerp(w.wristX,w.tipX,0.60) + dir*(9.8+2.0*spread)*sc, y:lerp(w.wristY,w.tipY,0.60) - 3.8*sc},
+    {x:w.tipX + dir*(11.5+3.0*spread)*sc, y:w.tipY - 1.4*sc},
+  ];
+  const lower = [
+    {x:w.tipX + dir*(6.6+1.0*spread)*sc, y:w.tipY + 5.4*sc},
+    {x:lerp(w.wristX,w.tipX,0.72) + dir*(4.4+0.8*spread)*sc, y:lerp(w.wristY,w.tipY,0.72) + 6.8*sc},
+    {x:lerp(w.wristX,w.tipX,0.30) + dir*(2.1*sc), y:lerp(w.wristY,w.tipY,0.30) + 7.2*sc},
+    {x:lerp(w.elbowX,w.wristX,0.92) + dir*(1.4*sc), y:lerp(w.elbowY,w.wristY,0.92) + 7.0*sc},
+    {x:lerp(w.elbowX,w.wristX,0.58) + dir*(0.3*sc), y:lerp(w.elbowY,w.wristY,0.58) + 7.0*sc},
+    {x:lerp(w.elbowX,w.wristX,0.18) - dir*(0.6*sc), y:lerp(w.elbowY,w.wristY,0.18) + 6.0*sc},
+    {x:lerp(w.shX,w.elbowX,0.64) - dir*(1.0*sc), y:lerp(w.shY,w.elbowY,0.64) + 4.6*sc},
+    {x:lerp(w.shX,w.elbowX,0.24) - dir*(1.3*sc), y:lerp(w.shY,w.elbowY,0.24) + 3.5*sc},
+    {x:w.shX - dir*(1.0*sc), y:w.shY + 2.6*sc},
+  ];
+  return {upper, lower, poly: upper.concat(lower)};
+}
+function makeSideWingShape(K, sc){
+  const upper = [
+    {x:K.shoulderX + 0.8*sc, y:K.shoulderY - 4.0*sc},
+    {x:lerp(K.shoulderX,K.ex,0.24) + 1.8*sc, y:lerp(K.shoulderY,K.ey,0.24) - 5.6*sc},
+    {x:lerp(K.shoulderX,K.ex,0.66) + 2.8*sc, y:lerp(K.shoulderY,K.ey,0.66) - 6.7*sc},
+    {x:lerp(K.ex,K.wx,0.20) + 3.8*sc, y:lerp(K.ey,K.wy,0.20) - 8.3*sc},
+    {x:lerp(K.ex,K.wx,0.62) + 5.4*sc, y:lerp(K.ey,K.wy,0.62) - 7.4*sc},
+    {x:lerp(K.wx,K.tx,0.28) + 7.4*sc, y:lerp(K.wy,K.ty,0.28) - 5.2*sc},
+    {x:lerp(K.wx,K.tx,0.68) + 9.0*sc, y:lerp(K.wy,K.ty,0.68) - 3.3*sc},
+    {x:K.tx + 10.5*sc, y:K.ty - 1.4*sc},
+  ];
+  const lower = [
+    {x:K.tx + 5.6*sc, y:K.ty + 4.4*sc},
+    {x:lerp(K.wx,K.tx,0.70) + 2.5*sc, y:lerp(K.wy,K.ty,0.70) + 5.5*sc},
+    {x:lerp(K.wx,K.tx,0.30) + 1.2*sc, y:lerp(K.wy,K.ty,0.30) + 5.7*sc},
+    {x:lerp(K.ex,K.wx,0.78) + 1.0*sc, y:lerp(K.ey,K.wy,0.78) + 6.1*sc},
+    {x:lerp(K.ex,K.wx,0.30) + 0.0*sc, y:lerp(K.ey,K.wy,0.30) + 6.0*sc},
+    {x:lerp(K.shoulderX,K.ex,0.60) - 0.7*sc, y:lerp(K.shoulderY,K.ey,0.60) + 4.0*sc},
+    {x:lerp(K.shoulderX,K.ex,0.20) - 1.0*sc, y:lerp(K.shoulderY,K.ey,0.20) + 3.0*sc},
+    {x:K.shoulderX - 0.8*sc, y:K.shoulderY + 2.4*sc},
+  ];
+  return {upper, lower, poly: upper.concat(lower)};
+}
+
+function makeFrontBirdPaths(state, Lw, Rw){
+  const sc=state.scale;
+  const left = makeFrontWingShape(Lw,'left',sc), right = makeFrontWingShape(Rw,'right',sc);
+
+  const wingFill = new Path2D();
+  const wingTex = new Path2D();
+  const skeleton = new Path2D();
+  for(const shape of [left,right]){
+    const pts=shape.poly;
+    wingFill.moveTo(pts[0].x,pts[0].y);
+    for(let i=1;i<pts.length;i++) wingFill.lineTo(pts[i].x,pts[i].y);
+    wingFill.closePath();
+    for(let i=0;i<shape.upper.length-1;i++){
+      const p=shape.upper[i], q=shape.lower[Math.min(shape.lower.length-1, shape.lower.length-1-i)];
+      wingTex.moveTo(p.x,p.y); wingTex.lineTo(q.x,q.y);
+    }
   }
+  skeleton.moveTo(Lw.shX,Lw.shY); skeleton.lineTo(Lw.elbowX,Lw.elbowY); skeleton.lineTo(Lw.wristX,Lw.wristY); skeleton.lineTo(Lw.tipX,Lw.tipY);
+  skeleton.moveTo(Rw.shX,Rw.shY); skeleton.lineTo(Rw.elbowX,Rw.elbowY); skeleton.lineTo(Rw.wristX,Rw.wristY); skeleton.lineTo(Rw.tipX,Rw.tipY);
+
+  const body = new Path2D();
+  body.ellipse(state.bodyX, state.bodyY+5*sc, 15*sc, 22*sc, 0, 0, Math.PI*2);
+  body.ellipse(state.bodyX, state.bodyY-10*sc, 6.5*sc, 7.2*sc, 0, 0, Math.PI*2);
+
+  return {left,right,wingFill,wingTex,skeleton,body};
+}
+function makeSideBirdPaths(state, K){
+  const sc=state.scale;
+  const wing = makeSideWingShape(K,sc);
+  const wingFill = new Path2D();
+  const pts = wing.poly;
+  wingFill.moveTo(pts[0].x,pts[0].y);
+  for(let i=1;i<pts.length;i++) wingFill.lineTo(pts[i].x,pts[i].y);
+  wingFill.closePath();
+
+  const wingTex = new Path2D();
+  for(let i=0;i<wing.upper.length-1;i++){
+    const p=wing.upper[i], q=wing.lower[Math.min(wing.lower.length-1, wing.lower.length-1-i)];
+    wingTex.moveTo(p.x,p.y); wingTex.lineTo(q.x,q.y);
+  }
+
+  const skeleton = new Path2D();
+  skeleton.moveTo(K.shoulderX,K.shoulderY); skeleton.lineTo(K.ex,K.ey); skeleton.lineTo(K.wx,K.wy); skeleton.lineTo(K.tx,K.ty);
+
+  const body = new Path2D();
+  body.ellipse(K.bodyCx, K.bodyCy+3*sc, 16*sc, 10*sc, 0.08, 0, Math.PI*2);
+  body.ellipse(K.bodyCx-9*sc, K.bodyCy-8*sc, 5.3*sc, 4.3*sc, 0, 0, Math.PI*2);
+
+  return {wing,wingFill,wingTex,skeleton,body};
 }
 
-function buildFrontMask(field,Lw,Rw,R,dt,s,prevL,prevR){
-  field.solid.fill(0); field.svx.fill(0); field.svy.fill(0);
-  const sc=s.scale;
-  const segs=[
-    [Lw.shX,Lw.shY,Lw.elbowX,Lw.elbowY,6*sc, prevL?(Lw.shX-prevL.shX)/dt:0, prevL?(Lw.shY-prevL.shY)/dt:0],
-    [Lw.elbowX,Lw.elbowY,Lw.wristX,Lw.wristY,8*sc, prevL?(Lw.elbowX-prevL.elbowX)/dt:0, prevL?(Lw.elbowY-prevL.elbowY)/dt:0],
-    [Lw.wristX,Lw.wristY,Lw.tipX,Lw.tipY,6*sc, prevL?(Lw.wristX-prevL.wristX)/dt:0, prevL?(Lw.wristY-prevL.wristY)/dt:0],
-    [Rw.shX,Rw.shY,Rw.elbowX,Rw.elbowY,6*sc, prevR?(Rw.shX-prevR.shX)/dt:0, prevR?(Rw.shY-prevR.shY)/dt:0],
-    [Rw.elbowX,Rw.elbowY,Rw.wristX,Rw.wristY,8*sc, prevR?(Rw.elbowX-prevR.elbowX)/dt:0, prevR?(Rw.elbowY-prevR.elbowY)/dt:0],
-    [Rw.wristX,Rw.wristY,Rw.tipX,Rw.tipY,6*sc, prevR?(Rw.wristX-prevR.wristX)/dt:0, prevR?(Rw.wristY-prevR.wristY)/dt:0],
-    [s.bodyX-8*sc,s.bodyY+4*sc,s.bodyX+8*sc,s.bodyY+4*sc,12*sc,0,0]
-  ];
-  for(const seg of segs) markCap(field, ...seg, R);
-}
+function rasterizePathToMask(field, simR, paths, vx=0, vy=0){
+  const w=field.NX, h=field.NY;
+  if(!field.maskCanvas || field.maskCanvas.width!==w || field.maskCanvas.height!==h){
+    field.maskCanvas=document.createElement('canvas');
+    field.maskCanvas.width=w; field.maskCanvas.height=h;
+    field.maskCtx=field.maskCanvas.getContext('2d', {willReadFrequently:true});
+  }
+  const mctx=field.maskCtx;
+  mctx.setTransform(1,0,0,1,0,0);
+  mctx.clearRect(0,0,w,h);
 
-function buildSideMask(field,K,R,dt,s,prevK){
+  // map world coords -> grid coords
+  const sx = w / simR.w;
+  const sy = h / simR.h;
+  mctx.setTransform(sx,0,0,sy,-simR.x*sx,-simR.y*sy);
+  mctx.fillStyle='black';
+  for(const p of paths) mctx.fill(p);
+
+  const img=mctx.getImageData(0,0,w,h).data;
   field.solid.fill(0); field.svx.fill(0); field.svy.fill(0);
-  const sc=s.scale;
-  const segs=[
-    [K.shoulderX,K.shoulderY,K.ex,K.ey,6*sc, prevK?(K.shoulderX-prevK.shoulderX)/dt:0, prevK?(K.shoulderY-prevK.shoulderY)/dt:0],
-    [K.ex,K.ey,K.wx,K.wy,8*sc, prevK?(K.ex-prevK.ex)/dt:0, prevK?(K.ey-prevK.ey)/dt:0],
-    [K.wx,K.wy,K.tx,K.ty,6*sc, prevK?(K.wx-prevK.wx)/dt:0, prevK?(K.wy-prevK.wy)/dt:0],
-    [K.bodyCx-10*sc,K.bodyCy+2*sc,K.bodyCx+10*sc,K.bodyCy+2*sc,12*sc,0,0]
-  ];
-  for(const seg of segs) markCap(field, ...seg, R);
+  for(let j=0;j<h;j++){
+    for(let i=0;i<w;i++){
+      const a=img[(i+j*w)*4+3];
+      if(a>8){
+        const id=idx(field,i,j);
+        field.solid[id]=1;
+        field.svx[id]=vx;
+        field.svy[id]=vy;
+      }
+    }
+  }
 }
 
 function samp(field,arr,x,y){
@@ -341,647 +336,190 @@ function samp(field,arr,x,y){
   const a=arr[idx(field,i0,j0)],b=arr[idx(field,i1,j0)],c=arr[idx(field,i0,j1)],d=arr[idx(field,i1,j1)];
   return lerp(lerp(a,b,sx),lerp(c,d,sx),sy);
 }
-
 function advect(field,dt){
   const p=P(), c=field.cell;
   for(let j=0;j<field.NY;j++) for(let i=0;i<field.NX;i++){
     const id=idx(field,i,j);
     if(field.solid[id]){field.u2[id]=field.svx[id]/c; field.v2[id]=field.svy[id]/c; continue;}
     const x=i+.5,y=j+.5,bx=x-field.u[id]*dt,by=y-field.v[id]*dt;
-    field.u2[id]=samp(field,field.u,bx,by);
-    field.v2[id]=samp(field,field.v,bx,by);
-    field.u2[id]=.97*field.u2[id]+.03*(p.wind/c);
+    field.u2[id]=samp(field,field.u,bx,by); field.v2[id]=samp(field,field.v,bx,by); field.u2[id]=.97*field.u2[id]+.03*(p.wind/c);
   }
-  [field.u,field.u2]=[field.u2,field.u];
-  [field.v,field.v2]=[field.v2,field.v];
+  [field.u,field.u2]=[field.u2,field.u]; [field.v,field.v2]=[field.v2,field.v];
 }
-
 function repel(field){
   for(let j=1;j<field.NY-1;j++) for(let i=1;i<field.NX-1;i++){
     const id=idx(field,i,j); if(field.solid[id]) continue;
-    let fx=0, fy=0;
-    for(const [ni,nj] of [[1,0],[-1,0],[0,1],[0,-1]]) if(field.solid[idx(field,i+ni,j+nj)]){fx-=ni*.22; fy-=nj*.22;}
+    let fx=0,fy=0; for(const [ni,nj] of [[1,0],[-1,0],[0,1],[0,-1]]) if(field.solid[idx(field,i+ni,j+nj)]){fx-=ni*.22; fy-=nj*.22;}
     field.u[id]+=fx; field.v[id]+=fy;
   }
 }
-
 function forceFieldFront(field,s,Lw,Rw,R,dt){
   const p=P(), c=field.cell;
-  for(let j=0;j<field.NY;j++) for(let i=0;i<3;i++){
-    const id=idx(field,i,j); if(!field.solid[id]){field.u[id]=p.wind/c; field.v[id]=0;}
-  }
+  for(let j=0;j<field.NY;j++) for(let i=0;i<3;i++){const id=idx(field,i,j); if(!field.solid[id]){field.u[id]=p.wind/c; field.v[id]=0;}}
   if(s.down>.05){
     for(const wing of [Lw,Rw]){
-      const pts=[
-        {x:lerp(wing.shX,wing.elbowX,.28),y:lerp(wing.shY,wing.elbowY,.28)},
-        {x:lerp(wing.shX,wing.elbowX,.58),y:lerp(wing.shY,wing.elbowY,.58)}
-      ];
+      const pts=[{x:lerp(wing.shX,wing.elbowX,.28),y:lerp(wing.shY,wing.elbowY,.28)},{x:lerp(wing.shX,wing.elbowX,.58),y:lerp(wing.shY,wing.elbowY,.58)}];
       for(const pt of pts){
         const cx=(pt.x-R.x)/c, cy=(pt.y-R.y)/c, rad=5+5*p.pitch;
-        for(let j=Math.max(0,Math.floor(cy-rad)); j<=Math.min(field.NY-1,Math.ceil(cy+rad)); j++){
-          for(let i=Math.max(0,Math.floor(cx-rad)); i<=Math.min(field.NX-1,Math.ceil(cx+rad)); i++){
-            const dx=i+.5-cx, dy=j+.5-cy, d2=dx*dx+dy*dy+1e-6;
-            if(d2<rad*rad){
-              const id=idx(field,i,j); if(field.solid[id]) continue;
-              const swirl=(.9+1.1*p.pitch)*(1-d2/(rad*rad)), sign=wing===Lw?1:-1;
-              field.u[id]+=-dy*swirl*sign*dt;
-              field.v[id]+=dx*swirl*sign*dt;
-              field.v[id]+=.8*(1-d2/(rad*rad))*dt;
-            }
-          }
+        for(let j=Math.max(0,Math.floor(cy-rad)); j<=Math.min(field.NY-1,Math.ceil(cy+rad)); j++) for(let i=Math.max(0,Math.floor(cx-rad)); i<=Math.min(field.NX-1,Math.ceil(cx+rad)); i++){
+          const dx=i+.5-cx, dy=j+.5-cy, d2=dx*dx+dy*dy+1e-6; if(d2<rad*rad){ const id=idx(field,i,j); if(field.solid[id]) continue; const swirl=(.9+1.1*p.pitch)*(1-d2/(rad*rad)), sign=wing===Lw?1:-1; field.u[id]+=-dy*swirl*sign*dt; field.v[id]+=dx*swirl*sign*dt; field.v[id]+=.8*(1-d2/(rad*rad))*dt; }
         }
       }
     }
   }
 }
-
 function forceFieldSide(field,s,K,R,dt){
   const p=P(), c=field.cell;
-  for(let j=0;j<field.NY;j++) for(let i=0;i<3;i++){
-    const id=idx(field,i,j); if(!field.solid[id]){field.u[id]=p.wind/c; field.v[id]=0;}
-  }
-  const span = [
-    {x:lerp(K.shoulderX,K.ex,.35), y:lerp(K.shoulderY,K.ey,.35), q:.65},
-    {x:lerp(K.ex,K.wx,.45), y:lerp(K.ey,K.wy,.45), q:1.0},
-    {x:lerp(K.wx,K.tx,.55), y:lerp(K.wy,K.ty,.55), q:1.25},
-  ];
+  for(let j=0;j<field.NY;j++) for(let i=0;i<3;i++){const id=idx(field,i,j); if(!field.solid[id]){field.u[id]=p.wind/c; field.v[id]=0;}}
+  const span=[{x:lerp(K.shoulderX,K.ex,.35),y:lerp(K.shoulderY,K.ey,.35),q:.65},{x:lerp(K.ex,K.wx,.45),y:lerp(K.ey,K.wy,.45),q:1.0},{x:lerp(K.wx,K.tx,.55),y:lerp(K.wy,K.ty,.55),q:1.25}];
   for(const pt of span){
-    const cx=(pt.x-R.x)/c, cy=(pt.y-R.y)/c;
-    const rad = 6 + 8*p.pitch + 2*s.open;
-    for(let j=Math.max(0,Math.floor(cy-rad)); j<=Math.min(field.NY-1,Math.ceil(cy+rad)); j++){
-      for(let i=Math.max(0,Math.floor(cx-rad)); i<=Math.min(field.NX-1,Math.ceil(cx+rad)); i++){
-        const dx=i+.5-cx, dy=j+.5-cy, d2=dx*dx+dy*dy+1e-6;
-        if(d2<rad*rad){
-          const id=idx(field,i,j); if(field.solid[id]) continue;
-          const k=(1-d2/(rad*rad))*pt.q;
-          field.u[id] += 0.35*k*dt;
-          field.v[id] += (0.95+0.55*p.pitch)*k*dt;
-        }
-      }
-    }
-  }
-  if(s.up>.08){
-    const cx=(K.wx-R.x)/c, cy=(K.wy-R.y)/c, rad=7+5*s.fold;
-    for(let j=Math.max(0,Math.floor(cy-rad)); j<=Math.min(field.NY-1,Math.ceil(cy+rad)); j++){
-      for(let i=Math.max(0,Math.floor(cx-rad)); i<=Math.min(field.NX-1,Math.ceil(cx+rad)); i++){
-        const dx=i+.5-cx, dy=j+.5-cy, d2=dx*dx+dy*dy+1e-6;
-        if(d2<rad*rad){
-          const id=idx(field,i,j); if(field.solid[id]) continue;
-          const k=(1-d2/(rad*rad))*0.7;
-          field.v[id] -= 0.7*k*dt;
-        }
-      }
+    const cx=(pt.x-R.x)/c, cy=(pt.y-R.y)/c, rad=6+8*p.pitch+2*s.open;
+    for(let j=Math.max(0,Math.floor(cy-rad)); j<=Math.min(field.NY-1,Math.ceil(cy+rad)); j++) for(let i=Math.max(0,Math.floor(cx-rad)); i<=Math.min(field.NX-1,Math.ceil(cx+rad)); i++){
+      const dx=i+.5-cx, dy=j+.5-cy, d2=dx*dx+dy*dy+1e-6; if(d2<rad*rad){ const id=idx(field,i,j); if(field.solid[id]) continue; const k=(1-d2/(rad*rad))*pt.q; field.u[id]+=0.35*k*dt; field.v[id]+=(0.95+0.55*p.pitch)*k*dt; }
     }
   }
 }
-
 function divergence(field){
-  for(let j=1;j<field.NY-1;j++) for(let i=1;i<field.NX-1;i++){
-    const id=idx(field,i,j);
-    if(field.solid[id]){field.dv[id]=0; field.pf[id]=0; continue;}
-    field.dv[id]=-.5*((field.u[idx(field,i+1,j)]-field.u[idx(field,i-1,j)])+(field.v[idx(field,i,j+1)]-field.v[idx(field,i,j-1)]));
-    field.pf[id]=0;
-  }
+  for(let j=1;j<field.NY-1;j++) for(let i=1;i<field.NX-1;i++){ const id=idx(field,i,j); if(field.solid[id]){field.dv[id]=0; field.pf[id]=0; continue;} field.dv[id]=-.5*((field.u[idx(field,i+1,j)]-field.u[idx(field,i-1,j)])+(field.v[idx(field,i,j+1)]-field.v[idx(field,i,j-1)])); field.pf[id]=0; }
 }
-
 function project(field,iter=28){
   divergence(field);
-  for(let k=0;k<iter;k++){
-    for(let j=1;j<field.NY-1;j++) for(let i=1;i<field.NX-1;i++){
-      const id=idx(field,i,j); if(field.solid[id]) continue;
-      let sum=0,c=0;
-      for(const n of [idx(field,i+1,j),idx(field,i-1,j),idx(field,i,j+1),idx(field,i,j-1)]) if(!field.solid[n]){sum+=field.pf[n]; c++;}
-      if(c>0) field.pf[id]=(field.dv[id]+sum)/c;
-    }
-  }
-  for(let j=1;j<field.NY-1;j++) for(let i=1;i<field.NX-1;i++){
-    const id=idx(field,i,j);
-    if(field.solid[id]){field.u[id]=field.svx[id]/field.cell; field.v[id]=field.svy[id]/field.cell; continue;}
-    field.u[id]-=.5*(field.pf[idx(field,i+1,j)]-field.pf[idx(field,i-1,j)]);
-    field.v[id]-=.5*(field.pf[idx(field,i,j+1)]-field.pf[idx(field,i,j-1)]);
-  }
+  for(let k=0;k<iter;k++) for(let j=1;j<field.NY-1;j++) for(let i=1;i<field.NX-1;i++){ const id=idx(field,i,j); if(field.solid[id]) continue; let sum=0,c=0; for(const n of [idx(field,i+1,j),idx(field,i-1,j),idx(field,i,j+1),idx(field,i,j-1)]) if(!field.solid[n]){sum+=field.pf[n]; c++;} if(c>0) field.pf[id]=(field.dv[id]+sum)/c; }
+  for(let j=1;j<field.NY-1;j++) for(let i=1;i<field.NX-1;i++){ const id=idx(field,i,j); if(field.solid[id]){field.u[id]=field.svx[id]/field.cell; field.v[id]=field.svy[id]/field.cell; continue;} field.u[id]-=.5*(field.pf[idx(field,i+1,j)]-field.pf[idx(field,i-1,j)]); field.v[id]-=.5*(field.pf[idx(field,i,j+1)]-field.pf[idx(field,i,j-1)]); }
 }
-
 function confine(field,dt){
   const curl=new Float32Array(field.NX*field.NY);
-  for(let j=1;j<field.NY-1;j++) for(let i=1;i<field.NX-1;i++) curl[idx(field,i,j)] = .5*(field.v[idx(field,i+1,j)]-field.v[idx(field,i-1,j)]-field.u[idx(field,i,j-1)]+field.u[idx(field,i,j+1)]);
-  for(let j=2;j<field.NY-2;j++) for(let i=2;i<field.NX-2;i++){
-    const id=idx(field,i,j); if(field.solid[id]) continue;
-    const nx=Math.abs(curl[idx(field,i+1,j)])-Math.abs(curl[idx(field,i-1,j)]);
-    const ny=Math.abs(curl[idx(field,i,j+1)])-Math.abs(curl[idx(field,i,j-1)]);
-    const L=Math.hypot(nx,ny)+1e-6, eps=.10;
-    field.u[id]+=eps*(ny/L)*curl[id]*dt;
-    field.v[id]+=eps*(-nx/L)*curl[id]*dt;
-  }
+  for(let j=1;j<field.NY-1;j++) for(let i=1;i<field.NX-1;i++) curl[idx(field,i,j)]=.5*(field.v[idx(field,i+1,j)]-field.v[idx(field,i-1,j)]-field.u[idx(field,i,j-1)]+field.u[idx(field,i,j+1)]);
+  for(let j=2;j<field.NY-2;j++) for(let i=2;i<field.NX-2;i++){ const id=idx(field,i,j); if(field.solid[id]) continue; const nx=Math.abs(curl[idx(field,i+1,j)])-Math.abs(curl[idx(field,i-1,j)]), ny=Math.abs(curl[idx(field,i,j+1)])-Math.abs(curl[idx(field,i,j-1)]), L=Math.hypot(nx,ny)+1e-6, eps=.10; field.u[id]+=eps*(ny/L)*curl[id]*dt; field.v[id]+=eps*(-nx/L)*curl[id]*dt; }
 }
-
 function boundaries(field){
   const p=P(), c=field.cell;
-  for(let j=0;j<field.NY;j++){
-    field.u[idx(field,0,j)]=p.wind/c;
-    field.v[idx(field,0,j)]=0;
-    field.u[idx(field,field.NX-1,j)] = field.u[idx(field,field.NX-2,j)];
-    field.v[idx(field,field.NX-1,j)] = field.v[idx(field,field.NX-2,j)];
-  }
-  for(let i=0;i<field.NX;i++){
-    field.v[idx(field,i,0)]=0; field.v[idx(field,i,field.NY-1)]=0;
-    field.u[idx(field,i,0)] = field.u[idx(field,i,1)];
-    field.u[idx(field,i,field.NY-1)] = field.u[idx(field,i,field.NY-2)];
-  }
-  for(let j=0;j<field.NY;j++) for(let i=0;i<field.NX;i++){
-    const id=idx(field,i,j);
-    if(field.solid[id]){field.u[id]=field.svx[id]/c; field.v[id]=field.svy[id]/c;}
-  }
+  for(let j=0;j<field.NY;j++){ field.u[idx(field,0,j)]=p.wind/c; field.v[idx(field,0,j)]=0; field.u[idx(field,field.NX-1,j)]=field.u[idx(field,field.NX-2,j)]; field.v[idx(field,field.NX-1,j)]=field.v[idx(field,field.NX-2,j)]; }
+  for(let i=0;i<field.NX;i++){ field.v[idx(field,i,0)]=0; field.v[idx(field,i,field.NY-1)]=0; field.u[idx(field,i,0)]=field.u[idx(field,i,1)]; field.u[idx(field,i,field.NY-1)]=field.u[idx(field,i,field.NY-2)]; }
+  for(let j=0;j<field.NY;j++) for(let i=0;i<field.NX;i++){ const id=idx(field,i,j); if(field.solid[id]){ field.u[id]=field.svx[id]/c; field.v[id]=field.svy[id]/c; } }
 }
+function fluidStepFront(field,dt,Lw,Rw,R,s){ boundaries(field); forceFieldFront(field,s,Lw,Rw,R,dt); repel(field); advect(field,dt); boundaries(field); confine(field,dt); project(field,28); boundaries(field); invalidatePressureMap(field); }
+function fluidStepSide(field,dt,K,R,s){ boundaries(field); forceFieldSide(field,s,K,R,dt); repel(field); advect(field,dt); boundaries(field); confine(field,dt); project(field,28); boundaries(field); invalidatePressureMap(field); }
+function updateTracers(field,dt){ for(const tr of field.tracers){ tr.age+=dt*60; tr.px=tr.x; tr.py=tr.y; const uu=samp(field,field.u,tr.x,tr.y), vv=samp(field,field.v,tr.x,tr.y); tr.x+=uu*dt*28; tr.y+=vv*dt*28; if(tr.x<-2||tr.x>field.NX+2||tr.y<-2||tr.y>field.NY+2||tr.age>tr.life){ tr.x=rand(-3,0); tr.y=rand(0,field.NY); tr.px=tr.x; tr.py=tr.y; tr.age=0; tr.life=rand(90,260);} } }
+function updateForces(field,K,R){ let lf=0,th=0,n=0; for(const pt of [{x:lerp(K.shoulderX,K.wx,.35), y:lerp(K.shoulderY,K.wy,.35)},{x:lerp(K.ex,K.tx,.50), y:lerp(K.ey,K.ty,.50)}]){ const gx=(pt.x-R.x)/field.cell, gy=(pt.y-R.y)/field.cell; lf += samp(field,field.v,gx,gy+3)-samp(field,field.v,gx,gy-3); th += samp(field,field.u,gx+4,gy)-samp(field,field.u,gx-4,gy); n++; } if(n>0){ lift=.86*lift+.14*Math.max(0,lf/n); thrust=.86*thrust+.14*Math.max(0,th/n+.15);} }
 
-function fluidStepFront(field,dt,Lw,Rw,R,s){
-  buildFrontMask(field,Lw,Rw,R,Math.max(dt,1/60),s,prevFrontL,prevFrontR);
-  boundaries(field); forceFieldFront(field,s,Lw,Rw,R,dt); repel(field); advect(field,dt); boundaries(field); confine(field,dt); project(field,28); boundaries(field); invalidatePressureMap(field);
-}
-
-function fluidStepSide(field,dt,K,R,s){
-  buildSideMask(field,K,R,Math.max(dt,1/60),s,prevSide);
-  boundaries(field); forceFieldSide(field,s,K,R,dt); repel(field); advect(field,dt); boundaries(field); confine(field,dt); project(field,28); boundaries(field); invalidatePressureMap(field);
-}
-
-function updateTracers(field,dt){
-  for(const tr of field.tracers){
-    tr.age += dt*60; tr.px=tr.x; tr.py=tr.y;
-    const uu=samp(field,field.u,tr.x,tr.y), vv=samp(field,field.v,tr.x,tr.y);
-    tr.x += uu*dt*28;
-    tr.y += vv*dt*28;
-    if(tr.x<-2||tr.x>field.NX+2||tr.y<-2||tr.y>field.NY+2||tr.age>tr.life){
-      tr.x=rand(-3,0); tr.y=rand(0,field.NY); tr.px=tr.x; tr.py=tr.y; tr.age=0; tr.life=rand(90,260);
-    }
-  }
-}
-
-function updateForces(field,K,R){
-  let lf=0, th=0, n=0;
-  for(const pt of [
-    {x:lerp(K.shoulderX,K.wx,.35), y:lerp(K.shoulderY,K.wy,.35)},
-    {x:lerp(K.ex,K.tx,.50), y:lerp(K.ey,K.ty,.50)}
-  ]){
-    const gx=(pt.x-R.x)/field.cell, gy=(pt.y-R.y)/field.cell;
-    lf += samp(field,field.v,gx,gy+3)-samp(field,field.v,gx,gy-3);
-    th += samp(field,field.u,gx+4,gy)-samp(field,field.u,gx-4,gy);
-    n++;
-  }
-  if(n>0){ lift=.86*lift+.14*Math.max(0,lf/n); thrust=.86*thrust+.14*Math.max(0,th/n+.15); }
-}
-
-function pressureRGBA(val){
-  const v = clamp(val, -1.0, 1.0);
-  const mag = Math.pow(Math.abs(v), 0.42);
-  function mix(a,b,k){ return a + (b-a)*k; }
-  let r,g,b,a;
-  if(v < 0){
-    if(mag < 0.5){
-      const k = mag / 0.5;
-      r = mix(250, 120, k); g = mix(252, 188, k); b = mix(255, 238, k); a = mix(0.10, 0.52, k);
-    }else{
-      const k = (mag - 0.5) / 0.5;
-      r = mix(120, 8, k); g = mix(188, 52, k); b = mix(238, 150, k); a = mix(0.52, 0.98, k);
-    }
-  }else{
-    if(mag < 0.5){
-      const k = mag / 0.5;
-      r = mix(255, 248, k); g = mix(248, 168, k); b = mix(242, 168, k); a = mix(0.10, 0.52, k);
-    }else{
-      const k = (mag - 0.5) / 0.5;
-      r = mix(248, 118, k); g = mix(168, 16, k); b = mix(168, 28, k); a = mix(0.52, 0.98, k);
-    }
-  }
-  return {r:r|0, g:g|0, b:b|0, a:Math.max(0, Math.min(255, Math.round(a*255)))};
-}
-
+function pressureRGBA(val){ const v=clamp(val,-1,1), mag=Math.pow(Math.abs(v),0.42); const mix=(a,b,k)=>a+(b-a)*k; let r,g,b,a; if(v<0){ if(mag<.5){ const k=mag/.5; r=mix(250,120,k); g=mix(252,188,k); b=mix(255,238,k); a=mix(.10,.52,k);} else { const k=(mag-.5)/.5; r=mix(120,8,k); g=mix(188,52,k); b=mix(238,150,k); a=mix(.52,.98,k);} } else { if(mag<.5){ const k=mag/.5; r=mix(255,248,k); g=mix(248,168,k); b=mix(242,168,k); a=mix(.10,.52,k);} else { const k=(mag-.5)/.5; r=mix(248,118,k); g=mix(168,16,k); b=mix(168,28,k); a=mix(.52,.98,k);} } return {r:r|0,g:g|0,b:b|0,a:Math.max(0,Math.min(255,Math.round(a*255)))}; }
 function buildPressureImage(field){
-  const w = Math.max(1, Math.floor(field.NX * field.cell));
-  const h = Math.max(1, Math.floor(field.NY * field.cell));
-  if(!field.pressureCanvas || field.pressureCanvas.width !== w || field.pressureCanvas.height !== h){
-    field.pressureCanvas = document.createElement('canvas');
-    field.pressureCanvas.width = w;
-    field.pressureCanvas.height = h;
-    field.pressureCtx = field.pressureCanvas.getContext('2d');
-    field.pressureDirty = true;
-  }
+  const w=Math.max(1,Math.floor(field.NX*field.cell)), h=Math.max(1,Math.floor(field.NY*field.cell));
+  if(!field.pressureCanvas || field.pressureCanvas.width!==w || field.pressureCanvas.height!==h){ field.pressureCanvas=document.createElement('canvas'); field.pressureCanvas.width=w; field.pressureCanvas.height=h; field.pressureCtx=field.pressureCanvas.getContext('2d'); field.pressureDirty=true; }
   if(!field.pressureDirty) return field.pressureCanvas;
-
-  const img = field.pressureCtx.createImageData(w,h);
-  const data = img.data;
-  for(let py=0; py<h; py++){
-    for(let px=0; px<w; px++){
-      const gx = px / field.cell;
-      const gy = py / field.cell;
-      const i = Math.floor(gx), j = Math.floor(gy);
-      if(i < 0 || j < 0 || i >= field.NX-1 || j >= field.NY-1) continue;
-      const fx = gx - i, fy = gy - j;
-      const p00 = field.pf[idx(field,i,j)], p10 = field.pf[idx(field,i+1,j)], p01 = field.pf[idx(field,i,j+1)], p11 = field.pf[idx(field,i+1,j+1)];
-      const p = p00*(1-fx)*(1-fy) + p10*fx*(1-fy) + p01*(1-fx)*fy + p11*fx*fy;
-      const c = pressureRGBA(p);
-      const k = (py*w + px) * 4;
-      data[k]=c.r; data[k+1]=c.g; data[k+2]=c.b; data[k+3]=c.a;
-    }
-  }
-  field.pressureCtx.putImageData(img,0,0);
-  field.pressureDirty = false;
-  return field.pressureCanvas;
+  const img=field.pressureCtx.createImageData(w,h), data=img.data;
+  for(let py=0; py<h; py++) for(let px=0; px<w; px++){ const gx=px/field.cell, gy=py/field.cell, i=Math.floor(gx), j=Math.floor(gy); if(i<0||j<0||i>=field.NX-1||j>=field.NY-1) continue; const fx=gx-i, fy=gy-j; const p00=field.pf[idx(field,i,j)], p10=field.pf[idx(field,i+1,j)], p01=field.pf[idx(field,i,j+1)], p11=field.pf[idx(field,i+1,j+1)]; const p=p00*(1-fx)*(1-fy)+p10*fx*(1-fy)+p01*(1-fx)*fy+p11*fx*fy; const c=pressureRGBA(p); const k=(py*w+px)*4; data[k]=c.r; data[k+1]=c.g; data[k+2]=c.b; data[k+3]=c.a; }
+  field.pressureCtx.putImageData(img,0,0); field.pressureDirty=false; return field.pressureCanvas;
 }
+function drawPressureMap(field,R,alpha=1){ const src=buildPressureImage(field); if(!src) return; ctx.save(); ctx.beginPath(); rr(R.x,R.y,R.w,R.h,16); ctx.clip(); ctx.globalAlpha=alpha; ctx.drawImage(src,0,0,src.width,src.height,R.x,R.y,R.w,R.h); ctx.restore(); }
+function drawFlowLines(field,R,alpha=1){ const sx=R.w/(field.NX*field.cell), sy=R.h/(field.NY*field.cell); ctx.save(); ctx.beginPath(); rr(R.x,R.y,R.w,R.h,16); ctx.clip(); ctx.globalAlpha=alpha; for(const tr of field.tracers){ const k=1-tr.age/tr.life, px=R.x+tr.px*field.cell*sx, py=R.y+tr.py*field.cell*sy, x=R.x+tr.x*field.cell*sx, y=R.y+tr.y*field.cell*sy; const uu=samp(field,field.u,tr.x,tr.y), vv=samp(field,field.v,tr.x,tr.y), speed=Math.hypot(uu,vv); let color='rgba(84,140,220,'+(0.10+0.07*k)+')'; if(speed>2.2) color='rgba(70,176,170,'+(0.13+0.09*k)+')'; ctx.strokeStyle=color; ctx.lineWidth=speed>2.0?1.2:0.8; ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(x,y); ctx.stroke(); } ctx.restore(); }
+function drawContours(field,R){ const sx=R.w/(field.NX*field.cell), sy=R.h/(field.NY*field.cell); ctx.save(); ctx.beginPath(); rr(R.x,R.y,R.w,R.h,16); ctx.clip(); const levels=[-0.85,-0.65,-0.48,-0.34,-0.22,-0.12,-0.05,0.05,0.12,0.22,0.34,0.48,0.65,0.85]; const interp=(x1,y1,v1,x2,y2,v2,level)=>{const d=(v2-v1), t=Math.abs(d)<1e-6?.5:(level-v1)/d; return {x:x1+(x2-x1)*t,y:y1+(y2-y1)*t};}; for(const level of levels){ const strong=Math.abs(level)>.6, mid=Math.abs(level)>.2; ctx.strokeStyle= level>0 ? (strong?'rgba(132,28,28,0.80)':mid?'rgba(170,58,58,0.62)':'rgba(210,120,120,0.42)') : (strong?'rgba(18,46,120,0.80)':mid?'rgba(52,82,170,0.62)':'rgba(120,150,220,0.42)'); ctx.lineWidth=strong?1.35:mid?1.0:.8; for(let j=1;j<field.NY-2;j++) for(let i=1;i<field.NX-2;i++){ const v00=field.pf[idx(field,i,j)],v10=field.pf[idx(field,i+1,j)],v11=field.pf[idx(field,i+1,j+1)],v01=field.pf[idx(field,i,j+1)]; const s0=v00>=level?1:0,s1=v10>=level?1:0,s2=v11>=level?1:0,s3=v01>=level?1:0, state=s0|(s1<<1)|(s2<<2)|(s3<<3); if(state===0||state===15) continue; const x=R.x+i*field.cell*sx, y=R.y+j*field.cell*sy; const pTop=interp(x,y,v00,x+field.cell*sx,y,v10,level), pRight=interp(x+field.cell*sx,y,v10,x+field.cell*sx,y+field.cell*sy,v11,level), pBottom=interp(x,y+field.cell*sy,v01,x+field.cell*sx,y+field.cell*sy,v11,level), pLeft=interp(x,y,v00,x,y+field.cell*sy,v01,level); const segments={1:[[pLeft,pTop]],2:[[pTop,pRight]],3:[[pLeft,pRight]],4:[[pRight,pBottom]],5:[[pLeft,pBottom],[pTop,pRight]],6:[[pTop,pBottom]],7:[[pLeft,pBottom]],8:[[pBottom,pLeft]],9:[[pTop,pBottom]],10:[[pTop,pLeft],[pRight,pBottom]],11:[[pRight,pBottom]],12:[[pLeft,pRight]],13:[[pTop,pRight]],14:[[pLeft,pTop]]}[state]; if(!segments) continue; for(const seg of segments){ ctx.beginPath(); ctx.moveTo(seg[0].x,seg[0].y); ctx.lineTo(seg[1].x,seg[1].y); ctx.stroke(); } } } ctx.restore(); }
 
-function drawPressureMap(field,R,alpha=1){
-  const src = buildPressureImage(field);
-  if(!src) return;
+function arrow(x1,y1,x2,y2,color,label){ ctx.save(); ctx.strokeStyle=color; ctx.fillStyle=color; ctx.lineWidth=2.4; ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); const a=Math.atan2(y2-y1,x2-x1),h=6; ctx.beginPath(); ctx.moveTo(x2,y2); ctx.lineTo(x2-h*Math.cos(a-.4),y2-h*Math.sin(a-.4)); ctx.lineTo(x2-h*Math.cos(a+.4),y2-h*Math.sin(a+.4)); ctx.closePath(); ctx.fill(); ctx.font='10px system-ui'; ctx.fillText(label,x2+4,y2-2); ctx.restore(); }
+
+function drawFrontBird(state, paths){
+  const sc=state.scale;
   ctx.save();
-  ctx.beginPath(); rr(R.x,R.y,R.w,R.h,16); ctx.clip();
-  ctx.globalAlpha = alpha;
-  ctx.drawImage(src, 0, 0, src.width, src.height, R.x, R.y, R.w, R.h);
+  ctx.fillStyle='rgba(235,240,245,.96)'; ctx.fill(paths.wingFill);
+  const grad=ctx.createLinearGradient(state.bodyX-40*sc,state.bodyY,state.bodyX+40*sc,state.bodyY);
+  grad.addColorStop(0,'rgba(252,252,250,0.98)'); grad.addColorStop(.7,'rgba(240,242,240,0.96)'); grad.addColorStop(1,'rgba(206,214,224,0.84)');
+  ctx.fillStyle=grad; ctx.fill(paths.wingFill);
+  ctx.strokeStyle='rgba(255,255,255,0.42)'; ctx.lineWidth=Math.max(.5,0.8*sc); ctx.stroke(paths.wingTex);
+  ctx.strokeStyle='rgba(160,166,176,0.24)'; ctx.lineWidth=Math.max(.8,1.0*sc); ctx.stroke(paths.skeleton);
+
+  const sh=ctx.createRadialGradient(state.bodyX+5*sc,state.bodyY+13*sc,2*sc,state.bodyX+5*sc,state.bodyY+13*sc,24*sc); sh.addColorStop(0,'rgba(145,155,168,.18)'); sh.addColorStop(1,'rgba(145,155,168,0)'); ctx.fillStyle=sh; ctx.beginPath(); ctx.ellipse(state.bodyX+3*sc,state.bodyY+12*sc,16*sc,24*sc,0,0,Math.PI*2); ctx.fill();
+  const g=ctx.createRadialGradient(state.bodyX-4*sc,state.bodyY-8*sc,2*sc,state.bodyX,state.bodyY,28*sc); g.addColorStop(0,'rgba(255,255,255,.99)'); g.addColorStop(.42,'rgba(247,248,246,.99)'); g.addColorStop(.78,'rgba(228,232,238,.98)'); g.addColorStop(1,'rgba(198,207,218,.92)'); ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(state.bodyX,state.bodyY+5*sc,15*sc,22*sc,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(186,194,204,.28)'; for(let j=0;j<2;j++) for(let i=0;i<3;i++){ ctx.beginPath(); ctx.ellipse(state.bodyX-4*sc+i*4.2*sc, state.bodyY+2*sc+j*4.5*sc, 1.3*sc, 0.9*sc, 0,0,Math.PI*2); ctx.fill(); }
+  ctx.save(); ctx.translate(state.bodyX-1*sc,state.bodyY-2*sc); ctx.rotate(-0.10+0.04*Math.sin(state.ph-0.2)); ctx.strokeStyle='rgba(228,234,240,.95)'; ctx.lineWidth=4.6*Math.max(0.65,sc); ctx.beginPath(); ctx.moveTo(0,0); ctx.quadraticCurveTo(-1*sc,-7*sc,1*sc,-12*sc); ctx.stroke(); ctx.restore();
+  const hg=ctx.createRadialGradient(state.bodyX-1*sc,state.bodyY-12*sc,1*sc,state.bodyX,state.bodyY-10*sc,10*sc); hg.addColorStop(0,'rgba(255,255,255,.99)'); hg.addColorStop(.65,'rgba(245,246,245,.99)'); hg.addColorStop(1,'rgba(214,220,228,.95)'); ctx.fillStyle=hg; ctx.beginPath(); ctx.ellipse(state.bodyX,state.bodyY-10*sc,6.5*sc,7.2*sc,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#d2a06a'; ctx.beginPath(); ctx.arc(state.bodyX+2.0*sc,state.bodyY-11.0*sc,2.4*sc,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(state.bodyX+2.0*sc,state.bodyY-11.0*sc,1.0*sc,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,.8)'; ctx.beginPath(); ctx.arc(state.bodyX+2.5*sc,state.bodyY-11.5*sc,0.35*sc,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#777b82'; ctx.beginPath(); ctx.moveTo(state.bodyX-0.8*sc,state.bodyY-10.1*sc); ctx.lineTo(state.bodyX-6.7*sc,state.bodyY-8.8*sc); ctx.lineTo(state.bodyX-0.8*sc,state.bodyY-7.4*sc); ctx.closePath(); ctx.fill();
   ctx.restore();
 }
-
-function drawFlowLines(field,R,alpha=1){
-  const sx = R.w / (field.NX * field.cell);
-  const sy = R.h / (field.NY * field.cell);
-  ctx.save(); ctx.beginPath(); rr(R.x,R.y,R.w,R.h,16); ctx.clip(); ctx.globalAlpha = alpha;
-  for(const tr of field.tracers){
-    const k=1-tr.age/tr.life;
-    const px=R.x+tr.px*field.cell*sx, py=R.y+tr.py*field.cell*sy;
-    const x=R.x+tr.x*field.cell*sx, y=R.y+tr.y*field.cell*sy;
-    const uu=samp(field,field.u,tr.x,tr.y), vv=samp(field,field.v,tr.x,tr.y), speed=Math.hypot(uu,vv);
-    let color='rgba(84,140,220,'+(0.10+0.07*k)+')';
-    if(speed>2.2) color='rgba(70,176,170,'+(0.13+0.09*k)+')';
-    ctx.strokeStyle=color; ctx.lineWidth=speed>2.0?1.2:0.8; ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(x,y); ctx.stroke();
-  }
-  for(let j=2;j<field.NY-2;j+=2) for(let i=2;i<field.NX-2;i+=2){
-    const id=idx(field,i,j); if(field.solid[id]) continue;
-    const curl=.5*(field.v[idx(field,i+1,j)]-field.v[idx(field,i-1,j)]-field.u[idx(field,i,j-1)]+field.u[idx(field,i,j+1)]), a=Math.min(.06,Math.abs(curl)*.035);
-    if(a<.018) continue;
-    ctx.fillStyle=curl>0?`rgba(112,160,224,${a})`:`rgba(214,142,174,${a})`;
-    ctx.beginPath(); ctx.arc(R.x+(i+.5)*field.cell*sx,R.y+(j+.5)*field.cell*sy,1.2,0,Math.PI*2); ctx.fill();
-  }
-  ctx.restore();
-}
-
-function drawContours(field,R){
-  const sx = R.w / (field.NX * field.cell);
-  const sy = R.h / (field.NY * field.cell);
-  ctx.save(); ctx.beginPath(); rr(R.x,R.y,R.w,R.h,16); ctx.clip();
-  const levels = [-0.85,-0.65,-0.48,-0.34,-0.22,-0.12,-0.05,0.05,0.12,0.22,0.34,0.48,0.65,0.85];
-  function interp(x1,y1,v1,x2,y2,v2,level){
-    const d=(v2-v1); const t=Math.abs(d)<1e-6?0.5:(level-v1)/d;
-    return {x:x1+(x2-x1)*t,y:y1+(y2-y1)*t};
-  }
-  for(const level of levels){
-    const strong = Math.abs(level) > 0.6;
-    const mid = Math.abs(level) > 0.2;
-    ctx.strokeStyle = level > 0
-      ? (strong ? 'rgba(132,28,28,0.80)' : mid ? 'rgba(170,58,58,0.62)' : 'rgba(210,120,120,0.42)')
-      : (strong ? 'rgba(18,46,120,0.80)' : mid ? 'rgba(52,82,170,0.62)' : 'rgba(120,150,220,0.42)');
-    ctx.lineWidth = strong ? 1.35 : mid ? 1.0 : 0.8;
-    for(let j=1;j<field.NY-2;j++){
-      for(let i=1;i<field.NX-2;i++){
-        const v00 = field.pf[idx(field,i,j)], v10 = field.pf[idx(field,i+1,j)], v11 = field.pf[idx(field,i+1,j+1)], v01 = field.pf[idx(field,i,j+1)];
-        const s0 = v00 >= level ? 1 : 0, s1 = v10 >= level ? 1 : 0, s2 = v11 >= level ? 1 : 0, s3 = v01 >= level ? 1 : 0;
-        const state = s0 | (s1<<1) | (s2<<2) | (s3<<3);
-        if(state === 0 || state === 15) continue;
-        const x = R.x + i * field.cell * sx, y = R.y + j * field.cell * sy;
-        const pTop    = interp(x,y,v00,x+field.cell*sx,y,v10,level);
-        const pRight  = interp(x+field.cell*sx,y,v10,x+field.cell*sx,y+field.cell*sy,v11,level);
-        const pBottom = interp(x,y+field.cell*sy,v01,x+field.cell*sx,y+field.cell*sy,v11,level);
-        const pLeft   = interp(x,y,v00,x,y+field.cell*sy,v01,level);
-        const segments = {
-          1:[[pLeft,pTop]],2:[[pTop,pRight]],3:[[pLeft,pRight]],4:[[pRight,pBottom]],5:[[pLeft,pBottom],[pTop,pRight]],6:[[pTop,pBottom]],7:[[pLeft,pBottom]],8:[[pBottom,pLeft]],9:[[pTop,pBottom]],10:[[pTop,pLeft],[pRight,pBottom]],11:[[pRight,pBottom]],12:[[pLeft,pRight]],13:[[pTop,pRight]],14:[[pLeft,pTop]]
-        }[state];
-        if(!segments) continue;
-        for(const seg of segments){ ctx.beginPath(); ctx.moveTo(seg[0].x,seg[0].y); ctx.lineTo(seg[1].x,seg[1].y); ctx.stroke(); }
-      }
-    }
-  }
-  ctx.restore();
-}
-
-function arrow(x1,y1,x2,y2,color,label){
-  ctx.save(); ctx.strokeStyle=color; ctx.fillStyle=color; ctx.lineWidth=2.4;
-  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
-  const a=Math.atan2(y2-y1,x2-x1), h=6;
-  ctx.beginPath(); ctx.moveTo(x2,y2); ctx.lineTo(x2-h*Math.cos(a-.4),y2-h*Math.sin(a-.4)); ctx.lineTo(x2-h*Math.cos(a+.4),y2-h*Math.sin(a+.4)); ctx.closePath(); ctx.fill();
-  ctx.font='10px system-ui'; ctx.fillText(label,x2+4,y2-2); ctx.restore();
-}
-
-function drawFrontWing(w,side,sc=1){
-  const dir=side==='left'?-1:1;
-  const spread = Math.min(1.25, Math.max(0.0, (w.tipX-w.wristX)*dir/18));
-  ctx.strokeStyle='rgba(226,233,240,.96)'; ctx.lineWidth=5.8*sc; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(w.shX,w.shY); ctx.lineTo(w.elbowX,w.elbowY); ctx.lineTo(w.wristX,w.wristY); ctx.stroke();
-  ctx.strokeStyle='rgba(79,168,161,.55)'; ctx.lineWidth=1.6*Math.max(0.7,sc); ctx.beginPath(); ctx.moveTo(w.shX,w.shY); ctx.lineTo(w.elbowX,w.elbowY); ctx.stroke();
-  ctx.save(); ctx.fillStyle='rgba(205,212,220,0.14)'; ctx.beginPath();
-  ctx.moveTo(w.elbowX,w.elbowY);
-  ctx.quadraticCurveTo((w.elbowX+w.wristX)/2+dir*(4+5*spread),(w.elbowY+w.wristY)/2+3,w.wristX,w.wristY);
-  ctx.quadraticCurveTo((w.wristX+w.tipX)/2+dir*(8+10*spread),(w.wristY+w.tipY)/2+8,w.tipX,w.tipY);
-  ctx.quadraticCurveTo((w.elbowX+w.tipX)/2,(w.elbowY+w.tipY)/2+11,w.elbowX,w.elbowY); ctx.fill(); ctx.restore();
-  function featherStroke(bx,by,a,length,wid,shade=1,tipDark=false){
-    ctx.save(); ctx.translate(bx,by); ctx.rotate(a);
-    const grad = ctx.createLinearGradient(0,0,length,0);
-    grad.addColorStop(0,'rgba(252,252,250,0.98)');
-    grad.addColorStop(0.65, shade>0.8 ? 'rgba(243,244,242,0.98)' : 'rgba(232,236,242,0.95)');
-    grad.addColorStop(1, tipDark ? 'rgba(186,193,202,0.78)' : 'rgba(224,228,234,0.86)');
-    ctx.strokeStyle=grad; ctx.lineWidth=wid; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(length,0); ctx.stroke();
-    ctx.strokeStyle='rgba(160,166,176,0.26)'; ctx.lineWidth=Math.max(0.7, wid*0.16); ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(length,0); ctx.stroke();
-    ctx.restore();
-  }
-  for(let i=0;i<4;i++){
-    const k=i/3, bx=lerp(w.shX,w.elbowX,0.18+0.62*k), by=lerp(w.shY,w.elbowY,0.18+0.62*k), a=w.a1 + dir*(-0.26 + 0.10*i);
-    featherStroke(bx,by,a,8+4*k,3.2-0.25*k,0.7,false);
-  }
-  for(let i=0;i<7;i++){
-    const k=i/6, bx=lerp(w.elbowX,w.wristX,0.05+0.84*k), by=lerp(w.elbowY,w.wristY,0.05+0.84*k), a=w.a2 + dir*(-0.18 - 0.05*spread + 0.07*i);
-    featherStroke(bx,by,a,(12+11*k+2*spread)*sc,(3.7-0.28*k)*Math.max(0.65,sc),0.85,false);
-  }
-  for(let i=0;i<10;i++){
-    const k=i/9, bx=lerp(w.wristX,w.tipX,0.04+0.72*k), by=lerp(w.wristY,w.tipY,0.04+0.72*k);
-    const jitter=(k-0.5)*(0.06+0.06*spread), a=w.a3 + dir*(-0.18 - 0.18*spread + 0.075*i) + dir*jitter;
-    featherStroke(bx,by,a,(16+16*k+7*spread + (i%2===0 ? 1.8 : -0.6))*sc,(4.1-0.30*k)*Math.max(0.65,sc),1.0,k>0.72);
-  }
-}
-
-function drawFrontBird(s,Lw,Rw,R){
-  const sc=P().scale;
-  ctx.save(); ctx.beginPath(); rr(R.x,R.y,R.w,R.h,18); ctx.clip();
-  ctx.save(); ctx.strokeStyle='rgba(214,220,226,.85)'; ctx.lineWidth=1.2*Math.max(0.65,sc);
-  for(let i=0;i<5;i++){ const k=i/4, x=s.bodyX+(k-.5)*7*sc, y=s.bodyY+17*sc, tx=x+(k-.5)*4*sc, ty=y+8*sc; ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(tx,ty); ctx.stroke(); }
-  ctx.restore();
-  const sh=ctx.createRadialGradient(s.bodyX+5*sc,s.bodyY+13*sc,2*sc,s.bodyX+5*sc,s.bodyY+13*sc,24*sc); sh.addColorStop(0,'rgba(145,155,168,.18)'); sh.addColorStop(1,'rgba(145,155,168,0)'); ctx.fillStyle=sh; ctx.beginPath(); ctx.ellipse(s.bodyX+3*sc,s.bodyY+12*sc,16*sc,24*sc,0,0,Math.PI*2); ctx.fill();
-  const g=ctx.createRadialGradient(s.bodyX-4*sc,s.bodyY-8*sc,2*sc,s.bodyX,s.bodyY,28*sc); g.addColorStop(0,'rgba(255,255,255,.99)'); g.addColorStop(.42,'rgba(247,248,246,.99)'); g.addColorStop(.78,'rgba(228,232,238,.98)'); g.addColorStop(1,'rgba(198,207,218,.92)'); ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(s.bodyX,s.bodyY+5*sc,15*sc,22*sc,0,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='rgba(186,194,204,.28)'; for(let j=0;j<2;j++) for(let i=0;i<3;i++){ ctx.beginPath(); ctx.ellipse(s.bodyX-4*sc+i*4.2*sc, s.bodyY+2*sc+j*4.5*sc, 1.3*sc, 0.9*sc, 0, 0, Math.PI*2); ctx.fill(); }
-  ctx.save(); ctx.translate(s.bodyX-1*sc,s.bodyY-2*sc); ctx.rotate(-0.10+0.04*Math.sin(s.ph-0.2)); ctx.strokeStyle='rgba(228,234,240,.95)'; ctx.lineWidth=4.6*Math.max(0.65,sc); ctx.beginPath(); ctx.moveTo(0,0); ctx.quadraticCurveTo(-1*sc,-7*sc,1*sc,-12*sc); ctx.stroke(); ctx.restore();
-  const hg=ctx.createRadialGradient(s.bodyX-1*sc,s.bodyY-12*sc,1*sc,s.bodyX,s.bodyY-10*sc,10*sc); hg.addColorStop(0,'rgba(255,255,255,.99)'); hg.addColorStop(.65,'rgba(245,246,245,.99)'); hg.addColorStop(1,'rgba(214,220,228,.95)'); ctx.fillStyle=hg; ctx.beginPath(); ctx.ellipse(s.bodyX,s.bodyY-10*sc,6.5*sc,7.2*sc,0,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#d2a06a'; ctx.beginPath(); ctx.arc(s.bodyX+2.0*sc,s.bodyY-11.0*sc,2.4*sc,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(s.bodyX+2.0*sc,s.bodyY-11.0*sc,1.0*sc,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='rgba(255,255,255,.8)'; ctx.beginPath(); ctx.arc(s.bodyX+2.5*sc,s.bodyY-11.5*sc,0.35*sc,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#777b82'; ctx.beginPath(); ctx.moveTo(s.bodyX-0.8*sc,s.bodyY-10.1*sc); ctx.lineTo(s.bodyX-6.7*sc,s.bodyY-8.8*sc); ctx.lineTo(s.bodyX-0.8*sc,s.bodyY-7.4*sc); ctx.closePath(); ctx.fill();
-  drawFrontWing(Lw,'left',sc); drawFrontWing(Rw,'right',sc);
-  arrow(R.x+12,R.y+R.h-18,R.x+88,R.y+R.h-18,'#5b84c8','前から来る空気');
-  ctx.restore();
-}
-
-function drawSideBird(s,R){
-  const sc=P().scale;
-  ctx.save(); ctx.beginPath(); rr(R.x,R.y,R.w,R.h,18); ctx.clip();
-  const K=sideKinematics(s,R), openAmt=s.open;
+function drawSideBird(state, K, paths){
+  const sc=state.scale;
+  ctx.save();
   ctx.save(); ctx.translate(K.bodyCx,K.bodyCy); ctx.rotate(K.tilt);
   const bodyShadow=ctx.createRadialGradient(4*sc,7*sc,1*sc,4*sc,7*sc,22*sc); bodyShadow.addColorStop(0,'rgba(145,155,168,.16)'); bodyShadow.addColorStop(1,'rgba(145,155,168,0)'); ctx.fillStyle=bodyShadow; ctx.beginPath(); ctx.ellipse(2*sc,3*sc,17*sc,11*sc,0,0,Math.PI*2); ctx.fill();
   const g=ctx.createRadialGradient(-3*sc,-4*sc,2*sc,0,0,22*sc); g.addColorStop(0,'rgba(255,255,255,.99)'); g.addColorStop(.50,'rgba(246,247,245,.99)'); g.addColorStop(.82,'rgba(228,232,238,.98)'); g.addColorStop(1,'rgba(198,207,218,.92)'); ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(0,3*sc,16*sc,10*sc,0.08,0,Math.PI*2); ctx.fill();
-  ctx.save(); ctx.translate(-9*sc,-4*sc); ctx.rotate(-.18+0.05*Math.sin(s.ph-.3)); ctx.strokeStyle='rgba(228,234,240,.95)'; ctx.lineWidth=3.8*Math.max(0.65,sc); ctx.beginPath(); ctx.moveTo(0,0); ctx.quadraticCurveTo(-1*sc,-4*sc,0,-8*sc); ctx.stroke(); ctx.restore();
+  ctx.save(); ctx.translate(-9*sc,-4*sc); ctx.rotate(-.18+0.05*Math.sin(state.ph-.3)); ctx.strokeStyle='rgba(228,234,240,.95)'; ctx.lineWidth=3.8*Math.max(0.65,sc); ctx.beginPath(); ctx.moveTo(0,0); ctx.quadraticCurveTo(-1*sc,-4*sc,0,-8*sc); ctx.stroke(); ctx.restore();
   const hg=ctx.createRadialGradient(-9*sc,-9*sc,1*sc,-9*sc,-8*sc,7*sc); hg.addColorStop(0,'rgba(255,255,255,.99)'); hg.addColorStop(1,'rgba(214,220,228,.95)'); ctx.fillStyle=hg; ctx.beginPath(); ctx.ellipse(-9*sc,-8*sc,5.3*sc,4.3*sc,0,0,Math.PI*2); ctx.fill();
   ctx.fillStyle='#d2a06a'; ctx.beginPath(); ctx.arc(-7.2*sc,-8.7*sc,1.8*sc,0,Math.PI*2); ctx.fill();
   ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(-7.2*sc,-8.7*sc,0.75*sc,0,Math.PI*2); ctx.fill();
   ctx.fillStyle='rgba(255,255,255,.8)'; ctx.beginPath(); ctx.arc(-6.8*sc,-9.1*sc,0.25*sc,0,Math.PI*2); ctx.fill();
   ctx.fillStyle='#7b7e85'; ctx.beginPath(); ctx.moveTo(-10.0*sc,-7.7*sc); ctx.lineTo(-14.8*sc,-6.9*sc); ctx.lineTo(-10.0*sc,-6.0*sc); ctx.closePath(); ctx.fill();
-  ctx.strokeStyle='rgba(220,226,232,.90)'; ctx.lineWidth=1.0; for(let i=0;i<4;i++){ const k=i/3; ctx.beginPath(); ctx.moveTo(10*sc,6*sc+k*0.6*sc); ctx.lineTo(15*sc+k*2*sc,8*sc+k*1.4*sc); ctx.stroke(); }
   ctx.restore();
-  ctx.strokeStyle='rgba(235,240,245,.92)'; ctx.lineWidth=5.0*Math.max(0.65,sc); ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(K.shoulderX,K.shoulderY); ctx.lineTo(K.ex,K.ey); ctx.lineTo(K.wx,K.wy); ctx.stroke();
-  ctx.strokeStyle='rgba(79,168,161,.72)'; ctx.lineWidth=1.9*Math.max(0.65,sc); ctx.beginPath(); ctx.moveTo(K.shoulderX,K.shoulderY); ctx.lineTo(K.ex,K.ey); ctx.stroke();
-  function featherStroke(bx,by,a,length,wid,tipDark=false){
-    ctx.save(); ctx.translate(bx,by); ctx.rotate(a);
-    const grad=ctx.createLinearGradient(0,0,length,0); grad.addColorStop(0,'rgba(251,251,249,0.98)'); grad.addColorStop(0.65,'rgba(240,242,240,0.96)'); grad.addColorStop(1,tipDark?'rgba(182,190,200,0.76)':'rgba(224,228,234,0.84)');
-    ctx.strokeStyle=grad; ctx.lineWidth=wid; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(length,0); ctx.stroke();
-    ctx.strokeStyle='rgba(160,166,176,0.24)'; ctx.lineWidth=Math.max(0.7, wid*0.16); ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(length,0); ctx.stroke();
-    ctx.restore();
-  }
-  for(let i=0;i<3;i++){ const k=i/2, bx=lerp(K.shoulderX,K.ex,0.20+0.55*k), by=lerp(K.shoulderY,K.ey,0.20+0.55*k), a=K.a1 + (-0.16 + 0.08*i); featherStroke(bx,by,a,(7+2*k)*sc,(2.8-0.2*k)*Math.max(0.65,sc),false); }
-  for(let i=0;i<6;i++){ const k=i/5, bx=lerp(K.ex,K.wx,0.08+0.78*k), by=lerp(K.ey,K.wy,0.08+0.78*k), a=K.a2 + (-0.14 - 0.08*openAmt + 0.07*i); featherStroke(bx,by,a,(8+7*k+2*openAmt)*sc,(2.9-0.22*k)*Math.max(0.65,sc),false); }
-  for(let i=0;i<8;i++){ const k=i/7,bx=lerp(K.wx,K.tx,.08+.62*k),by=lerp(K.wy,K.ty,.08+.62*k),a=K.a3+(-.12-.18*openAmt+.08*i)+(k-0.5)*0.04; featherStroke(bx,by,a,(10+10*k+3*openAmt+(i%2===0?1.0:-0.3))*sc,(3.3-.25*k)*Math.max(0.65,sc),k>0.7); }
-  arrow(R.x+R.w-76,R.y+28,R.x+R.w-76,R.y+28-Math.min(38,8+lift*15),'#5b84c8','揚力');
-  arrow(R.x+R.w-76,R.y+54,R.x+R.w-76+Math.min(40,8+thrust*16),R.y+54,'#d48ab0','推力');
-  arrow(R.x+12,R.y+R.h-18,R.x+88,R.y+R.h-18,'#5b84c8','前から来る空気');
+
+  ctx.fillStyle='rgba(235,240,245,.96)'; ctx.fill(paths.wingFill);
+  const wingGrad=ctx.createLinearGradient(K.shoulderX,K.shoulderY,K.tx,K.ty); wingGrad.addColorStop(0,'rgba(251,251,249,0.98)'); wingGrad.addColorStop(.7,'rgba(240,242,240,0.96)'); wingGrad.addColorStop(1,'rgba(206,214,224,0.84)');
+  ctx.fillStyle=wingGrad; ctx.fill(paths.wingFill);
+  ctx.strokeStyle='rgba(255,255,255,0.42)'; ctx.lineWidth=Math.max(.5,0.8*sc); ctx.stroke(paths.wingTex);
+  ctx.strokeStyle='rgba(160,166,176,0.24)'; ctx.lineWidth=Math.max(.8,1.0*sc); ctx.stroke(paths.skeleton);
   ctx.restore();
 }
 
-function drawLegend(R){
-  const x = R.x + R.w - 78, y = R.y + 56, h = 156, w = 18;
-  const grad = ctx.createLinearGradient(0, y, 0, y + h);
-  grad.addColorStop(0.00, 'rgba(118,16,28,0.98)'); grad.addColorStop(0.22, 'rgba(205,88,88,0.82)'); grad.addColorStop(0.50, 'rgba(252,252,252,0.18)'); grad.addColorStop(0.78, 'rgba(88,132,230,0.82)'); grad.addColorStop(1.00, 'rgba(8,52,150,0.98)');
-  ctx.fillStyle = 'rgba(255,255,255,0.72)'; ctx.fillRect(x - 34, y - 8, 64, h + 16);
-  ctx.fillStyle = grad; ctx.fillRect(x, y, w, h);
-  ctx.strokeStyle = 'rgba(0,0,0,0.22)'; ctx.strokeRect(x, y, w, h);
-  ctx.font = '11px system-ui'; ctx.fillStyle = 'rgba(20,30,40,0.92)';
-  const ticks = [{label:'+1.0', yy:y+4},{label:'+0.5', yy:y+h*0.25},{label:'0', yy:y+h*0.50},{label:'-0.5', yy:y+h*0.75},{label:'-1.0', yy:y+h-2}];
-  for(const t of ticks){ ctx.beginPath(); ctx.moveTo(x+w+2, t.yy); ctx.lineTo(x+w+8, t.yy); ctx.strokeStyle = 'rgba(20,30,40,0.55)'; ctx.stroke(); ctx.fillStyle = 'rgba(20,30,40,0.92)'; ctx.fillText(t.label, x-30, t.yy+4); }
-  ctx.fillText('高圧', x-30, y-12); ctx.fillText('低圧', x-30, y+h+14);
+function drawLegend(x,y){ const h=156,w=18, grad=ctx.createLinearGradient(0,y,0,y+h); grad.addColorStop(0,'rgba(118,16,28,0.98)'); grad.addColorStop(.22,'rgba(205,88,88,0.82)'); grad.addColorStop(.50,'rgba(252,252,252,0.18)'); grad.addColorStop(.78,'rgba(88,132,230,0.82)'); grad.addColorStop(1,'rgba(8,52,150,0.98)'); ctx.fillStyle='rgba(255,255,255,0.72)'; ctx.fillRect(x-34,y-8,64,h+16); ctx.fillStyle=grad; ctx.fillRect(x,y,w,h); ctx.strokeStyle='rgba(0,0,0,0.22)'; ctx.strokeRect(x,y,w,h); ctx.font='11px system-ui'; ctx.fillStyle='rgba(20,30,40,0.92)'; const ticks=[{label:'+1.0',yy:y+4},{label:'+0.5',yy:y+h*.25},{label:'0',yy:y+h*.50},{label:'-0.5',yy:y+h*.75},{label:'-1.0',yy:y+h-2}]; for(const t of ticks){ctx.beginPath();ctx.moveTo(x+w+2,t.yy);ctx.lineTo(x+w+8,t.yy);ctx.strokeStyle='rgba(20,30,40,0.55)';ctx.stroke();ctx.fillStyle='rgba(20,30,40,0.92)';ctx.fillText(t.label,x-30,t.yy+4);} ctx.fillText('高圧',x-30,y-12); ctx.fillText('低圧',x-30,y+h+14); }
+
+function renderFrontView(rect,state,Lw,Rw,flags){
+  const sr=simRect(frontField,rect), paths=makeFrontBirdPaths(state,Lw,Rw);
+  if(flags.pressure) drawPressureMap(frontField,sr,1); if(flags.contours) drawContours(frontField,sr); if(flags.flow) drawFlowLines(frontField,sr,1);
+  ctx.save(); ctx.beginPath(); rr(sr.x,sr.y,sr.w,sr.h,16); ctx.clip(); drawFrontBird(state,paths); arrow(sr.x+12,sr.y+sr.h-18,sr.x+88,sr.y+sr.h-18,'#5b84c8','前から来る空気'); ctx.restore();
+  drawLegend(sr.x+sr.w-64,sr.y+18);
 }
-
-function renderFrontView(rect,state,leftWing,rightWing,flags){
-  const sr = simRect(frontField, rect);
-  if(flags.pressure) drawPressureMap(frontField,sr,1);
-  if(flags.contours) drawContours(frontField,sr);
-  if(flags.flow) drawFlowLines(frontField,sr,1);
-
-  ctx.save();
-  ctx.beginPath(); rr(sr.x,sr.y,sr.w,sr.h,16); ctx.clip();
-  if(dom.showBird && dom.showBird.checked) drawFrontBird(state,leftWing,rightWing,sr);
-  if(dom.showMask && dom.showMask.checked) drawSolidOverlay(frontField,sr);
-  if(dom.showPoints && dom.showPoints.checked) drawFrontDebugPoints(leftWing,rightWing);
-  if(dom.showForce && dom.showForce.checked) drawFrontForcePoints(state,leftWing,rightWing);
-  arrow(sr.x+12,sr.y+sr.h-18,sr.x+88,sr.y+sr.h-18,'#5b84c8','前から来る空気');
-  ctx.restore();
-
-  drawLegend(sr.x + sr.w - 64, sr.y + 18);
-}
-
 function renderSideView(rect,state,flags){
-  const sr = simRect(sideField, rect);
-  if(flags.pressure) drawPressureMap(sideField,sr,.92);
-  if(flags.contours) drawContours(sideField,sr);
-  if(flags.flow) drawFlowLines(sideField,sr,.72);
-
-  const K = sideKinematics(state,sr);
-
-  ctx.save();
-  ctx.beginPath(); rr(sr.x,sr.y,sr.w,sr.h,16); ctx.clip();
-  if(dom.showBird && dom.showBird.checked) drawSideBird(state,sr);
-  if(dom.showMask && dom.showMask.checked) drawSolidOverlay(sideField,sr);
-  if(dom.showPoints && dom.showPoints.checked) drawSideDebugPoints(K);
-  if(dom.showForce && dom.showForce.checked) drawSideForcePoints(state,K);
-  arrow(sr.x+sr.w-76,sr.y+28,sr.x+sr.w-76,sr.y+28-Math.min(38,8+lift*15),'#5b84c8','揚力');
-  arrow(sr.x+sr.w-76,sr.y+54,sr.x+sr.w-76+Math.min(40,8+thrust*16),sr.y+54,'#d48ab0','推力');
-  arrow(sr.x+12,sr.y+sr.h-18,sr.x+88,sr.y+sr.h-18,'#5b84c8','前から来る空気');
-  ctx.restore();
-
-  drawLegend(sr.x + sr.w - 64, sr.y + 18);
+  const sr=simRect(sideField,rect), K=sideKinematics(state,sr), paths=makeSideBirdPaths(state,K);
+  if(flags.pressure) drawPressureMap(sideField,sr,.92); if(flags.contours) drawContours(sideField,sr); if(flags.flow) drawFlowLines(sideField,sr,.72);
+  ctx.save(); ctx.beginPath(); rr(sr.x,sr.y,sr.w,sr.h,16); ctx.clip(); drawSideBird(state,K,paths); arrow(sr.x+sr.w-76,sr.y+28,sr.x+sr.w-76,sr.y+28-Math.min(38,8+lift*15),'#5b84c8','揚力'); arrow(sr.x+sr.w-76,sr.y+54,sr.x+sr.w-76+Math.min(40,8+thrust*16),sr.y+54,'#d48ab0','推力'); arrow(sr.x+12,sr.y+sr.h-18,sr.x+88,sr.y+sr.h-18,'#5b84c8','前から来る空気'); ctx.restore();
+  drawLegend(sr.x+sr.w-64,sr.y+18);
 }
 
-
-let uiCollapsed = false;
-
-function setUiCollapsed(next){
-  uiCollapsed = !!next;
-  dom.ui.classList.toggle('collapsed', uiCollapsed);
-  document.body.classList.toggle('ui-hidden', uiCollapsed);
-  if(dom.toggleUi) dom.toggleUi.textContent = uiCollapsed ? '開く' : '折りたたむ';
-  if(dom.fabToggleUi) dom.fabToggleUi.textContent = uiCollapsed ? '▴' : '▾';
-  setTimeout(() => resize(), 260);
-}
-
-async function toggleFullscreen(){
-  const root = document.documentElement;
-  try{
-    if(!document.fullscreenElement){
-      if(root.requestFullscreen) await root.requestFullscreen();
-    }else{
-      if(document.exitFullscreen) await document.exitFullscreen();
-    }
-  }catch(e){
-    console.warn('fullscreen failed', e);
-  }
-}
-
-
-function drawSolidOverlay(field, R){
-  const sx = R.w / (field.NX * field.cell);
-  const sy = R.h / (field.NY * field.cell);
-  ctx.save();
-  ctx.beginPath(); rr(R.x,R.y,R.w,R.h,16); ctx.clip();
-  ctx.fillStyle = 'rgba(255, 64, 64, 0.24)';
-  for(let j=0;j<field.NY;j++){
-    for(let i=0;i<field.NX;i++){
-      if(!field.solid[idx(field,i,j)]) continue;
-      ctx.fillRect(
-        R.x + i * field.cell * sx,
-        R.y + j * field.cell * sy,
-        Math.ceil(field.cell * sx),
-        Math.ceil(field.cell * sy)
-      );
-    }
-  }
-  ctx.restore();
-}
-
-function debugPoint(x,y,color='yellow',r=3){
-  ctx.save();
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.arc(x,y,r,0,Math.PI*2);
-  ctx.fill();
-  ctx.restore();
-}
-
-function drawFrontDebugPoints(Lw, Rw){
-  debugPoint(Lw.shX,Lw.shY,'yellow',3);
-  debugPoint(Lw.elbowX,Lw.elbowY,'orange',3);
-  debugPoint(Lw.wristX,Lw.wristY,'red',3);
-  debugPoint(Lw.tipX,Lw.tipY,'cyan',3);
-
-  debugPoint(Rw.shX,Rw.shY,'yellow',3);
-  debugPoint(Rw.elbowX,Rw.elbowY,'orange',3);
-  debugPoint(Rw.wristX,Rw.wristY,'red',3);
-  debugPoint(Rw.tipX,Rw.tipY,'cyan',3);
-}
-
-function drawSideDebugPoints(K){
-  debugPoint(K.shoulderX,K.shoulderY,'yellow',3);
-  debugPoint(K.ex,K.ey,'orange',3);
-  debugPoint(K.wx,K.wy,'red',3);
-  debugPoint(K.tx,K.ty,'cyan',3);
-}
-
-function drawFrontForcePoints(state, Lw, Rw){
-  if(state.down <= .05) return;
-  for(const wing of [Lw,Rw]){
-    const p1 = {x:lerp(wing.shX,wing.elbowX,.28), y:lerp(wing.shY,wing.elbowY,.28)};
-    const p2 = {x:lerp(wing.shX,wing.elbowX,.58), y:lerp(wing.shY,wing.elbowY,.58)};
-    debugPoint(p1.x,p1.y,'lime',4);
-    debugPoint(p2.x,p2.y,'lime',4);
-  }
-}
-
-function drawSideForcePoints(state, K){
-  const pts = [
-    {x:lerp(K.shoulderX,K.ex,.35), y:lerp(K.shoulderY,K.ey,.35)},
-    {x:lerp(K.ex,K.wx,.45), y:lerp(K.ey,K.wy,.45)},
-    {x:lerp(K.wx,K.tx,.55), y:lerp(K.wy,K.ty,.55)},
-  ];
-  for(const p of pts) debugPoint(p.x,p.y,'lime',4);
-}
+function setUiCollapsed(next){ uiCollapsed=!!next; dom.ui.classList.toggle('collapsed',uiCollapsed); if(dom.toggleUi) dom.toggleUi.textContent=uiCollapsed?'開く':'折りたたむ'; if(dom.fabToggleUi) dom.fabToggleUi.textContent=uiCollapsed?'▴':'▾'; setTimeout(()=>resize(),260); }
+async function toggleFullscreen(){ const root=document.documentElement; try{ if(!document.fullscreenElement){ if(root.requestFullscreen) await root.requestFullscreen(); } else { if(document.exitFullscreen) await document.exitFullscreen(); } } catch(e){ console.warn(e); } }
 
 function resize(){
-  const r=dom.stage.getBoundingClientRect();
-  W=Math.max(320,Math.floor(r.width)); H=Math.max(320,Math.floor(r.height));
-  dom.canvas.width=Math.floor(W*DPR); dom.canvas.height=Math.floor(H*DPR);
-  dom.canvas.style.width=W+'px'; dom.canvas.style.height=H+'px';
-  ctx.setTransform(DPR,0,0,DPR,0,0);
-  const R = rects();
-  initField(frontField,R.F,'front');
-  initField(sideField,R.S,'side');
-  lift=0; thrust=0; prevFrontL=null; prevFrontR=null; prevSide=null;
-  draw(0);
+  const r=dom.stage.getBoundingClientRect(); W=Math.max(320,Math.floor(r.width)); H=Math.max(320,Math.floor(r.height));
+  dom.canvas.width=Math.floor(W*DPR); dom.canvas.height=Math.floor(H*DPR); dom.canvas.style.width=W+'px'; dom.canvas.style.height=H+'px'; ctx.setTransform(DPR,0,0,DPR,0,0);
+  const R=rects(); initField(frontField,R.F,'front'); initField(sideField,R.S,'side'); lift=0; thrust=0; prevFrontState=null; prevSideState=null; draw(0);
 }
+function handleReset(){ t0=0; simT=0; last=0; resetField(frontField); resetField(sideField); lift=0; thrust=0; prevFrontState=null; prevSideState=null; draw(0); }
 
-function handleReset(){
-  t0=0; simT=0; last=0;
-  resetField(frontField); resetField(sideField);
-  lift=0; thrust=0; prevFrontL=null; prevFrontR=null; prevSide=null;
-  draw(0);
+function rebuildMasks(state, frontSimR, sideSimR){
+  const Lw=wing(state,'left'), Rw=wing(state,'right'), frontPaths=makeFrontBirdPaths(state,Lw,Rw);
+  rasterizePathToMask(frontField, frontSimR, [frontPaths.wingFill, frontPaths.body], 0, 0);
+  const K=sideKinematics(state,sideSimR), sidePaths=makeSideBirdPaths(state,K);
+  rasterizePathToMask(sideField, sideSimR, [sidePaths.wingFill, sidePaths.body], 0, 0);
+  return {Lw,Rw,K};
 }
 
 function draw(dt){
-  const R = rects();
-  const flags = getDisplayFlags();
-  ctx.clearRect(0,0,W,H);
-  card(R.F,'前面ビュー','独立圧力場・等圧線・流線');
-  card(R.S,'側面ビュー','独立圧力場・等圧線・流線');
+  const R=rects(), flags={pressure:dom.showPressure.checked,contours:dom.showContours.checked,flow:dom.showFlow.checked};
+  ctx.clearRect(0,0,W,H); card(R.F,'前面ビュー','描画形状＝mask形状'); card(R.S,'側面ビュー','描画形状＝mask形状');
+  const frontSimR=simRect(frontField,R.F), sideSimR=simRect(sideField,R.S);
+  const state=birdState(simT,frontSimR);
+  const kin = rebuildMasks(state, frontSimR, sideSimR);
 
-  const frontSimR = simRect(frontField, R.F);
-  const sideSimR = simRect(sideField, R.S);
-
-  const state = birdState(simT,frontSimR);
-  const leftWing = wing(state,'left');
-  const rightWing = wing(state,'right');
-  const sidePose = sideKinematics(state,sideSimR);
-
-  // デバッグ用に、描画前に必ず最新のマスクを再構築する
-  buildFrontMask(frontField,leftWing,rightWing,frontSimR,Math.max(dt,1/60),state,prevFrontL,prevFrontR);
-  buildSideMask(sideField,sidePose,sideSimR,Math.max(dt,1/60),state,prevSide);
-
-  if(dt > 0){
-    fluidStepFront(frontField,dt,leftWing,rightWing,frontSimR,state);
-    fluidStepSide(sideField,dt,sidePose,sideSimR,state);
-    updateTracers(frontField,dt);
-    updateTracers(sideField,dt);
-    updateForces(sideField,sidePose,sideSimR);
+  if(dt>0){
+    fluidStepFront(frontField,dt,kin.Lw,kin.Rw,frontSimR,state);
+    fluidStepSide(sideField,dt,kin.K,sideSimR,state);
+    updateTracers(frontField,dt); updateTracers(sideField,dt); updateForces(sideField,kin.K,sideSimR);
   }
 
-  prevFrontL = {...leftWing};
-  prevFrontR = {...rightWing};
-  prevSide = {...sidePose};
+  prevFrontState = structuredClone ? structuredClone(state) : JSON.parse(JSON.stringify(state));
+  prevSideState = prevFrontState;
 
-  renderFrontView(R.F,state,leftWing,rightWing,flags);
+  renderFrontView(R.F,state,kin.Lw,kin.Rw,flags);
   renderSideView(R.S,state,flags);
 }
-
-function loop(now){
-  if(!t0){ t0=now; last=now; }
-  simT=(now-t0)/1000;
-  const dt=Math.min(.025,(now-last)/1000);
-  last=now;
-  draw(dt);
-  requestAnimationFrame(loop);
-}
-
+function loop(now){ if(!t0){t0=now; last=now;} simT=(now-t0)/1000; const dt=Math.min(.025,(now-last)/1000); last=now; draw(dt); requestAnimationFrame(loop); }
 function bindUI(){
-  dom.reset.addEventListener('click', handleReset);
-  if(dom.fabReset) dom.fabReset.addEventListener('click', handleReset);
-  if(dom.toggleUi) dom.toggleUi.addEventListener('click', ()=>setUiCollapsed(!uiCollapsed));
-  if(dom.fabToggleUi) dom.fabToggleUi.addEventListener('click', ()=>setUiCollapsed(!uiCollapsed));
-  if(dom.fullscreen) dom.fullscreen.addEventListener('click', toggleFullscreen);
-  [dom.showPressure, dom.showContours, dom.showFlow, dom.birdScale, dom.wind, dom.amp, dom.freq, dom.pitch, dom.showBird, dom.showMask, dom.showPoints, dom.showForce].forEach(el => {
-    el.addEventListener('input', ()=>{ invalidatePressureMap(frontField); invalidatePressureMap(sideField); draw(0); });
-    el.addEventListener('change', ()=>{ invalidatePressureMap(frontField); invalidatePressureMap(sideField); draw(0); });
-  });
+  dom.reset.addEventListener('click', handleReset); dom.fabReset.addEventListener('click', handleReset); dom.toggleUi.addEventListener('click', ()=>setUiCollapsed(!uiCollapsed)); dom.fabToggleUi.addEventListener('click', ()=>setUiCollapsed(!uiCollapsed)); dom.fullscreen.addEventListener('click', toggleFullscreen);
+  [dom.showPressure,dom.showContours,dom.showFlow,dom.birdScale,dom.wind,dom.amp,dom.freq,dom.pitch].forEach(el=>{ el.addEventListener('input',()=>{ invalidatePressureMap(frontField); invalidatePressureMap(sideField); draw(0); }); el.addEventListener('change',()=>{ invalidatePressureMap(frontField); invalidatePressureMap(sideField); draw(0); }); });
   window.addEventListener('resize', resize);
 }
-
-bindUI();
-resize();
-draw(0);
-setTimeout(()=>requestAnimationFrame(loop),80);
+bindUI(); resize(); draw(0); setTimeout(()=>requestAnimationFrame(loop),80);
 })();
 </script>
 </body>
