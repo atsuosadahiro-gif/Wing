@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>前面・側面 独立流体場版 羽ばたきシミュレーション（Path2Dマスク一致版）</title>
+<title>前面・側面 独立流体場版 羽ばたきシミュレーション（水平風・真横側面版）</title>
 <style>
   :root{--safe-top:max(env(safe-area-inset-top),0px);--safe-bottom:max(env(safe-area-inset-bottom),0px)}
   html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(180deg,#eef5fb,#dbe8f3 45%,#c6dceb)}
@@ -62,7 +62,7 @@
         <button id="reset">リセット</button>
       </div>
     </div>
-    <div id="msg">鳥の描画に使っているPath2Dを、そのままオフスクリーンに塗ってsolidマスクを作る版です。これで見た目とマスクのズレを断ちます。</div>
+    <div id="msg">鳥の描画に使っているPath2Dを、そのままオフスクリーンに塗ってsolidマスクを作る版です。風は正面から水平に固定し、側面は斜めではなく真横表示に寄せています。</div>
   </div>
   <div id="stage"><canvas id="cv"></canvas></div>
   <div id="fabBar">
@@ -189,7 +189,7 @@ function wing(s,side){
 }
 function sideKinematics(s,R){
   const p=P(), sc=p.scale;
-  const bodyCx=R.x+R.w*.15, bodyCy=R.y+R.h*.67+Math.sin(s.ph-.2)*p.amp*.03, tilt=-.10+.08*s.down-.04*s.up, shoulderX=bodyCx-1.2*sc, shoulderY=bodyCy-1.6*sc;
+  const bodyCx=R.x+R.w*.15, bodyCy=R.y+R.h*.67+Math.sin(s.ph-.2)*p.amp*.03, tilt=0, shoulderX=bodyCx-1.2*sc, shoulderY=bodyCy-1.6*sc;
   const a1=-1.00+.60*Math.sin(s.ph)-0.06*s.fold, a2=a1+.20+0.22*s.open-0.18*s.fold, a3=a2+.22+0.30*s.open-0.22*s.fold;
   const ex=shoulderX+Math.cos(a1)*15*sc, ey=shoulderY+Math.sin(a1)*15*sc, wx=ex+Math.cos(a2)*(28*(1-.16*s.fold))*sc, wy=ey+Math.sin(a2)*(28*(1-.16*s.fold))*sc, tx=wx+Math.cos(a3)*(34*(1-.14*s.fold))*sc, ty=wy+Math.sin(a3)*(34*(1-.14*s.fold))*sc;
   return {bodyCx,bodyCy,tilt,shoulderX,shoulderY,ex,ey,wx,wy,tx,ty,a1,a2,a3};
@@ -291,7 +291,7 @@ function makeSideBirdPaths(state, K){
   skeleton.moveTo(K.shoulderX,K.shoulderY); skeleton.lineTo(K.ex,K.ey); skeleton.lineTo(K.wx,K.wy); skeleton.lineTo(K.tx,K.ty);
 
   const body = new Path2D();
-  body.ellipse(K.bodyCx, K.bodyCy+3*sc, 16*sc, 10*sc, 0.08, 0, Math.PI*2);
+  body.ellipse(K.bodyCx, K.bodyCy+3*sc, 16*sc, 10*sc, 0, 0, Math.PI*2);
   body.ellipse(K.bodyCx-9*sc, K.bodyCy-8*sc, 5.3*sc, 4.3*sc, 0, 0, Math.PI*2);
 
   return {wing,wingFill,wingTex,skeleton,body};
@@ -442,16 +442,14 @@ function drawFrontBird(state, paths){
 function drawSideBird(state, K, paths){
   const sc=state.scale;
   ctx.save();
-  ctx.save(); ctx.translate(K.bodyCx,K.bodyCy); ctx.rotate(K.tilt);
-  const bodyShadow=ctx.createRadialGradient(4*sc,7*sc,1*sc,4*sc,7*sc,22*sc); bodyShadow.addColorStop(0,'rgba(145,155,168,.16)'); bodyShadow.addColorStop(1,'rgba(145,155,168,0)'); ctx.fillStyle=bodyShadow; ctx.beginPath(); ctx.ellipse(2*sc,3*sc,17*sc,11*sc,0,0,Math.PI*2); ctx.fill();
-  const g=ctx.createRadialGradient(-3*sc,-4*sc,2*sc,0,0,22*sc); g.addColorStop(0,'rgba(255,255,255,.99)'); g.addColorStop(.50,'rgba(246,247,245,.99)'); g.addColorStop(.82,'rgba(228,232,238,.98)'); g.addColorStop(1,'rgba(198,207,218,.92)'); ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(0,3*sc,16*sc,10*sc,0.08,0,Math.PI*2); ctx.fill();
-  ctx.save(); ctx.translate(-9*sc,-4*sc); ctx.rotate(-.18+0.05*Math.sin(state.ph-.3)); ctx.strokeStyle='rgba(228,234,240,.95)'; ctx.lineWidth=3.8*Math.max(0.65,sc); ctx.beginPath(); ctx.moveTo(0,0); ctx.quadraticCurveTo(-1*sc,-4*sc,0,-8*sc); ctx.stroke(); ctx.restore();
-  const hg=ctx.createRadialGradient(-9*sc,-9*sc,1*sc,-9*sc,-8*sc,7*sc); hg.addColorStop(0,'rgba(255,255,255,.99)'); hg.addColorStop(1,'rgba(214,220,228,.95)'); ctx.fillStyle=hg; ctx.beginPath(); ctx.ellipse(-9*sc,-8*sc,5.3*sc,4.3*sc,0,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#d2a06a'; ctx.beginPath(); ctx.arc(-7.2*sc,-8.7*sc,1.8*sc,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(-7.2*sc,-8.7*sc,0.75*sc,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='rgba(255,255,255,.8)'; ctx.beginPath(); ctx.arc(-6.8*sc,-9.1*sc,0.25*sc,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#7b7e85'; ctx.beginPath(); ctx.moveTo(-10.0*sc,-7.7*sc); ctx.lineTo(-14.8*sc,-6.9*sc); ctx.lineTo(-10.0*sc,-6.0*sc); ctx.closePath(); ctx.fill();
-  ctx.restore();
+  const bodyShadow=ctx.createRadialGradient(K.bodyCx+4*sc,K.bodyCy+7*sc,1*sc,K.bodyCx+4*sc,K.bodyCy+7*sc,22*sc); bodyShadow.addColorStop(0,'rgba(145,155,168,.16)'); bodyShadow.addColorStop(1,'rgba(145,155,168,0)'); ctx.fillStyle=bodyShadow; ctx.beginPath(); ctx.ellipse(K.bodyCx+2*sc,K.bodyCy+3*sc,17*sc,11*sc,0,0,Math.PI*2); ctx.fill();
+  const g=ctx.createRadialGradient(K.bodyCx-3*sc,K.bodyCy-4*sc,2*sc,K.bodyCx,K.bodyCy,22*sc); g.addColorStop(0,'rgba(255,255,255,.99)'); g.addColorStop(.50,'rgba(246,247,245,.99)'); g.addColorStop(.82,'rgba(228,232,238,.98)'); g.addColorStop(1,'rgba(198,207,218,.92)'); ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(K.bodyCx,K.bodyCy+3*sc,16*sc,10*sc,0,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle='rgba(228,234,240,.95)'; ctx.lineWidth=3.8*Math.max(0.65,sc); ctx.beginPath(); ctx.moveTo(K.bodyCx-9*sc,K.bodyCy-4*sc); ctx.quadraticCurveTo(K.bodyCx-10*sc,K.bodyCy-8*sc,K.bodyCx-9*sc,K.bodyCy-12*sc); ctx.stroke();
+  const hg=ctx.createRadialGradient(K.bodyCx-9*sc,K.bodyCy-9*sc,1*sc,K.bodyCx-9*sc,K.bodyCy-8*sc,7*sc); hg.addColorStop(0,'rgba(255,255,255,.99)'); hg.addColorStop(1,'rgba(214,220,228,.95)'); ctx.fillStyle=hg; ctx.beginPath(); ctx.ellipse(K.bodyCx-9*sc,K.bodyCy-8*sc,5.3*sc,4.3*sc,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#d2a06a'; ctx.beginPath(); ctx.arc(K.bodyCx-7.2*sc,K.bodyCy-8.7*sc,1.8*sc,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(K.bodyCx-7.2*sc,K.bodyCy-8.7*sc,0.75*sc,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,.8)'; ctx.beginPath(); ctx.arc(K.bodyCx-6.8*sc,K.bodyCy-9.1*sc,0.25*sc,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#7b7e85'; ctx.beginPath(); ctx.moveTo(K.bodyCx-10.0*sc,K.bodyCy-7.7*sc); ctx.lineTo(K.bodyCx-14.8*sc,K.bodyCy-6.9*sc); ctx.lineTo(K.bodyCx-10.0*sc,K.bodyCy-6.0*sc); ctx.closePath(); ctx.fill();
 
   ctx.fillStyle='rgba(235,240,245,.96)'; ctx.fill(paths.wingFill);
   const wingGrad=ctx.createLinearGradient(K.shoulderX,K.shoulderY,K.tx,K.ty); wingGrad.addColorStop(0,'rgba(251,251,249,0.98)'); wingGrad.addColorStop(.7,'rgba(240,242,240,0.96)'); wingGrad.addColorStop(1,'rgba(206,214,224,0.84)');
@@ -496,7 +494,7 @@ function rebuildMasks(state, frontSimR, sideSimR){
 
 function draw(dt){
   const R=rects(), flags={pressure:dom.showPressure.checked,contours:dom.showContours.checked,flow:dom.showFlow.checked};
-  ctx.clearRect(0,0,W,H); card(R.F,'前面ビュー','描画形状＝mask形状'); card(R.S,'側面ビュー','描画形状＝mask形状');
+  ctx.clearRect(0,0,W,H); card(R.F,'前面ビュー','水平風・真横側面'); card(R.S,'側面ビュー','水平風・真横側面');
   const frontSimR=simRect(frontField,R.F), sideSimR=simRect(sideField,R.S);
   const state=birdState(simT,frontSimR);
   const kin = rebuildMasks(state, frontSimR, sideSimR);
