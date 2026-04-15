@@ -3,18 +3,23 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>鳥の羽 写実寄り版</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>鳥の羽 写実寄り版 修正版</title>
 <style>
   html,body{
-    margin:0; padding:0; width:100%; height:100%; overflow:hidden;
+    margin:0; padding:0; width:100%; height:100%;
+    overflow:hidden;
     background: linear-gradient(180deg,#eef5fb 0%, #dbe9f4 45%, #c5dceb 100%);
     font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
     color:#102030;
   }
-  #wrap{position:fixed; inset:0; display:grid; grid-template-rows:auto 1fr;}
+  #wrap{
+    position:fixed; inset:0;
+    display:flex; flex-direction:column;
+  }
   #ui{
-    background:rgba(255,255,255,0.78);
+    flex:0 0 auto;
+    background:rgba(255,255,255,0.82);
     backdrop-filter: blur(10px);
     border-bottom:1px solid rgba(0,0,0,0.08);
     padding:10px 12px 8px;
@@ -32,7 +37,19 @@
     background:rgba(38,67,94,.10); color:#26435e; border:1px solid rgba(38,67,94,.15);
   }
   #msg{font-size:13px; line-height:1.35; color:#31465c; margin-top:6px;}
-  canvas{width:100%; height:100%; display:block; touch-action:none;}
+  #stage{
+    flex:1 1 auto;
+    min-height:200px;
+    position:relative;
+    overflow:hidden;
+  }
+  canvas{
+    position:absolute; inset:0;
+    width:100%;
+    height:100%;
+    display:block;
+    touch-action:none;
+  }
 </style>
 </head>
 <body>
@@ -54,30 +71,36 @@
       <label>羽の開き</label>
       <input id="spread" type="range" min="10" max="160" value="76" />
       <button id="reset">リセット</button>
-      <span class="pill">羽 写実寄り</span>
+      <span class="pill">表示修正版</span>
     </div>
     <div id="msg">
-      羽を板ではなく、羽軸・羽枝・先端の擦れ・半透明の重なりとして描く版です。見た目を優先し、白いハト系の翼に寄せています。
+      描画が黒画面にならないよう、キャンバスの高さ計算と起動タイミングを修正した版です。写実寄りの白い羽表現を維持しています。
     </div>
   </div>
-  <canvas id="cv"></canvas>
+  <div id="stage">
+    <canvas id="cv"></canvas>
+  </div>
 </div>
 
 <script>
 (() => {
   const canvas = document.getElementById('cv');
+  const stage = document.getElementById('stage');
   const ctx = canvas.getContext('2d', { alpha:false });
+
   const ampEl = document.getElementById('amp');
   const freqEl = document.getElementById('freq');
   const twistEl = document.getElementById('twist');
   const spreadEl = document.getElementById('spread');
   const resetBtn = document.getElementById('reset');
 
-  let W=0, H=0, DPR=Math.min(devicePixelRatio||1,2);
+  let W=0, H=0, DPR=Math.min(window.devicePixelRatio||1,2);
   let simT=0;
-  let featherCache = new Map();
+  let startTime=0;
+  let running=false;
 
   const lerp=(a,b,t)=>a+(b-a)*t;
+  let featherCache = new Map();
 
   function params(){
     return {
@@ -89,14 +112,15 @@
   }
 
   function resize(){
-    const uiH = document.getElementById('ui').getBoundingClientRect().height;
-    W = innerWidth;
-    H = innerHeight - uiH;
-    canvas.width = Math.floor(W*DPR);
-    canvas.height = Math.floor(H*DPR);
-    canvas.style.width = W+'px';
-    canvas.style.height = H+'px';
+    const rect = stage.getBoundingClientRect();
+    W = Math.max(200, Math.floor(rect.width));
+    H = Math.max(200, Math.floor(rect.height));
+    canvas.width = Math.floor(W * DPR);
+    canvas.height = Math.floor(H * DPR);
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
     ctx.setTransform(DPR,0,0,DPR,0,0);
+    drawFrame();
   }
 
   function sky(){
@@ -107,7 +131,6 @@
     ctx.fillStyle = g;
     ctx.fillRect(0,0,W,H);
 
-    // soft vertical bloom like the reference
     for(let i=0;i<4;i++){
       const x = W*(0.14 + i*0.23);
       const lg = ctx.createLinearGradient(x-70,0,x+70,0);
@@ -175,7 +198,6 @@
     const cy = c.height/2;
     const tx = cx + len;
 
-    // soft body
     const grad = g.createLinearGradient(cx,0,tx,0);
     grad.addColorStop(0, 'rgba(255,255,255,0.96)');
     grad.addColorStop(0.65, 'rgba(248,248,246,0.96)');
@@ -189,7 +211,6 @@
     g.quadraticCurveTo(cx - width*0.3, cy, cx, cy - width*0.55);
     g.fill();
 
-    // rachis
     g.strokeStyle = 'rgba(180,184,190,0.42)';
     g.lineWidth = Math.max(0.8, width*0.10);
     g.beginPath();
@@ -197,7 +218,6 @@
     g.lineTo(tx, cy);
     g.stroke();
 
-    // barbs
     for(let i=0;i<18;i++){
       const k = i/17;
       const bx = lerp(cx+2, tx-4, k);
@@ -215,7 +235,6 @@
       g.stroke();
     }
 
-    // tip wear / dark tip
     if(tipGray){
       const tg = g.createRadialGradient(tx-3, cy, 1, tx-3, cy, width*1.2);
       tg.addColorStop(0, 'rgba(130,135,145,0.46)');
@@ -224,21 +243,6 @@
       g.beginPath();
       g.arc(tx-3, cy, width*1.2, 0, Math.PI*2);
       g.fill();
-    }
-
-    // wispy edges
-    g.strokeStyle = 'rgba(255,255,255,0.18)';
-    for(let i=0;i<8;i++){
-      const k = i/7;
-      const bx = lerp(cx+len*0.65, tx, k);
-      g.beginPath();
-      g.moveTo(bx, cy - width*(0.12 + 0.20*k));
-      g.lineTo(bx + width*0.10, cy - width*(0.20 + 0.35*k));
-      g.stroke();
-      g.beginPath();
-      g.moveTo(bx, cy + width*(0.10 + 0.18*k));
-      g.lineTo(bx + width*0.10, cy + width*(0.18 + 0.30*k));
-      g.stroke();
     }
 
     featherCache.set(key, c);
@@ -257,15 +261,12 @@
 
   function drawWingMass(s, w, side, front=true){
     const depthAlpha = front ? 1.0 : 0.74;
-
-    // soft translucent wing membrane under feathers
-    const pathAlpha = front ? 0.26 : 0.16;
     const nx1=-Math.sin(w.a1), ny1=Math.cos(w.a1);
     const nx2=-Math.sin(w.a2), ny2=Math.cos(w.a2);
     const nx3=-Math.sin(w.a3), ny3=Math.cos(w.a3);
 
     ctx.save();
-    ctx.fillStyle = `rgba(255,255,255,${pathAlpha})`;
+    ctx.fillStyle = `rgba(255,255,255,${front ? 0.26 : 0.16})`;
     ctx.beginPath();
     ctx.moveTo(w.shX + nx1*4, w.shY + ny1*4);
     ctx.lineTo(w.elbowX + nx1*8, w.elbowY + ny1*8);
@@ -278,15 +279,8 @@
     ctx.fill();
     ctx.restore();
 
-    // motion ghost
     const dir = side==='left' ? -1 : 1;
-    for(let g=0; g<2; g++){
-      const shift = (g+1)*0.08*dir*Math.sin(s.ph-0.2);
-      const a = (0.10 - g*0.04) * depthAlpha;
-      drawFeather(w.wristX, w.wristY, w.a3+shift, s.hand*0.88, 10, a, false);
-    }
 
-    // covert layers
     for(let row=0; row<2; row++){
       for(let i=0;i<7;i++){
         const k=i/6;
@@ -299,7 +293,6 @@
       }
     }
 
-    // secondaries
     for(let i=0;i<12;i++){
       const k=i/11;
       const baseX = lerp(w.elbowX, w.wristX, 0.05 + 0.78*k);
@@ -310,7 +303,6 @@
       drawFeather(baseX, baseY, fang, flen, fwid, 0.90*depthAlpha, false);
     }
 
-    // primaries
     for(let i=0;i<14;i++){
       const k=i/13;
       const baseX = lerp(w.wristX, w.tipX, 0.03 + 0.60*k);
@@ -328,14 +320,12 @@
     ctx.save();
     ctx.translate(s.x, s.y);
 
-    // tail behind
     for(let i=0;i<9;i++){
       const k=i/8;
       const a = Math.PI/2 + (-0.42 + 0.84*k)*(0.42 + 0.42*s.down);
       drawFeather((k-0.5)*4, 42, a, 24 + 14*(1-Math.abs(k-0.5)*2), 8.4, 0.88, k<0.1 || k>0.9);
     }
 
-    // body
     const bg = ctx.createRadialGradient(-8,-12,2,0,0,62);
     bg.addColorStop(0,'rgba(255,255,255,0.98)');
     bg.addColorStop(0.55,'rgba(248,248,246,0.98)');
@@ -346,18 +336,6 @@
     ctx.ellipse(0, 12, 34, 52, 0, 0, Math.PI*2);
     ctx.fill();
 
-    // body fluff overlay
-    for(let i=0;i<18;i++){
-      const a = i/17 * Math.PI*2;
-      const rx = Math.cos(a)*20;
-      const ry = 10 + Math.sin(a)*26;
-      ctx.fillStyle = 'rgba(255,255,255,0.16)';
-      ctx.beginPath();
-      ctx.ellipse(rx*0.4, ry*0.5, 7, 11, a*0.2, 0, Math.PI*2);
-      ctx.fill();
-    }
-
-    // head
     const hg = ctx.createRadialGradient(0,-30,1,0,-30,22);
     hg.addColorStop(0,'rgba(255,255,255,0.99)');
     hg.addColorStop(0.75,'rgba(242,244,246,0.98)');
@@ -380,7 +358,6 @@
     ctx.closePath();
     ctx.fill();
 
-    // neck/chest markings
     ctx.strokeStyle = 'rgba(145,146,150,0.22)';
     ctx.lineWidth = 2;
     for(let i=0;i<7;i++){
@@ -390,7 +367,6 @@
       ctx.stroke();
     }
 
-    // feet
     ctx.fillStyle = 'rgba(214,126,143,0.75)';
     ctx.beginPath(); ctx.arc(-8, 46, 6.5, 0, Math.PI*2); ctx.fill();
     ctx.beginPath(); ctx.arc(8, 46, 6.5, 0, Math.PI*2); ctx.fill();
@@ -402,7 +378,6 @@
     const s = birdState(simT);
     const left = wingJoints(s,'left');
     const right = wingJoints(s,'right');
-
     drawWingMass(s,left,'left',false);
     drawWingMass(s,right,'right',false);
     drawBody(s);
@@ -410,19 +385,24 @@
     drawWingMass(s,right,'right',true);
   }
 
-  function reset(){ simT=0; }
-  resetBtn.addEventListener('click', reset);
-
-  function loop(now){
-    simT = now/1000;
+  function drawFrame(){
     sky();
     drawBird();
+  }
+
+  function loop(now){
+    if(!startTime) startTime = now;
+    simT = (now - startTime)/1000;
+    drawFrame();
     requestAnimationFrame(loop);
   }
 
+  resetBtn.addEventListener('click', () => { startTime = 0; simT = 0; drawFrame(); });
   window.addEventListener('resize', resize);
+
   resize();
-  requestAnimationFrame(loop);
+  drawFrame();
+  setTimeout(() => requestAnimationFrame(loop), 80);
 })();
 </script>
 </body>
