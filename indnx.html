@@ -4,19 +4,31 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>圧力マップ + 小さめ鳥版 修正版</title>
+<title>形変化つき羽ディテール強化版</title>
 <style>
+  :root{--ui-pad-x:12px;--ui-pad-y:10px;--safe-top:max(env(safe-area-inset-top),0px);--safe-bottom:max(env(safe-area-inset-bottom),0px);}
   html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(180deg,#eef5fb,#dbe8f3 45%,#c6dceb);}
-  #wrap{position:fixed;inset:0;display:flex;flex-direction:column;}
-  #ui{flex:0 0 auto;background:rgba(255,255,255,.90);backdrop-filter:blur(10px);border-bottom:1px solid rgba(0,0,0,.08);padding:10px 12px 8px;z-index:10}
-  .row{display:flex;align-items:center;gap:10px;margin:8px 0;flex-wrap:wrap}
-  label{min-width:122px;font-size:15px}
-  input[type="range"]{width:180px;max-width:42vw}
-  button{background:#26435e;color:#eef7ff;border:none;border-radius:12px;padding:10px 16px;font-size:15px}
+  *{box-sizing:border-box}
+  #wrap{position:fixed;inset:0;display:flex;flex-direction:column;min-height:100dvh;}
+  #ui{flex:0 0 auto;background:rgba(255,255,255,.94);backdrop-filter:blur(10px);border-bottom:1px solid rgba(0,0,0,.08);padding:calc(var(--ui-pad-y) + var(--safe-top)) var(--ui-pad-x) 8px;z-index:10;display:flex;flex-direction:column;gap:8px}
+  .row{display:grid;grid-template-columns:minmax(92px,132px) minmax(0,1fr);align-items:center;gap:8px 10px;margin:0}
+  .row.controls{grid-template-columns:minmax(92px,132px) minmax(0,1fr) auto;align-items:center}
+  .toggles{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .toggles label{min-width:auto;font-size:13px;display:flex;align-items:center;gap:4px}
+  label{min-width:0;font-size:14px;line-height:1.2}
+  input[type="range"]{width:100%;min-width:0}
+  button{background:#26435e;color:#eef7ff;border:none;border-radius:12px;padding:10px 14px;font-size:14px;white-space:nowrap}
   .pill{display:inline-block;font-size:12px;padding:3px 8px;border-radius:999px;background:rgba(38,67,94,.10);color:#26435e;border:1px solid rgba(38,67,94,.15)}
-  #msg{font-size:13px;line-height:1.35;color:#4a6277;margin-top:6px}
-  #stage{flex:1 1 auto;min-height:300px;position:relative;overflow:hidden}
+  #msg{font-size:12px;line-height:1.45;color:#4a6277;margin-top:0}
+  #stage{flex:1 1 auto;min-height:0;position:relative;overflow:hidden;padding-bottom:var(--safe-bottom)}
   canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+  @media (max-width: 760px){
+    #ui{padding-left:10px;padding-right:10px}
+    .row,.row.controls{grid-template-columns:1fr}
+    .toggles{gap:8px}
+    button{width:100%}
+    .pill{justify-self:start}
+  }
 </style>
 </head>
 <body>
@@ -25,68 +37,83 @@
     <div class="row"><label>前からの風</label><input id="wind" type="range" min="5" max="50" value="18"></div>
     <div class="row"><label>羽ばたき振幅</label><input id="amp" type="range" min="8" max="80" value="36"></div>
     <div class="row"><label>周波数</label><input id="freq" type="range" min="20" max="120" value="46"></div>
-    <div class="row"><label>翼の迎角変化</label><input id="pitch" type="range" min="0" max="100" value="54"><button id="reset">リセット</button><span class="pill">位置合わせ修正版</span></div>
-    <div id="msg">右画面の翼と加速域の基準位置をそろえ、鳥をさらに小さくして周囲の流れが見える余白を増やした版です。青は低圧、赤は高圧です。</div>
+    <div class="row"><label>鳥サイズ</label><input id="birdScale" type="range" min="30" max="150" value="100"></div>
+    <div class="row controls"><label>翼の迎角変化</label><input id="pitch" type="range" min="0" max="100" value="54"><div class="toggles"><label><input id="showPressure" type="checkbox" checked> 圧力</label><label><input id="showContours" type="checkbox" checked> 等圧線</label><label><input id="showFlow" type="checkbox" checked> 流線</label><button id="reset">リセット</button><span class="pill">羽ディテール強化版</span></div></div>
+    <div id="msg">圧力マップの滑らかさは維持しつつ、羽の見た目を強化した版です。羽根の枚数感、長短の段差、前腕側の層、羽先のばらつきを増やして、より鳥らしい翼に寄せています。</div>
   </div>
   <div id="stage"><canvas id="cv"></canvas></div>
 </div>
 <script>
 (()=>{
 const cv=document.getElementById('cv'), st=document.getElementById('stage'), ctx=cv.getContext('2d',{alpha:false});
-const windEl=document.getElementById('wind'), ampEl=document.getElementById('amp'), freqEl=document.getElementById('freq'), pitchEl=document.getElementById('pitch');
+const windEl=document.getElementById('wind'), ampEl=document.getElementById('amp'), freqEl=document.getElementById('freq'), birdScaleEl=document.getElementById('birdScale'), pitchEl=document.getElementById('pitch');
+const showPressureEl=document.getElementById('showPressure'), showContoursEl=document.getElementById('showContours'), showFlowEl=document.getElementById('showFlow');
 const resetBtn=document.getElementById('reset');
 let W=0,H=0,DPR=Math.min(devicePixelRatio||1,2),t0=0,last=0,simT=0;
-let NX=0,NY=0,cell=7,u,v,u2,v2,pf,dv,solid,svx,svy,frontTr=[],sideTr=[],lift=0,thrust=0,prevL=null,prevR=null;
-const clamp=(x,a,b)=>Math.max(a,Math.min(b,x)), lerp=(a,b,t)=>a+(b-a)*t, rand=(a,b)=>a+Math.random()*(b-a), idx=(i,j)=>i+j*NX;
-const P=()=>({wind:+windEl.value*0.8,amp:+ampEl.value,freq:+freqEl.value/60,pitch:+pitchEl.value/100});
+let NX=120, NY=160,cell=7,u,v,u2,v2,pf,dv,solid,svx,svy,frontTr=[],sideTr=[],lift=0,thrust=0,prevL=null,prevR=null;
+let pressureCanvas=null, pressureCtx=null, pressureDirty=true;
 
-function pad(){return Math.max(10,Math.min(22,W*0.015))}
-function gap(){return Math.max(10,Math.min(18,W*0.014))}
-function topm(){return Math.max(12,Math.min(18,H*0.03))}
-function rects(){const pd=pad(),gp=gap(),tp=topm(),pw=(W-pd*2-gp)/2,ph=H-tp*2;return{L:{x:pd,y:tp,w:pw,h:ph},R:{x:pd+pw+gp,y:tp,w:pw,h:ph}}}
+const clamp=(x,a,b)=>Math.max(a,Math.min(b,x)), lerp=(a,b,t)=>a+(b-a)*t, rand=(a,b)=>a+Math.random()*(b-a), idx=(i,j)=>i+j*NX;
+const P=()=>{const scale=+birdScaleEl.value/100; const ampBase=+ampEl.value; return {wind:+windEl.value*0.8,ampBase,amp:ampBase*scale,freq:+freqEl.value/60,pitch:+pitchEl.value/100,scale};};
+
+function pad(){return Math.max(10,Math.min(20,W*0.015))}
+function gap(){return Math.max(10,Math.min(18,H*0.02))}
+function topm(){return Math.max(10,Math.min(16,H*0.02))}
+function rects(){
+  const pd=pad(), gp=gap(), tp=topm();
+  const innerW=Math.max(220, W - pd*2);
+  const innerH=Math.max(220, H - tp*2);
+  const ph=Math.max(120, (innerH - gp)/2);
+  return {
+    F:{x:pd,y:tp,w:innerW,h:ph},
+    S:{x:pd,y:tp+ph+gp,w:innerW,h:ph}
+  };
+}
 function rr(x,y,w,h,r){ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y)}
 function card(r,title,sub){
   ctx.save();
-  ctx.fillStyle='rgba(255,255,255,.38)';ctx.beginPath();rr(r.x+4,r.y+8,r.w,r.h,18);ctx.fill();
-  ctx.fillStyle='rgba(255,255,255,.74)';ctx.beginPath();rr(r.x,r.y,r.w,r.h,18);ctx.fill();
-  ctx.strokeStyle='rgba(70,90,110,.10)';ctx.lineWidth=1;ctx.beginPath();rr(r.x,r.y,r.w,r.h,18);ctx.stroke();
-  const g=ctx.createLinearGradient(r.x,r.y,r.x,r.y+r.h);g.addColorStop(0,'rgba(244,248,252,.88)');g.addColorStop(.45,'rgba(220,232,243,.80)');g.addColorStop(1,'rgba(201,220,235,.76)');
-  ctx.fillStyle=g;ctx.beginPath();rr(r.x+1,r.y+1,r.w-2,r.h-2,17);ctx.fill();
-  ctx.fillStyle='rgba(23,48,71,.82)';ctx.font='600 15px system-ui';ctx.fillText(title,r.x+14,r.y+22);
-  ctx.fillStyle='rgba(74,98,119,.85)';ctx.font='12px system-ui';ctx.fillText(sub,r.x+14,r.y+40);
+  ctx.fillStyle='rgba(255,255,255,.40)'; ctx.beginPath(); rr(r.x+4,r.y+8,r.w,r.h,18); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,.78)'; ctx.beginPath(); rr(r.x,r.y,r.w,r.h,18); ctx.fill();
+  ctx.strokeStyle='rgba(70,90,110,.10)'; ctx.lineWidth=1; ctx.beginPath(); rr(r.x,r.y,r.w,r.h,18); ctx.stroke();
+  const g=ctx.createLinearGradient(r.x,r.y,r.x,r.y+r.h); g.addColorStop(0,'rgba(244,248,252,.88)'); g.addColorStop(.45,'rgba(220,232,243,.80)'); g.addColorStop(1,'rgba(201,220,235,.76)');
+  ctx.fillStyle=g; ctx.beginPath(); rr(r.x+1,r.y+1,r.w-2,r.h-2,17); ctx.fill();
+  ctx.fillStyle='rgba(23,48,71,.84)'; ctx.font='600 15px system-ui'; ctx.fillText(title,r.x+14,r.y+22);
+  ctx.fillStyle='rgba(74,98,119,.86)'; ctx.font='12px system-ui'; ctx.fillText(sub,r.x+14,r.y+40);
   ctx.restore();
 }
 
 function initFluid(){
-  const r=rects().L;
-  NX=Math.max(56,Math.floor(r.w/cell)); NY=Math.max(44,Math.floor(r.h/cell));
+  const r=rects().F;
+  NX=Math.max(72,Math.floor(r.w/cell));
+  NY=Math.max(38,Math.floor(r.h/cell));
   const n=NX*NY;
   u=new Float32Array(n); v=new Float32Array(n); u2=new Float32Array(n); v2=new Float32Array(n);
   pf=new Float32Array(n); dv=new Float32Array(n); solid=new Uint8Array(n); svx=new Float32Array(n); svy=new Float32Array(n);
+  pressureCanvas=null; pressureCtx=null; pressureDirty=true;
 }
 function reset(){
   u.fill(0);v.fill(0);u2.fill(0);v2.fill(0);pf.fill(0);dv.fill(0);solid.fill(0);svx.fill(0);svy.fill(0);
   frontTr=[]; sideTr=[];
-  for(let i=0;i<1100;i++){
-    frontTr.push({x:rand(0,NX-1),y:rand(0,NY-1),px:0,py:0,age:rand(0,120),life:rand(80,220)});
-    sideTr.push({x:rand(0,NX-1),y:rand(0,NY-1),px:0,py:0,age:rand(0,120),life:rand(80,220)});
+  for(let i=0;i<1300;i++){
+    frontTr.push({x:rand(0,NX-1),y:rand(0,NY-1),px:0,py:0,age:rand(0,120),life:rand(90,260)});
+    sideTr.push({x:rand(0,NX-1),y:rand(0,NY-1),px:0,py:0,age:rand(0,120),life:rand(90,260)});
   }
-  prevL=null; prevR=null; lift=0; thrust=0;
+  prevL=null; prevR=null; lift=0; thrust=0; pressureDirty=true;
 }
 function resize(){
   const r=st.getBoundingClientRect();
-  W=Math.max(320,Math.floor(r.width)); H=Math.max(300,Math.floor(r.height));
+  W=Math.max(320,Math.floor(r.width)); H=Math.max(320,Math.floor(r.height));
   cv.width=Math.floor(W*DPR); cv.height=Math.floor(H*DPR);
   cv.style.width=W+'px'; cv.style.height=H+'px';
   ctx.setTransform(DPR,0,0,DPR,0,0);
   initFluid(); reset(); draw(0);
 }
 
-function bird(t,r){
+function birdState(t,r){
   const p=P(), ph=t*p.freq*Math.PI*2, down=Math.max(0,Math.sin(ph)), up=Math.max(0,-Math.sin(ph));
-  // even smaller bird and more left placement to show ambient flow
-  const bodyX=r.x+r.w*.30+2.4*down-1.0*up, bodyY=r.y+r.h*.64+Math.sin(ph-.2)*p.amp*.03;
-  const fold=.18+.60*up, open=.76+.30*down, shSpread=Math.min(16,r.w*.055), shoulderY=bodyY-4+Math.sin(ph)*p.amp*.18+2.2*down, hum=Math.min(18,r.w*.055), fore=Math.min(42,r.w*.13)*(1-.18*fold), hand=Math.min(52,r.w*.16)*(1-.14*fold);
+  const sc=p.scale;
+  const bodyX=r.x+r.w*.20+(2.0*down-0.8*up)*sc, bodyY=r.y+r.h*.66+Math.sin(ph-.2)*p.amp*.03;
+  const fold=.14+.78*up, open=.68+.46*down, shSpread=Math.min(20,r.w*.044)*sc, shoulderY=bodyY-5*sc+Math.sin(ph)*p.amp*.17+2.0*down*sc, hum=Math.min(22,r.w*.045)*(0.96+0.10*down)*sc, fore=Math.min(54,r.w*.108)*(0.82+0.30*down)*(1-.14*fold)*sc, hand=Math.min(66,r.w*.125)*(0.76+0.42*down)*(1-.10*fold)*sc;
   const rightA1=clamp(-0.90+0.85*Math.sin(ph),-1.75,-0.02), rightA2=clamp(rightA1+0.30+0.28*p.pitch+0.10*down,-1.20,0.65), rightA3=clamp(rightA2+0.22+0.22*p.pitch+0.05*Math.sin(ph+0.5),-0.90,1.00);
   return {ph,down,up,bodyX,bodyY,shSpread,shoulderY,hum,fore,hand,leftA1:Math.PI-rightA1,leftA2:Math.PI-rightA2,leftA3:Math.PI-rightA3,rightA1,rightA2,rightA3,vy:p.amp*p.freq*Math.PI*2*Math.cos(ph),fold,open};
 }
@@ -95,14 +122,19 @@ function wing(s,side){
   const ex=shX+Math.cos(a1)*s.hum, ey=shY+Math.sin(a1)*s.hum, wx=ex+Math.cos(a2)*s.fore, wy=ey+Math.sin(a2)*s.fore, tx=wx+Math.cos(a3)*s.hand, ty=wy+Math.sin(a3)*s.hand;
   return {shX,shY,elbowX:ex,elbowY:ey,wristX:wx,wristY:wy,tipX:tx,tipY:ty,a1,a2,a3};
 }
-function markCap(x1,y1,x2,y2,rad,vx,vy,L){
-  const lx1=(x1-L.x)/cell,ly1=(y1-L.y)/cell,lx2=(x2-L.x)/cell,ly2=(y2-L.y)/cell;
-  const minI=clamp(Math.floor(Math.min(lx1,lx2)-rad/cell-2),0,NX-1),maxI=clamp(Math.ceil(Math.max(lx1,lx2)+rad/cell+2),0,NX-1),minJ=clamp(Math.floor(Math.min(ly1,ly2)-rad/cell-2),0,NY-1),maxJ=clamp(Math.ceil(Math.max(ly1,ly2)+rad/cell+2),0,NY-1);
-  const dx=lx2-lx1,dy=ly2-ly1,l2=dx*dx+dy*dy+1e-6,rr=(rad/cell)*(rad/cell);
-  for(let j=minJ;j<=maxJ;j++){for(let i=minI;i<=maxI;i++){const px=i+.5,py=j+.5; let t=((px-lx1)*dx+(py-ly1)*dy)/l2; t=clamp(t,0,1); const qx=lx1+t*dx,qy=ly1+t*dy,rx=px-qx,ry=py-qy; if(rx*rx+ry*ry<=rr){const id=idx(i,j); solid[id]=1; svx[id]=vx; svy[id]=vy;}}}
+
+function markCap(x1,y1,x2,y2,rad,vx,vy,R){
+  const lx1=(x1-R.x)/cell, ly1=(y1-R.y)/cell, lx2=(x2-R.x)/cell, ly2=(y2-R.y)/cell;
+  const minI=clamp(Math.floor(Math.min(lx1,lx2)-rad/cell-2),0,NX-1), maxI=clamp(Math.ceil(Math.max(lx1,lx2)+rad/cell+2),0,NX-1), minJ=clamp(Math.floor(Math.min(ly1,ly2)-rad/cell-2),0,NY-1), maxJ=clamp(Math.ceil(Math.max(ly1,ly2)+rad/cell+2),0,NY-1);
+  const dx=lx2-lx1, dy=ly2-ly1, l2=dx*dx+dy*dy+1e-6, rr2=(rad/cell)*(rad/cell);
+  for(let j=minJ;j<=maxJ;j++) for(let i=minI;i<=maxI;i++){
+    const px=i+.5, py=j+.5; let t=((px-lx1)*dx+(py-ly1)*dy)/l2; t=clamp(t,0,1);
+    const qx=lx1+t*dx, qy=ly1+t*dy, rx=px-qx, ry=py-qy;
+    if(rx*rx+ry*ry<=rr2){const id=idx(i,j); solid[id]=1; svx[id]=vx; svy[id]=vy;}
+  }
 }
-function buildMask(Lw,Rw,L,dt){
-  solid.fill(0);svx.fill(0);svy.fill(0);
+function buildMask(Lw,Rw,R,dt){
+  solid.fill(0); svx.fill(0); svy.fill(0);
   const segs=[
     [Lw.shX,Lw.shY,Lw.elbowX,Lw.elbowY,6,prevL?(Lw.shX-prevL.shX)/dt:0,prevL?(Lw.shY-prevL.shY)/dt:0],
     [Lw.elbowX,Lw.elbowY,Lw.wristX,Lw.wristY,8,prevL?(Lw.elbowX-prevL.elbowX)/dt:0,prevL?(Lw.elbowY-prevL.elbowY)/dt:0],
@@ -111,7 +143,7 @@ function buildMask(Lw,Rw,L,dt){
     [Rw.elbowX,Rw.elbowY,Rw.wristX,Rw.wristY,8,prevR?(Rw.elbowX-prevR.elbowX)/dt:0,prevR?(Rw.elbowY-prevR.elbowY)/dt:0],
     [Rw.wristX,Rw.wristY,Rw.tipX,Rw.tipY,6,prevR?(Rw.wristX-prevR.wristX)/dt:0,prevR?(Rw.wristY-prevR.wristY)/dt:0]
   ];
-  for(const s of segs) markCap(...s,L);
+  for(const s of segs) markCap(...s,R);
 }
 function samp(arr,x,y){
   x=clamp(x,.5,NX-1.5); y=clamp(y,.5,NY-1.5);
@@ -119,35 +151,35 @@ function samp(arr,x,y){
   const a=arr[idx(i0,j0)],b=arr[idx(i1,j0)],c=arr[idx(i0,j1)],d=arr[idx(i1,j1)];
   return lerp(lerp(a,b,sx),lerp(c,d,sx),sy);
 }
-function adv(dt){
+function advect(dt){
   const p=P();
-  for(let j=0;j<NY;j++){for(let i=0;i<NX;i++){
+  for(let j=0;j<NY;j++) for(let i=0;i<NX;i++){
     const id=idx(i,j);
     if(solid[id]){u2[id]=svx[id]/cell; v2[id]=svy[id]/cell; continue;}
     const x=i+.5,y=j+.5,bx=x-u[id]*dt,by=y-v[id]*dt;
     u2[id]=samp(u,bx,by); v2[id]=samp(v,bx,by); u2[id]=.97*u2[id]+.03*(p.wind/cell);
-  }}
+  }
   [u,u2]=[u2,u]; [v,v2]=[v2,v];
 }
 function repel(){
-  for(let j=1;j<NY-1;j++){for(let i=1;i<NX-1;i++){
+  for(let j=1;j<NY-1;j++) for(let i=1;i<NX-1;i++){
     const id=idx(i,j); if(solid[id]) continue;
-    let fx=0,fy=0;
+    let fx=0, fy=0;
     for(const [ni,nj] of [[1,0],[-1,0],[0,1],[0,-1]]) if(solid[idx(i+ni,j+nj)]){fx-=ni*.22; fy-=nj*.22;}
     u[id]+=fx; v[id]+=fy;
-  }}
+  }
 }
-function forceField(s,Lw,Rw,L,dt){
+function forceField(s,Lw,Rw,R,dt){
   const p=P();
-  for(let j=0;j<NY;j++){for(let i=0;i<3;i++){const id=idx(i,j); if(!solid[id]){u[id]=p.wind/cell; v[id]=0;}}}
+  for(let j=0;j<NY;j++) for(let i=0;i<3;i++){const id=idx(i,j); if(!solid[id]){u[id]=p.wind/cell; v[id]=0;}}
   if(s.down>.05){
     for(const wing of [Lw,Rw]){
       const pts=[{x:lerp(wing.shX,wing.elbowX,.28),y:lerp(wing.shY,wing.elbowY,.28)},{x:lerp(wing.shX,wing.elbowX,.58),y:lerp(wing.shY,wing.elbowY,.58)}];
       for(const pt of pts){
-        const cx=(pt.x-L.x)/cell,cy=(pt.y-L.y)/cell,rad=5+5*p.pitch;
-        for(let j=Math.max(0,Math.floor(cy-rad));j<=Math.min(NY-1,Math.ceil(cy+rad));j++){
-          for(let i=Math.max(0,Math.floor(cx-rad));i<=Math.min(NX-1,Math.ceil(cx+rad));i++){
-            const dx=i+.5-cx,dy=j+.5-cy,d2=dx*dx+dy*dy+1e-6;
+        const cx=(pt.x-R.x)/cell, cy=(pt.y-R.y)/cell, rad=5+5*p.pitch;
+        for(let j=Math.max(0,Math.floor(cy-rad)); j<=Math.min(NY-1,Math.ceil(cy+rad)); j++){
+          for(let i=Math.max(0,Math.floor(cx-rad)); i<=Math.min(NX-1,Math.ceil(cx+rad)); i++){
+            const dx=i+.5-cx, dy=j+.5-cy, d2=dx*dx+dy*dy+1e-6;
             if(d2<rad*rad){
               const id=idx(i,j); if(solid[id]) continue;
               const swirl=(.9+1.1*p.pitch)*(1-d2/(rad*rad)), sign=wing===Lw?1:-1;
@@ -160,222 +192,604 @@ function forceField(s,Lw,Rw,L,dt){
   }
 }
 function divergence(){
-  for(let j=1;j<NY-1;j++){for(let i=1;i<NX-1;i++){
+  for(let j=1;j<NY-1;j++) for(let i=1;i<NX-1;i++){
     const id=idx(i,j);
     if(solid[id]){dv[id]=0; pf[id]=0; continue;}
     dv[id]=-.5*((u[idx(i+1,j)]-u[idx(i-1,j)])+(v[idx(i,j+1)]-v[idx(i,j-1)]));
     pf[id]=0;
-  }}
+  }
 }
-function proj(iter=28){
+function project(iter=28){
   divergence();
   for(let k=0;k<iter;k++){
-    for(let j=1;j<NY-1;j++){for(let i=1;i<NX-1;i++){
+    for(let j=1;j<NY-1;j++) for(let i=1;i<NX-1;i++){
       const id=idx(i,j); if(solid[id]) continue;
       let sum=0,c=0; for(const n of [idx(i+1,j),idx(i-1,j),idx(i,j+1),idx(i,j-1)]) if(!solid[n]){sum+=pf[n]; c++;}
       if(c>0) pf[id]=(dv[id]+sum)/c;
-    }}
+    }
   }
-  for(let j=1;j<NY-1;j++){for(let i=1;i<NX-1;i++){
+  for(let j=1;j<NY-1;j++) for(let i=1;i<NX-1;i++){
     const id=idx(i,j);
     if(solid[id]){u[id]=svx[id]/cell; v[id]=svy[id]/cell; continue;}
     u[id]-=.5*(pf[idx(i+1,j)]-pf[idx(i-1,j)]); v[id]-=.5*(pf[idx(i,j+1)]-pf[idx(i,j-1)]);
-  }}
+  }
 }
-function conf(dt){
+function confine(dt){
   const curl=new Float32Array(NX*NY);
-  for(let j=1;j<NY-1;j++){for(let i=1;i<NX-1;i++) curl[idx(i,j)]=.5*(v[idx(i+1,j)]-v[idx(i-1,j)]-u[idx(i,j-1)]+u[idx(i,j+1)])}
-  for(let j=2;j<NY-2;j++){for(let i=2;i<NX-2;i++){
+  for(let j=1;j<NY-1;j++) for(let i=1;i<NX-1;i++) curl[idx(i,j)]=.5*(v[idx(i+1,j)]-v[idx(i-1,j)]-u[idx(i,j-1)]+u[idx(i,j+1)]);
+  for(let j=2;j<NY-2;j++) for(let i=2;i<NX-2;i++){
     const id=idx(i,j); if(solid[id]) continue;
     const nx=Math.abs(curl[idx(i+1,j)])-Math.abs(curl[idx(i-1,j)]), ny=Math.abs(curl[idx(i,j+1)])-Math.abs(curl[idx(i,j-1)]), L=Math.hypot(nx,ny)+1e-6, eps=.10;
     u[id]+=eps*(ny/L)*curl[id]*dt; v[id]+=eps*(-nx/L)*curl[id]*dt;
-  }}
+  }
 }
-function bc(){
+function boundaries(){
   const p=P();
   for(let j=0;j<NY;j++){u[idx(0,j)]=p.wind/cell; v[idx(0,j)]=0; u[idx(NX-1,j)]=u[idx(NX-2,j)]; v[idx(NX-1,j)]=v[idx(NX-2,j)]}
   for(let i=0;i<NX;i++){v[idx(i,0)]=0; v[idx(i,NY-1)]=0; u[idx(i,0)]=u[idx(i,1)]; u[idx(i,NY-1)]=u[idx(i,NY-2)]}
-  for(let j=0;j<NY;j++){for(let i=0;i<NX;i++){const id=idx(i,j); if(solid[id]){u[id]=svx[id]/cell; v[id]=svy[id]/cell;}}}
+  for(let j=0;j<NY;j++) for(let i=0;i<NX;i++){const id=idx(i,j); if(solid[id]){u[id]=svx[id]/cell; v[id]=svy[id]/cell;}}
 }
-function fluid(dt,Lw,Rw,L,s){buildMask(Lw,Rw,L,Math.max(dt,1/60)); bc(); forceField(s,Lw,Rw,L,dt); repel(); adv(dt); bc(); conf(dt); proj(28); bc()}
-function tracers(dt){
-  for(const group of [frontTr,sideTr]){
-    for(const tr of group){
-      tr.age+=dt*60; tr.px=tr.x; tr.py=tr.y;
-      const uu=samp(u,tr.x,tr.y), vv=samp(v,tr.x,tr.y);
-      tr.x+=uu*dt*28; tr.y+=vv*dt*28;
-      if(tr.x<-2||tr.x>NX+2||tr.y<-2||tr.y>NY+2||tr.age>tr.life){tr.x=rand(-3,0); tr.y=rand(0,NY); tr.px=tr.x; tr.py=tr.y; tr.age=0; tr.life=rand(80,220)}
-    }
+function fluidStep(dt,Lw,Rw,R,s){buildMask(Lw,Rw,R,Math.max(dt,1/60)); boundaries(); forceField(s,Lw,Rw,R,dt); repel(); advect(dt); boundaries(); confine(dt); project(28); boundaries();}
+function updateTracers(dt){
+  for(const group of [frontTr,sideTr]) for(const tr of group){
+    tr.age+=dt*60; tr.px=tr.x; tr.py=tr.y;
+    const uu=samp(u,tr.x,tr.y), vv=samp(v,tr.x,tr.y);
+    tr.x+=uu*dt*28; tr.y+=vv*dt*28;
+    if(tr.x<-2||tr.x>NX+2||tr.y<-2||tr.y>NY+2||tr.age>tr.life){tr.x=rand(-3,0); tr.y=rand(0,NY); tr.px=tr.x; tr.py=tr.y; tr.age=0; tr.life=rand(90,260)}
   }
 }
-function forces(Lw,Rw,L){
-  let lf=0,th=0,n=0;
-  for(const wing of [Lw,Rw]){
-    for(const pt of [{x:lerp(wing.shX,wing.wristX,.35),y:lerp(wing.shY,wing.wristY,.35)},{x:lerp(wing.elbowX,wing.tipX,.45),y:lerp(wing.elbowY,wing.tipY,.45)}]){
-      const gx=(pt.x-L.x)/cell,gy=(pt.y-L.y)/cell;
-      lf += samp(v,gx,gy+3)-samp(v,gx,gy-3); th += samp(u,gx+4,gy)-samp(u,gx-4,gy); n++;
-    }
+function updateForces(Lw,Rw,R){
+  let lf=0, th=0, n=0;
+  for(const wing of [Lw,Rw]) for(const pt of [{x:lerp(wing.shX,wing.wristX,.35),y:lerp(wing.shY,wing.wristY,.35)},{x:lerp(wing.elbowX,wing.tipX,.45),y:lerp(wing.elbowY,wing.tipY,.45)}]){
+    const gx=(pt.x-R.x)/cell, gy=(pt.y-R.y)/cell;
+    lf += samp(v,gx,gy+3)-samp(v,gx,gy-3); th += samp(u,gx+4,gy)-samp(u,gx-4,gy); n++;
   }
   if(n>0){lift=.86*lift+.14*Math.max(0,lf/n); thrust=.86*thrust+.14*Math.max(0,th/n+.15)}
 }
 
-function pressureColor(val){
-  const t=clamp((val+0.8)/1.6,0,1);
+function pressureRGBA(val){
+  // Paper-like diverging map with stronger intra-hue shading.
+  const v = clamp(val, -1.0, 1.0);
+  const mag = Math.pow(Math.abs(v), 0.42);
+
+  function mix(a,b,k){ return a + (b-a)*k; }
+
   let r,g,b,a;
-  if(t<0.5){
-    const k=t/0.5; r=70*(1-k)+210*k; g=130*(1-k)+220*k; b=230*(1-k)+230*k; a=0.08+0.10*k;
+  if(v < 0){
+    if(mag < 0.5){
+      const k = mag / 0.5;
+      r = mix(250, 120, k);
+      g = mix(252, 188, k);
+      b = mix(255, 238, k);
+      a = mix(0.10, 0.52, k);
+    }else{
+      const k = (mag - 0.5) / 0.5;
+      r = mix(120, 8, k);
+      g = mix(188, 52, k);
+      b = mix(238, 150, k);
+      a = mix(0.52, 0.98, k);
+    }
   }else{
-    const k=(t-0.5)/0.5; r=210*(1-k)+235*k; g=220*(1-k)+120*k; b=230*(1-k)+120*k; a=0.18+0.14*k;
-  }
-  return `rgba(${r|0},${g|0},${b|0},${a.toFixed(3)})`;
-}
-function drawPressureMap(r){
-  ctx.save();
-  ctx.beginPath(); rr(r.x,r.y,r.w,r.h,18); ctx.clip();
-  for(let j=1;j<NY-1;j++){
-    for(let i=1;i<NX-1;i++){
-      const id=idx(i,j); if(solid[id]) continue;
-      const val=clamp(pf[id]*1.4,-0.9,0.9);
-      if(Math.abs(val)<0.05) continue;
-      ctx.fillStyle=pressureColor(val);
-      ctx.fillRect(r.x+i*cell-0.5,r.y+j*cell-0.5,cell+1,cell+1);
+    if(mag < 0.5){
+      const k = mag / 0.5;
+      r = mix(255, 248, k);
+      g = mix(248, 168, k);
+      b = mix(242, 168, k);
+      a = mix(0.10, 0.52, k);
+    }else{
+      const k = (mag - 0.5) / 0.5;
+      r = mix(248, 118, k);
+      g = mix(168, 16, k);
+      b = mix(168, 28, k);
+      a = mix(0.52, 0.98, k);
     }
   }
+  return {r:r|0, g:g|0, b:b|0, a:Math.max(0, Math.min(255, Math.round(a*255)))};
+}
+function pressureColor(val){
+  const c = pressureRGBA(val);
+  return `rgba(${c.r},${c.g},${c.b},${(c.a/255).toFixed(3)})`;
+}
+function ensurePressureCanvas(){
+  const w = Math.max(1, Math.floor(NX * cell));
+  const h = Math.max(1, Math.floor(NY * cell));
+  if(!pressureCanvas || pressureCanvas.width !== w || pressureCanvas.height !== h){
+    pressureCanvas = document.createElement('canvas');
+    pressureCanvas.width = w;
+    pressureCanvas.height = h;
+    pressureCtx = pressureCanvas.getContext('2d');
+    pressureDirty = true;
+  }
+  if(!pressureDirty) return;
+
+  const img = pressureCtx.createImageData(w, h);
+  const data = img.data;
+  for(let py=0; py<h; py++){
+    for(let px=0; px<w; px++){
+      const gx = px / cell;
+      const gy = py / cell;
+      const i = Math.floor(gx);
+      const j = Math.floor(gy);
+      if(i < 0 || j < 0 || i >= NX-1 || j >= NY-1) continue;
+      const fx = gx - i;
+      const fy = gy - j;
+      const p00 = pf[idx(i,j)], p10 = pf[idx(i+1,j)], p01 = pf[idx(i,j+1)], p11 = pf[idx(i+1,j+1)];
+      const p = p00*(1-fx)*(1-fy) + p10*fx*(1-fy) + p01*(1-fx)*fy + p11*fx*fy;
+      const c = pressureRGBA(p);
+      const k = (py*w + px) * 4;
+      data[k] = c.r; data[k+1] = c.g; data[k+2] = c.b; data[k+3] = c.a;
+    }
+  }
+  pressureCtx.putImageData(img, 0, 0);
+  pressureDirty = false;
+}
+function drawPressureMap(R, alpha=1){
+  ensurePressureCanvas();
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  rr(R.x,R.y,R.w,R.h,18);
+  ctx.clip();
+  ctx.drawImage(pressureCanvas, 0, 0, pressureCanvas.width, pressureCanvas.height, R.x, R.y, R.w, R.h);
   ctx.restore();
 }
-function drawFlowLines(r,set){
-  ctx.save();
-  ctx.beginPath(); rr(r.x,r.y,r.w,r.h,18); ctx.clip();
+function drawFlowLines(R,set){
+  ctx.save(); ctx.beginPath(); rr(R.x,R.y,R.w,R.h,18); ctx.clip();
   for(const tr of set){
-    const k=1-tr.age/tr.life;
-    const px=r.x+tr.px*cell, py=r.y+tr.py*cell, x=r.x+tr.x*cell, y=r.y+tr.y*cell;
+    const k=1-tr.age/tr.life, px=R.x+tr.px*cell, py=R.y+tr.py*cell, x=R.x+tr.x*cell, y=R.y+tr.y*cell;
     const uu=samp(u,tr.x,tr.y), vv=samp(v,tr.x,tr.y), speed=Math.hypot(uu,vv);
-    let color='rgba(84,140,220,'+(0.12+0.08*k)+')';
-    if(speed>2.2) color='rgba(70,176,170,'+(0.15+0.10*k)+')';
-    ctx.strokeStyle=color; ctx.lineWidth=speed>2.0?1.4:0.9;
-    ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(x,y); ctx.stroke();
+    let color='rgba(84,140,220,'+(0.10+0.07*k)+')'; if(speed>2.2) color='rgba(70,176,170,'+(0.13+0.09*k)+')';
+    ctx.strokeStyle=color; ctx.lineWidth=speed>2.0?1.2:0.8; ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(x,y); ctx.stroke();
   }
-  // subtle vorticity dots
-  for(let j=2;j<NY-2;j+=2){
-    for(let i=2;i<NX-2;i+=2){
-      const id=idx(i,j); if(solid[id]) continue;
-      const curl=.5*(v[idx(i+1,j)]-v[idx(i-1,j)]-u[idx(i,j-1)]+u[idx(i,j+1)]), a=Math.min(.08,Math.abs(curl)*.04);
-      if(a<.02) continue;
-      ctx.fillStyle=curl>0?`rgba(112,160,224,${a})`:`rgba(214,142,174,${a})`;
-      ctx.beginPath(); ctx.arc(r.x+(i+.5)*cell,r.y+(j+.5)*cell,1.4,0,Math.PI*2); ctx.fill();
-    }
+  for(let j=2;j<NY-2;j+=2) for(let i=2;i<NX-2;i+=2){
+    const id=idx(i,j); if(solid[id]) continue;
+    const curl=.5*(v[idx(i+1,j)]-v[idx(i-1,j)]-u[idx(i,j-1)]+u[idx(i,j+1)]), a=Math.min(.06,Math.abs(curl)*.035);
+    if(a<.018) continue; ctx.fillStyle=curl>0?`rgba(112,160,224,${a})`:`rgba(214,142,174,${a})`; ctx.beginPath(); ctx.arc(R.x+(i+.5)*cell,R.y+(j+.5)*cell,1.2,0,Math.PI*2); ctx.fill();
   }
   ctx.restore();
 }
 
-function drawWing(w,side){
+function drawFrontWing(w,side,sc=1){
   const dir=side==='left'?-1:1;
-  ctx.strokeStyle='rgba(236,240,245,.96)'; ctx.lineWidth=6; ctx.lineCap='round';
-  ctx.beginPath(); ctx.moveTo(w.shX,w.shY); ctx.lineTo(w.elbowX,w.elbowY); ctx.lineTo(w.wristX,w.wristY); ctx.stroke();
-  ctx.strokeStyle='rgba(79,168,161,.55)'; ctx.lineWidth=1.6;
-  ctx.beginPath(); ctx.moveTo(w.shX,w.shY); ctx.lineTo(w.elbowX,w.elbowY); ctx.stroke();
-  for(let i=0;i<8;i++){
-    const k=i/7,bx=lerp(w.wristX,w.tipX,.08+.56*k),by=lerp(w.wristY,w.tipY,.08+.56*k),a=w.a3+dir*(-.12+.06*i),len=20+10*k,wid=4.8-.8*k;
-    ctx.save(); ctx.translate(bx,by); ctx.rotate(a);
-    ctx.strokeStyle='rgba(248,248,246,.98)'; ctx.lineWidth=wid; ctx.lineCap='round';
-    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(len,0); ctx.stroke();
+  const spread = Math.min(1.25, Math.max(0.0, (w.tipX-w.wristX)*dir/18));
+
+  // skeleton
+  ctx.strokeStyle='rgba(226,233,240,.96)';
+  ctx.lineWidth=5.8*sc;
+  ctx.lineCap='round';
+  ctx.beginPath();
+  ctx.moveTo(w.shX,w.shY);
+  ctx.lineTo(w.elbowX,w.elbowY);
+  ctx.lineTo(w.wristX,w.wristY);
+  ctx.stroke();
+
+  // leading edge highlight
+  ctx.strokeStyle='rgba(79,168,161,.55)';
+  ctx.lineWidth=1.6*Math.max(0.7,sc);
+  ctx.beginPath();
+  ctx.moveTo(w.shX,w.shY);
+  ctx.lineTo(w.elbowX,w.elbowY);
+  ctx.stroke();
+
+  // soft membrane/shadow area
+  ctx.save();
+  ctx.fillStyle='rgba(205,212,220,0.14)';
+  ctx.beginPath();
+  ctx.moveTo(w.elbowX,w.elbowY);
+  ctx.quadraticCurveTo((w.elbowX+w.wristX)/2+dir*(4+5*spread),(w.elbowY+w.wristY)/2+3,w.wristX,w.wristY);
+  ctx.quadraticCurveTo((w.wristX+w.tipX)/2+dir*(8+10*spread),(w.wristY+w.tipY)/2+8,w.tipX,w.tipY);
+  ctx.quadraticCurveTo((w.elbowX+w.tipX)/2,(w.elbowY+w.tipY)/2+11,w.elbowX,w.elbowY);
+  ctx.fill();
+  ctx.restore();
+
+  function featherStroke(bx,by,a,length,wid,shade=1,tipDark=false){
+    ctx.save();
+    ctx.translate(bx,by);
+    ctx.rotate(a);
+
+    const grad = ctx.createLinearGradient(0,0,length,0);
+    grad.addColorStop(0,'rgba(252,252,250,0.98)');
+    grad.addColorStop(0.65, shade>0.8 ? 'rgba(243,244,242,0.98)' : 'rgba(232,236,242,0.95)');
+    grad.addColorStop(1, tipDark ? 'rgba(186,193,202,0.78)' : 'rgba(224,228,234,0.86)');
+
+    ctx.strokeStyle=grad;
+    ctx.lineWidth=wid;
+    ctx.lineCap='round';
+    ctx.beginPath();
+    ctx.moveTo(0,0);
+    ctx.lineTo(length,0);
+    ctx.stroke();
+
+    // rachis
+    ctx.strokeStyle='rgba(160,166,176,0.26)';
+    ctx.lineWidth=Math.max(0.7, wid*0.16);
+    ctx.beginPath();
+    ctx.moveTo(0,0);
+    ctx.lineTo(length,0);
+    ctx.stroke();
+
     ctx.restore();
+  }
+
+  // coverts near upper wing
+  for(let i=0;i<4;i++){
+    const k=i/3;
+    const bx=lerp(w.shX,w.elbowX,0.18+0.62*k);
+    const by=lerp(w.shY,w.elbowY,0.18+0.62*k);
+    const a=w.a1 + dir*(-0.26 + 0.10*i);
+    const length=8+4*k;
+    const wid=3.2-0.25*k;
+    featherStroke(bx,by,a,length,wid,0.7,false);
+  }
+
+  // secondaries
+  for(let i=0;i<7;i++){
+    const k=i/6;
+    const bx=lerp(w.elbowX,w.wristX,0.05+0.84*k);
+    const by=lerp(w.elbowY,w.wristY,0.05+0.84*k);
+    const a=w.a2 + dir*(-0.18 - 0.05*spread + 0.07*i);
+    const length=(12+11*k+2*spread)*sc;
+    const wid=(3.7-0.28*k)*Math.max(0.65,sc);
+    featherStroke(bx,by,a,length,wid,0.85,false);
+  }
+
+  // primaries: more spread and uneven tips
+  for(let i=0;i<10;i++){
+    const k=i/9;
+    const bx=lerp(w.wristX,w.tipX,0.04+0.72*k);
+    const by=lerp(w.wristY,w.tipY,0.04+0.72*k);
+    const jitter=(k-0.5)*(0.06+0.06*spread);
+    const a=w.a3 + dir*(-0.18 - 0.18*spread + 0.075*i) + dir*jitter;
+    const length=(16+16*k+7*spread + (i%2===0 ? 1.8 : -0.6))*sc;
+    const wid=(4.1-0.30*k)*Math.max(0.65,sc);
+    featherStroke(bx,by,a,length,wid,1.0,k>0.72);
   }
 }
 function arrow(x1,y1,x2,y2,color,label){
-  ctx.save(); ctx.strokeStyle=color; ctx.fillStyle=color; ctx.lineWidth=2.8;
+  ctx.save(); ctx.strokeStyle=color; ctx.fillStyle=color; ctx.lineWidth=2.4;
   ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
-  const a=Math.atan2(y2-y1,x2-x1),h=7;
-  ctx.beginPath(); ctx.moveTo(x2,y2); ctx.lineTo(x2-h*Math.cos(a-.4),y2-h*Math.sin(a-.4)); ctx.lineTo(x2-h*Math.cos(a+.4),y2-h*Math.sin(a+.4)); ctx.closePath(); ctx.fill();
-  ctx.font='11px system-ui'; ctx.fillText(label,x2+5,y2-3); ctx.restore();
+  const a=Math.atan2(y2-y1,x2-x1),h=6; ctx.beginPath(); ctx.moveTo(x2,y2); ctx.lineTo(x2-h*Math.cos(a-.4),y2-h*Math.sin(a-.4)); ctx.lineTo(x2-h*Math.cos(a+.4),y2-h*Math.sin(a+.4)); ctx.closePath(); ctx.fill();
+  ctx.font='10px system-ui'; ctx.fillText(label,x2+4,y2-2); ctx.restore();
 }
-function frontBird(s,Lw,Rw,r){
-  ctx.save(); ctx.beginPath(); rr(r.x,r.y,r.w,r.h,18); ctx.clip();
-  ctx.strokeStyle='rgba(215,220,228,.95)'; ctx.lineWidth=1.4;
-  for(let i=0;i<6;i++){const k=i/5,x=s.bodyX+(k-.5)*7,y=s.bodyY+18,tx=x+(k-.5)*4,ty=y+8; ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(tx,ty); ctx.stroke()}
-  const g=ctx.createRadialGradient(s.bodyX-3,s.bodyY-6,2,s.bodyX,s.bodyY,30); g.addColorStop(0,'rgba(255,255,255,.98)'); g.addColorStop(.55,'rgba(248,248,246,.98)'); g.addColorStop(.9,'rgba(226,230,236,.98)'); g.addColorStop(1,'rgba(205,214,224,.92)');
-  ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(s.bodyX,s.bodyY+6,16,24,0,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='rgba(255,255,255,.98)'; ctx.beginPath(); ctx.ellipse(s.bodyX,s.bodyY-10,7,8,0,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#cf9a66'; ctx.beginPath(); ctx.arc(s.bodyX+2,s.bodyY-11,2.7,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(s.bodyX+2,s.bodyY-11,1.1,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#777b82'; ctx.beginPath(); ctx.moveTo(s.bodyX-1,s.bodyY-10); ctx.lineTo(s.bodyX-7,s.bodyY-8.8); ctx.lineTo(s.bodyX-1,s.bodyY-7.7); ctx.closePath(); ctx.fill();
-  drawWing(Lw,'left'); drawWing(Rw,'right');
-  arrow(r.x+14,r.y+r.h-20,r.x+90,r.y+r.h-20,'#5b84c8','前から来る空気');
+function drawFrontBird(s,Lw,Rw,R){
+  const sc=P().scale;
+  ctx.save(); ctx.beginPath(); rr(R.x,R.y,R.w,R.h,18); ctx.clip();
+
+  // tail
+  ctx.save();
+  ctx.strokeStyle='rgba(214,220,226,.85)';
+  ctx.lineWidth=1.2*Math.max(0.65,sc);
+  for(let i=0;i<5;i++){
+    const k=i/4, x=s.bodyX+(k-.5)*7*sc, y=s.bodyY+17*sc, tx=x+(k-.5)*4*sc, ty=y+8*sc;
+    ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(tx,ty); ctx.stroke();
+  }
+  ctx.restore();
+
+  // body shadow
+  const sh=ctx.createRadialGradient(s.bodyX+5*sc,s.bodyY+13*sc,2*sc,s.bodyX+5*sc,s.bodyY+13*sc,24*sc);
+  sh.addColorStop(0,'rgba(145,155,168,.18)');
+  sh.addColorStop(1,'rgba(145,155,168,0)');
+  ctx.fillStyle=sh; ctx.beginPath(); ctx.ellipse(s.bodyX+3*sc,s.bodyY+12*sc,16*sc,24*sc,0,0,Math.PI*2); ctx.fill();
+
+  // body
+  const g=ctx.createRadialGradient(s.bodyX-4*sc,s.bodyY-8*sc,2*sc,s.bodyX,s.bodyY,28*sc);
+  g.addColorStop(0,'rgba(255,255,255,.99)');
+  g.addColorStop(.42,'rgba(247,248,246,.99)');
+  g.addColorStop(.78,'rgba(228,232,238,.98)');
+  g.addColorStop(1,'rgba(198,207,218,.92)');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(s.bodyX,s.bodyY+5*sc,15*sc,22*sc,0,0,Math.PI*2); ctx.fill();
+
+  // breast texture
+  ctx.fillStyle='rgba(186,194,204,.28)';
+  for(let j=0;j<2;j++){
+    for(let i=0;i<3;i++){
+      ctx.beginPath();
+      ctx.ellipse(s.bodyX-4*sc+i*4.2*sc, s.bodyY+2*sc+j*4.5*sc, 1.3*sc, 0.9*sc, 0, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+
+  // neck
+  ctx.save();
+  ctx.translate(s.bodyX-1*sc,s.bodyY-2*sc);
+  ctx.rotate(-0.10+0.04*Math.sin(s.ph-0.2));
+  ctx.strokeStyle='rgba(228,234,240,.95)';
+  ctx.lineWidth=4.6*Math.max(0.65,sc);
+  ctx.beginPath(); ctx.moveTo(0,0); ctx.quadraticCurveTo(-1*sc,-7*sc,1*sc,-12*sc); ctx.stroke();
+  ctx.restore();
+
+  // head
+  const hg=ctx.createRadialGradient(s.bodyX-1*sc,s.bodyY-12*sc,1*sc,s.bodyX,s.bodyY-10*sc,10*sc);
+  hg.addColorStop(0,'rgba(255,255,255,.99)');
+  hg.addColorStop(.65,'rgba(245,246,245,.99)');
+  hg.addColorStop(1,'rgba(214,220,228,.95)');
+  ctx.fillStyle=hg; ctx.beginPath(); ctx.ellipse(s.bodyX,s.bodyY-10*sc,6.5*sc,7.2*sc,0,0,Math.PI*2); ctx.fill();
+
+  // eye ring and eye
+  ctx.fillStyle='#d2a06a'; ctx.beginPath(); ctx.arc(s.bodyX+2.0*sc,s.bodyY-11.0*sc,2.4*sc,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(s.bodyX+2.0*sc,s.bodyY-11.0*sc,1.0*sc,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,.8)'; ctx.beginPath(); ctx.arc(s.bodyX+2.5*sc,s.bodyY-11.5*sc,0.35*sc,0,Math.PI*2); ctx.fill();
+
+  // beak
+  ctx.fillStyle='#777b82';
+  ctx.beginPath(); ctx.moveTo(s.bodyX-0.8*sc,s.bodyY-10.1*sc); ctx.lineTo(s.bodyX-6.7*sc,s.bodyY-8.8*sc); ctx.lineTo(s.bodyX-0.8*sc,s.bodyY-7.4*sc); ctx.closePath(); ctx.fill();
+
+  drawFrontWing(Lw,'left',sc);
+  drawFrontWing(Rw,'right',sc);
+
+  arrow(R.x+12,R.y+R.h-18,R.x+88,R.y+R.h-18,'#5b84c8','前から来る空気');
   ctx.restore();
 }
 
-// side acceleration/wing positions intentionally derived from same side anchor
-function sideKinematics(s,r){
-  const cx=r.x+r.w*.32, cy=s.bodyY+2, tilt=-.10+.08*s.down-.04*s.up;
-  const shoulderX = cx-2;
-  const shoulderY = s.bodyY-2;
-  const a1=-.95+.54*Math.sin(s.ph), a2=a1+.24*(.25+.9*s.down)-.14*s.fold, a3=a2+.28*(.25+1*s.down)-.18*s.fold;
-  const ex=shoulderX+Math.cos(a1)*18, ey=shoulderY+Math.sin(a1)*18;
-  const wx=ex+Math.cos(a2)*(36*(1-.16*s.fold)), wy=ey+Math.sin(a2)*(36*(1-.16*s.fold));
-  const tx=wx+Math.cos(a3)*(42*(1-.14*s.fold)), ty=wy+Math.sin(a3)*(42*(1-.14*s.fold));
-  return {cx,cy,tilt,shoulderX,shoulderY,ex,ey,wx,wy,tx,ty,a1,a2,a3};
+function sideKinematics(s,R){
+  const p=P(), sc=p.scale;
+  const bodyCx=R.x+R.w*.15, bodyCy=R.y+R.h*.67+Math.sin(s.ph-.2)*p.amp*.03;
+  const tilt=-.10+.08*s.down-.04*s.up;
+  const shoulderX=bodyCx-1.2*sc, shoulderY=bodyCy-1.6*sc;
+  const a1=-1.00+.60*Math.sin(s.ph)-0.06*s.fold, a2=a1+.20+0.22*s.open-0.18*s.fold, a3=a2+.22+0.30*s.open-0.22*s.fold;
+  const ex=shoulderX+Math.cos(a1)*15*sc, ey=shoulderY+Math.sin(a1)*15*sc;
+  const wx=ex+Math.cos(a2)*(28*(1-.16*s.fold))*sc, wy=ey+Math.sin(a2)*(28*(1-.16*s.fold))*sc;
+  const tx=wx+Math.cos(a3)*(34*(1-.14*s.fold))*sc, ty=wy+Math.sin(a3)*(34*(1-.14*s.fold))*sc;
+  return {bodyCx,bodyCy,tilt,shoulderX,shoulderY,ex,ey,wx,wy,tx,ty,a1,a2,a3};
 }
-function feather(x,y,a,len,wid,alpha){
+function feather(x,y,a,length,wid,alpha){
   ctx.save(); ctx.translate(x,y); ctx.rotate(a); ctx.globalAlpha=alpha;
-  ctx.strokeStyle='rgba(248,248,246,.98)'; ctx.lineWidth=wid; ctx.lineCap='round';
-  ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(len,0); ctx.stroke();
+  ctx.strokeStyle='rgba(248,248,246,.98)'; ctx.lineWidth=wid; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(length,0); ctx.stroke(); ctx.restore();
+}
+function drawSideBird(s,R){
+  const sc=P().scale;
+  ctx.save(); ctx.beginPath(); rr(R.x,R.y,R.w,R.h,18); ctx.clip();
+  const K=sideKinematics(s,R);
+  const openAmt = s.open;
+
+  ctx.save(); ctx.translate(K.bodyCx,K.bodyCy); ctx.rotate(K.tilt);
+
+  const bodyShadow=ctx.createRadialGradient(4*sc,7*sc,1*sc,4*sc,7*sc,22*sc);
+  bodyShadow.addColorStop(0,'rgba(145,155,168,.16)');
+  bodyShadow.addColorStop(1,'rgba(145,155,168,0)');
+  ctx.fillStyle=bodyShadow; ctx.beginPath(); ctx.ellipse(2*sc,3*sc,17*sc,11*sc,0,0,Math.PI*2); ctx.fill();
+
+  const g=ctx.createRadialGradient(-3*sc,-4*sc,2*sc,0,0,22*sc);
+  g.addColorStop(0,'rgba(255,255,255,.99)');
+  g.addColorStop(.50,'rgba(246,247,245,.99)');
+  g.addColorStop(.82,'rgba(228,232,238,.98)');
+  g.addColorStop(1,'rgba(198,207,218,.92)');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(0,3*sc,16*sc,10*sc,0.08,0,Math.PI*2); ctx.fill();
+
+  ctx.save(); ctx.translate(-9*sc,-4*sc); ctx.rotate(-.18+0.05*Math.sin(s.ph-.3));
+  ctx.strokeStyle='rgba(228,234,240,.95)'; ctx.lineWidth=3.8*Math.max(0.65,sc);
+  ctx.beginPath(); ctx.moveTo(0,0); ctx.quadraticCurveTo(-1*sc,-4*sc,0,-8*sc); ctx.stroke();
+  ctx.restore();
+
+  const hg=ctx.createRadialGradient(-9*sc,-9*sc,1*sc,-9*sc,-8*sc,7*sc);
+  hg.addColorStop(0,'rgba(255,255,255,.99)');
+  hg.addColorStop(1,'rgba(214,220,228,.95)');
+  ctx.fillStyle=hg; ctx.beginPath(); ctx.ellipse(-9*sc,-8*sc,5.3*sc,4.3*sc,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#d2a06a'; ctx.beginPath(); ctx.arc(-7.2*sc,-8.7*sc,1.8*sc,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(-7.2*sc,-8.7*sc,0.75*sc,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,.8)'; ctx.beginPath(); ctx.arc(-6.8*sc,-9.1*sc,0.25*sc,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#7b7e85'; ctx.beginPath(); ctx.moveTo(-10.0*sc,-7.7*sc); ctx.lineTo(-14.8*sc,-6.9*sc); ctx.lineTo(-10.0*sc,-6.0*sc); ctx.closePath(); ctx.fill();
+
+  ctx.strokeStyle='rgba(220,226,232,.90)'; ctx.lineWidth=1.0;
+  for(let i=0;i<4;i++){
+    const k=i/3;
+    ctx.beginPath();
+    ctx.moveTo(10*sc,6*sc+k*0.6*sc);
+    ctx.lineTo(15*sc+k*2*sc,8*sc+k*1.4*sc);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  ctx.strokeStyle='rgba(235,240,245,.92)';
+  ctx.lineWidth=5.0*Math.max(0.65,sc);
+  ctx.lineCap='round';
+  ctx.beginPath();
+  ctx.moveTo(K.shoulderX,K.shoulderY);
+  ctx.lineTo(K.ex,K.ey);
+  ctx.lineTo(K.wx,K.wy);
+  ctx.stroke();
+
+  ctx.strokeStyle='rgba(79,168,161,.72)';
+  ctx.lineWidth=1.9*Math.max(0.65,sc);
+  ctx.beginPath();
+  ctx.moveTo(K.shoulderX,K.shoulderY);
+  ctx.lineTo(K.ex,K.ey);
+  ctx.stroke();
+
+  function featherStroke(bx,by,a,length,wid,tipDark=false){
+    ctx.save();
+    ctx.translate(bx,by);
+    ctx.rotate(a);
+
+    const grad = ctx.createLinearGradient(0,0,length,0);
+    grad.addColorStop(0,'rgba(251,251,249,0.98)');
+    grad.addColorStop(0.65,'rgba(240,242,240,0.96)');
+    grad.addColorStop(1, tipDark ? 'rgba(182,190,200,0.76)' : 'rgba(224,228,234,0.84)');
+
+    ctx.strokeStyle=grad;
+    ctx.lineWidth=wid;
+    ctx.lineCap='round';
+    ctx.beginPath();
+    ctx.moveTo(0,0);
+    ctx.lineTo(length,0);
+    ctx.stroke();
+
+    ctx.strokeStyle='rgba(160,166,176,0.24)';
+    ctx.lineWidth=Math.max(0.7, wid*0.16);
+    ctx.beginPath();
+    ctx.moveTo(0,0);
+    ctx.lineTo(length,0);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  // coverts
+  for(let i=0;i<3;i++){
+    const k=i/2, bx=lerp(K.shoulderX,K.ex,0.20+0.55*k), by=lerp(K.shoulderY,K.ey,0.20+0.55*k), a=K.a1 + (-0.16 + 0.08*i), length=(7+2*k)*sc, wid=(2.8-0.2*k)*Math.max(0.65,sc);
+    featherStroke(bx,by,a,length,wid,false);
+  }
+
+  // secondaries
+  for(let i=0;i<6;i++){
+    const k=i/5, bx=lerp(K.ex,K.wx,0.08+0.78*k), by=lerp(K.ey,K.wy,0.08+0.78*k), a=K.a2 + (-0.14 - 0.08*openAmt + 0.07*i), length=(8+7*k+2*openAmt)*sc, wid=(2.9-0.22*k)*Math.max(0.65,sc);
+    featherStroke(bx,by,a,length,wid,false);
+  }
+
+  // primaries
+  for(let i=0;i<8;i++){
+    const k=i/7,bx=lerp(K.wx,K.tx,.08+.62*k),by=lerp(K.wy,K.ty,.08+.62*k),a=K.a3+(-.12-.18*openAmt+.08*i)+(k-0.5)*0.04,length=(10+10*k+3*openAmt+(i%2===0?1.0:-0.3))*sc,wid=(3.3-.25*k)*Math.max(0.65,sc);
+    featherStroke(bx,by,a,length,wid,k>0.7);
+  }
+
+  arrow(R.x+R.w-76,R.y+28,R.x+R.w-76,R.y+28-Math.min(38,8+lift*15),'#5b84c8','揚力');
+  arrow(R.x+R.w-76,R.y+54,R.x+R.w-76+Math.min(40,8+thrust*16),R.y+54,'#d48ab0','推力');
+  arrow(R.x+12,R.y+R.h-18,R.x+88,R.y+R.h-18,'#5b84c8','前から来る空気');
   ctx.restore();
 }
-function sideBird(s,r){
-  ctx.save(); ctx.beginPath(); rr(r.x,r.y,r.w,r.h,18); ctx.clip();
-  const K = sideKinematics(s,r);
 
-  ctx.save(); ctx.translate(K.cx,K.cy); ctx.rotate(K.tilt);
-  const g=ctx.createRadialGradient(-3,-5,2,0,0,28); g.addColorStop(0,'rgba(255,255,255,.98)'); g.addColorStop(.55,'rgba(248,248,246,.98)'); g.addColorStop(.9,'rgba(226,230,236,.98)'); g.addColorStop(1,'rgba(205,214,224,.92)');
-  ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(0,4,20,13,.08,0,Math.PI*2); ctx.fill();
-  ctx.save(); ctx.translate(-12,-5); ctx.rotate(-.10+.06*Math.sin(s.ph-.3));
-  ctx.strokeStyle='rgba(230,232,236,.95)'; ctx.lineWidth=5; ctx.beginPath(); ctx.moveTo(4,4); ctx.quadraticCurveTo(0,-3,-1,-9); ctx.stroke();
-  ctx.fillStyle='rgba(255,255,255,.99)'; ctx.beginPath(); ctx.ellipse(0,-11,6,5,0,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#cf9a66'; ctx.beginPath(); ctx.arc(2,-12,2,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(2,-12,0.8,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#7b7e85'; ctx.beginPath(); ctx.moveTo(-1,-10); ctx.lineTo(-7,-9); ctx.lineTo(-1,-8); ctx.closePath(); ctx.fill();
-  ctx.restore(); ctx.restore();
+function drawLegend(R){
+  const x = R.x + R.w - 78;
+  const y = R.y + 56;
+  const h = 156;
+  const w = 18;
 
-  ctx.strokeStyle='rgba(235,240,245,.86)'; ctx.lineWidth=6; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(K.shoulderX,K.shoulderY); ctx.lineTo(K.ex,K.ey); ctx.lineTo(K.wx,K.wy); ctx.stroke();
-  ctx.strokeStyle='rgba(79,168,161,.55)'; ctx.lineWidth=1.6; ctx.beginPath(); ctx.moveTo(K.shoulderX,K.shoulderY); ctx.lineTo(K.ex,K.ey); ctx.stroke();
-  for(let i=0;i<8;i++){const k=i/7,bx=lerp(K.wx,K.tx,.08+.56*k),by=lerp(K.wy,K.ty,.08+.56*k),a=K.a3+(-.10+.05*i)+.12*s.down-.08*s.up,len=16+8*k,wid=4.2-.6*k; feather(bx,by,a,len,wid,.9)}
+  const grad = ctx.createLinearGradient(0, y, 0, y + h);
+  grad.addColorStop(0.00, 'rgba(118,16,28,0.98)');
+  grad.addColorStop(0.22, 'rgba(205,88,88,0.82)');
+  grad.addColorStop(0.50, 'rgba(252,252,252,0.18)');
+  grad.addColorStop(0.78, 'rgba(88,132,230,0.82)');
+  grad.addColorStop(1.00, 'rgba(8,52,150,0.98)');
 
-  arrow(r.x+r.w-82,r.y+34,r.x+r.w-82,r.y+34-Math.min(46,10+lift*18),'#5b84c8','揚力');
-  arrow(r.x+r.w-82,r.y+64,r.x+r.w-82+Math.min(46,10+thrust*18),r.y+64,'#d48ab0','推力');
-  arrow(r.x+14,r.y+r.h-20,r.x+90,r.y+r.h-20,'#5b84c8','前から来る空気');
+  ctx.fillStyle = 'rgba(255,255,255,0.72)';
+  ctx.fillRect(x - 34, y - 8, 64, h + 16);
+
+  ctx.fillStyle = grad;
+  ctx.fillRect(x, y, w, h);
+
+  ctx.strokeStyle = 'rgba(0,0,0,0.22)';
+  ctx.strokeRect(x, y, w, h);
+
+  ctx.font = '11px system-ui';
+  ctx.fillStyle = 'rgba(20,30,40,0.92)';
+  const ticks = [
+    {label:'+1.0', yy:y+4},
+    {label:'+0.5', yy:y+h*0.25},
+    {label:'0', yy:y+h*0.50},
+    {label:'-0.5', yy:y+h*0.75},
+    {label:'-1.0', yy:y+h-2},
+  ];
+  for(const t of ticks){
+    ctx.beginPath();
+    ctx.moveTo(x+w+2, t.yy);
+    ctx.lineTo(x+w+8, t.yy);
+    ctx.strokeStyle = 'rgba(20,30,40,0.55)';
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(20,30,40,0.92)';
+    ctx.fillText(t.label, x-30, t.yy+4);
+  }
+  ctx.fillText('高圧', x-30, y-12);
+  ctx.fillText('低圧', x-30, y+h+14);
+}
+
+
+function drawContours(R){
+  ctx.save();
+  ctx.beginPath(); rr(R.x,R.y,R.w,R.h,18); ctx.clip();
+
+  // Denser levels near zero + strong outer levels
+  const levels = [-0.85,-0.65,-0.48,-0.34,-0.22,-0.12,-0.05,0.05,0.12,0.22,0.34,0.48,0.65,0.85];
+
+  function interp(x1,y1,v1,x2,y2,v2,level){
+    const d = (v2 - v1);
+    const t = Math.abs(d) < 1e-6 ? 0.5 : (level - v1) / d;
+    return { x: x1 + (x2 - x1) * t, y: y1 + (y2 - y1) * t };
+  }
+
+  for(const level of levels){
+    const strong = Math.abs(level) > 0.6;
+    const mid = Math.abs(level) > 0.2;
+    ctx.strokeStyle = level > 0
+      ? (strong ? 'rgba(132,28,28,0.80)' : mid ? 'rgba(170,58,58,0.62)' : 'rgba(210,120,120,0.42)')
+      : (strong ? 'rgba(18,46,120,0.80)' : mid ? 'rgba(52,82,170,0.62)' : 'rgba(120,150,220,0.42)');
+    ctx.lineWidth = strong ? 1.35 : mid ? 1.0 : 0.8;
+
+    for(let j=1;j<NY-2;j++){
+      for(let i=1;i<NX-2;i++){
+        const v00 = pf[idx(i,j)];
+        const v10 = pf[idx(i+1,j)];
+        const v11 = pf[idx(i+1,j+1)];
+        const v01 = pf[idx(i,j+1)];
+
+        const s0 = v00 >= level ? 1 : 0;
+        const s1 = v10 >= level ? 1 : 0;
+        const s2 = v11 >= level ? 1 : 0;
+        const s3 = v01 >= level ? 1 : 0;
+        const state = s0 | (s1<<1) | (s2<<2) | (s3<<3);
+        if(state === 0 || state === 15) continue;
+
+        const x = R.x + i * cell;
+        const y = R.y + j * cell;
+
+        const pTop    = interp(x,      y,      v00, x+cell, y,      v10, level);
+        const pRight  = interp(x+cell, y,      v10, x+cell, y+cell, v11, level);
+        const pBottom = interp(x,      y+cell, v01, x+cell, y+cell, v11, level);
+        const pLeft   = interp(x,      y,      v00, x,      y+cell, v01, level);
+
+        const segments = {
+          1:  [[pLeft,pTop]],
+          2:  [[pTop,pRight]],
+          3:  [[pLeft,pRight]],
+          4:  [[pRight,pBottom]],
+          5:  [[pLeft,pBottom],[pTop,pRight]],
+          6:  [[pTop,pBottom]],
+          7:  [[pLeft,pBottom]],
+          8:  [[pBottom,pLeft]],
+          9:  [[pTop,pBottom]],
+          10: [[pTop,pLeft],[pRight,pBottom]],
+          11: [[pRight,pBottom]],
+          12: [[pLeft,pRight]],
+          13: [[pTop,pRight]],
+          14: [[pLeft,pTop]]
+        }[state];
+
+        if(!segments) continue;
+        for(const seg of segments){
+          ctx.beginPath();
+          ctx.moveTo(seg[0].x, seg[0].y);
+          ctx.lineTo(seg[1].x, seg[1].y);
+          ctx.stroke();
+        }
+      }
+    }
+  }
   ctx.restore();
 }
-function legend(r){
-  const x=r.x+14,y=r.y+56;
-  ctx.fillStyle='rgba(255,255,255,.70)'; ctx.fillRect(x,y,210,114);
-  ctx.strokeStyle='rgba(70,90,110,.10)'; ctx.strokeRect(x,y,210,114);
-  ctx.font='12px system-ui';
-  ctx.fillStyle='rgba(84,140,220,.95)'; ctx.fillText('青: 低圧',x+10,y+18);
-  ctx.fillStyle='rgba(230,120,120,.95)'; ctx.fillText('赤: 高圧',x+10,y+38);
-  ctx.fillStyle='rgba(70,176,170,.95)'; ctx.fillText('緑青線: 翼まわり加速域',x+10,y+58);
-  ctx.fillStyle='rgba(23,48,71,.78)'; ctx.fillText('青/桃点: 後流渦',x+10,y+78);
-  ctx.fillStyle='rgba(74,98,119,.78)'; ctx.fillText('流線: 周囲の空気の流れ',x+10,y+98);
-}
+
 
 function draw(dt){
   const R=rects();
   ctx.clearRect(0,0,W,H);
-  card(R.L,'前面ビュー','圧力マップ・流線・周囲流れ');
-  card(R.R,'側面ビュー','圧力マップ・力・周囲流れ');
-  const s=bird(simT,R.L), Lw=wing(s,'left'), Rw=wing(s,'right');
-  if(dt>0){fluid(dt,Lw,Rw,R.L,s); tracers(dt); forces(Lw,Rw,R.L)}
+  card(R.F,'前面ビュー','圧力マップ・流線・周囲流れ');
+  card(R.S,'側面ビュー','圧力マップ・力・周囲流れ');
+
+  const s=birdState(simT,R.F), Lw=wing(s,'left'), Rw=wing(s,'right');
+  if(dt>0){fluidStep(dt,Lw,Rw,R.F,s); updateTracers(dt); updateForces(Lw,Rw,R.F);}
   prevL=Lw; prevR=Rw;
 
-  drawPressureMap(R.L);
-  drawFlowLines(R.L,frontTr);
-  frontBird(s,Lw,Rw,R.L);
-  legend(R.L);
+  if(showPressureEl && showPressureEl.checked) drawPressureMap(R.F);
+  if(showContoursEl && showContoursEl.checked) drawContours(R.F);
+  if(showFlowEl && showFlowEl.checked) drawFlowLines(R.F,frontTr);
+  drawFrontBird(s,Lw,Rw,R.F);
+  drawLegend(R.F);
 
-  ctx.save(); ctx.globalAlpha=.82; drawPressureMap(R.R); ctx.restore();
-  ctx.save(); ctx.globalAlpha=.60; drawFlowLines(R.R,sideTr); ctx.restore();
-  sideBird(s,R.R);
+  if(showPressureEl && showPressureEl.checked) drawPressureMap(R.S, .84);
+  if(showContoursEl && showContoursEl.checked) drawContours(R.S);
+  if(showFlowEl && showFlowEl.checked){
+    ctx.save(); ctx.globalAlpha=.62; drawFlowLines(R.S,sideTr); ctx.restore();
+  }
+  drawSideBird(s,R.S);
 }
-
 function loop(now){
   if(!t0){t0=now; last=now}
   simT=(now-t0)/1000;
@@ -385,6 +799,11 @@ function loop(now){
   requestAnimationFrame(loop);
 }
 resetBtn.addEventListener('click',()=>{t0=0; simT=0; last=0; reset(); draw(0)});
+[showPressureEl, showContoursEl, showFlowEl, birdScaleEl].forEach(el => {
+  if(!el) return;
+  el.addEventListener('input', ()=>draw(0));
+  el.addEventListener('change', ()=>draw(0));
+});
 window.addEventListener('resize',resize);
 resize(); draw(0); setTimeout(()=>requestAnimationFrame(loop),80);
 })();
