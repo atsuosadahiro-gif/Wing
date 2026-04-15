@@ -6,17 +6,29 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>形変化つき羽ディテール強化版</title>
 <style>
+  :root{--ui-pad-x:12px;--ui-pad-y:10px;--safe-top:max(env(safe-area-inset-top),0px);--safe-bottom:max(env(safe-area-inset-bottom),0px);}
   html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(180deg,#eef5fb,#dbe8f3 45%,#c6dceb);}
-  #wrap{position:fixed;inset:0;display:flex;flex-direction:column;}
-  #ui{flex:0 0 auto;background:rgba(255,255,255,.94);backdrop-filter:blur(10px);border-bottom:1px solid rgba(0,0,0,.08);padding:10px 12px 8px;z-index:10}
-  .row{display:flex;align-items:center;gap:10px;margin:8px 0;flex-wrap:wrap}
-  label{min-width:122px;font-size:15px}
-  input[type="range"]{width:180px;max-width:42vw}
-  button{background:#26435e;color:#eef7ff;border:none;border-radius:12px;padding:10px 16px;font-size:15px}
+  *{box-sizing:border-box}
+  #wrap{position:fixed;inset:0;display:flex;flex-direction:column;min-height:100dvh;}
+  #ui{flex:0 0 auto;background:rgba(255,255,255,.94);backdrop-filter:blur(10px);border-bottom:1px solid rgba(0,0,0,.08);padding:calc(var(--ui-pad-y) + var(--safe-top)) var(--ui-pad-x) 8px;z-index:10;display:flex;flex-direction:column;gap:8px}
+  .row{display:grid;grid-template-columns:minmax(92px,132px) minmax(0,1fr);align-items:center;gap:8px 10px;margin:0}
+  .row.controls{grid-template-columns:minmax(92px,132px) minmax(0,1fr) auto;align-items:center}
+  .toggles{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .toggles label{min-width:auto;font-size:13px;display:flex;align-items:center;gap:4px}
+  label{min-width:0;font-size:14px;line-height:1.2}
+  input[type="range"]{width:100%;min-width:0}
+  button{background:#26435e;color:#eef7ff;border:none;border-radius:12px;padding:10px 14px;font-size:14px;white-space:nowrap}
   .pill{display:inline-block;font-size:12px;padding:3px 8px;border-radius:999px;background:rgba(38,67,94,.10);color:#26435e;border:1px solid rgba(38,67,94,.15)}
-  #msg{font-size:13px;line-height:1.35;color:#4a6277;margin-top:6px}
-  #stage{flex:1 1 auto;min-height:300px;position:relative;overflow:hidden}
+  #msg{font-size:12px;line-height:1.45;color:#4a6277;margin-top:0}
+  #stage{flex:1 1 auto;min-height:0;position:relative;overflow:hidden;padding-bottom:var(--safe-bottom)}
   canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+  @media (max-width: 760px){
+    #ui{padding-left:10px;padding-right:10px}
+    .row,.row.controls{grid-template-columns:1fr}
+    .toggles{gap:8px}
+    button{width:100%}
+    .pill{justify-self:start}
+  }
 </style>
 </head>
 <body>
@@ -25,7 +37,7 @@
     <div class="row"><label>前からの風</label><input id="wind" type="range" min="5" max="50" value="18"></div>
     <div class="row"><label>羽ばたき振幅</label><input id="amp" type="range" min="8" max="80" value="36"></div>
     <div class="row"><label>周波数</label><input id="freq" type="range" min="20" max="120" value="46"></div>
-    <div class="row"><label>翼の迎角変化</label><input id="pitch" type="range" min="0" max="100" value="54"><label style="min-width:auto;font-size:13px"><input id="showPressure" type="checkbox" checked> 圧力</label><label style="min-width:auto;font-size:13px"><input id="showContours" type="checkbox" checked> 等圧線</label><label style="min-width:auto;font-size:13px"><input id="showFlow" type="checkbox" checked> 流線</label><button id="reset">リセット</button><span class="pill">羽ディテール強化版</span></div>
+    <div class="row controls"><label>翼の迎角変化</label><input id="pitch" type="range" min="0" max="100" value="54"><div class="toggles"><label><input id="showPressure" type="checkbox" checked> 圧力</label><label><input id="showContours" type="checkbox" checked> 等圧線</label><label><input id="showFlow" type="checkbox" checked> 流線</label><button id="reset">リセット</button><span class="pill">羽ディテール強化版</span></div></div>
     <div id="msg">圧力マップの滑らかさは維持しつつ、羽の見た目を強化した版です。羽根の枚数感、長短の段差、前腕側の層、羽先のばらつきを増やして、より鳥らしい翼に寄せています。</div>
   </div>
   <div id="stage"><canvas id="cv"></canvas></div>
@@ -47,9 +59,13 @@ function gap(){return Math.max(10,Math.min(18,H*0.02))}
 function topm(){return Math.max(10,Math.min(16,H*0.02))}
 function rects(){
   const pd=pad(), gp=gap(), tp=topm();
-  const ph=(H - tp*2 - gp)/2;
-  const pw=W - pd*2;
-  return {F:{x:pd,y:tp,w:pw,h:ph}, S:{x:pd,y:tp+ph+gp,w:pw,h:ph}};
+  const innerW=Math.max(220, W - pd*2);
+  const innerH=Math.max(220, H - tp*2);
+  const ph=Math.max(120, (innerH - gp)/2);
+  return {
+    F:{x:pd,y:tp,w:innerW,h:ph},
+    S:{x:pd,y:tp+ph+gp,w:innerW,h:ph}
+  };
 }
 function rr(x,y,w,h,r){ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y)}
 function card(r,title,sub){
