@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>形変化つき論文図版</title>
+<title>形変化つき羽ディテール強化版</title>
 <style>
   html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(180deg,#eef5fb,#dbe8f3 45%,#c6dceb);}
   #wrap{position:fixed;inset:0;display:flex;flex-direction:column;}
@@ -25,8 +25,8 @@
     <div class="row"><label>前からの風</label><input id="wind" type="range" min="5" max="50" value="18"></div>
     <div class="row"><label>羽ばたき振幅</label><input id="amp" type="range" min="8" max="80" value="36"></div>
     <div class="row"><label>周波数</label><input id="freq" type="range" min="20" max="120" value="46"></div>
-    <div class="row"><label>翼の迎角変化</label><input id="pitch" type="range" min="0" max="100" value="54"><label style="min-width:auto;font-size:13px"><input id="showPressure" type="checkbox" checked> 圧力</label><label style="min-width:auto;font-size:13px"><input id="showContours" type="checkbox" checked> 等圧線</label><label style="min-width:auto;font-size:13px"><input id="showFlow" type="checkbox" checked> 流線</label><button id="reset">リセット</button><span class="pill">論文図版</span></div>
-    <div id="msg">論文図寄りの可視化版です。圧力マップはセル塗りではなくバイリニア補間で滑らかに描画し、等圧線レベルも増やして、圧力勾配と渦まわりの構造を読みやすくしています。</div>
+    <div class="row"><label>翼の迎角変化</label><input id="pitch" type="range" min="0" max="100" value="54"><label style="min-width:auto;font-size:13px"><input id="showPressure" type="checkbox" checked> 圧力</label><label style="min-width:auto;font-size:13px"><input id="showContours" type="checkbox" checked> 等圧線</label><label style="min-width:auto;font-size:13px"><input id="showFlow" type="checkbox" checked> 流線</label><button id="reset">リセット</button><span class="pill">羽ディテール強化版</span></div>
+    <div id="msg">圧力マップの滑らかさは維持しつつ、羽の見た目を強化した版です。羽根の枚数感、長短の段差、前腕側の層、羽先のばらつきを増やして、より鳥らしい翼に寄せています。</div>
   </div>
   <div id="stage"><canvas id="cv"></canvas></div>
 </div>
@@ -332,49 +332,98 @@ function drawFlowLines(R,set){
 
 function drawFrontWing(w,side){
   const dir=side==='left'?-1:1;
-  const spread = Math.min(1.2, Math.max(0.0, (w.tipX-w.wristX)*dir/18));
-  ctx.strokeStyle='rgba(228,235,242,.96)'; ctx.lineWidth=6; ctx.lineCap='round';
-  ctx.beginPath(); ctx.moveTo(w.shX,w.shY); ctx.lineTo(w.elbowX,w.elbowY); ctx.lineTo(w.wristX,w.wristY); ctx.stroke();
+  const spread = Math.min(1.25, Math.max(0.0, (w.tipX-w.wristX)*dir/18));
 
-  ctx.strokeStyle='rgba(79,168,161,.55)'; ctx.lineWidth=1.6;
-  ctx.beginPath(); ctx.moveTo(w.shX,w.shY); ctx.lineTo(w.elbowX,w.elbowY); ctx.stroke();
+  // skeleton
+  ctx.strokeStyle='rgba(226,233,240,.96)';
+  ctx.lineWidth=5.8;
+  ctx.lineCap='round';
+  ctx.beginPath();
+  ctx.moveTo(w.shX,w.shY);
+  ctx.lineTo(w.elbowX,w.elbowY);
+  ctx.lineTo(w.wristX,w.wristY);
+  ctx.stroke();
 
+  // leading edge highlight
+  ctx.strokeStyle='rgba(79,168,161,.55)';
+  ctx.lineWidth=1.6;
+  ctx.beginPath();
+  ctx.moveTo(w.shX,w.shY);
+  ctx.lineTo(w.elbowX,w.elbowY);
+  ctx.stroke();
+
+  // soft membrane/shadow area
   ctx.save();
-  ctx.fillStyle='rgba(210,216,224,0.14)';
+  ctx.fillStyle='rgba(205,212,220,0.14)';
   ctx.beginPath();
   ctx.moveTo(w.elbowX,w.elbowY);
-  ctx.quadraticCurveTo((w.elbowX+w.wristX)/2+dir*(5+4*spread),(w.elbowY+w.wristY)/2+3,w.wristX,w.wristY);
-  ctx.quadraticCurveTo((w.wristX+w.tipX)/2+dir*(7+8*spread),(w.wristY+w.tipY)/2+7,w.tipX,w.tipY);
-  ctx.quadraticCurveTo((w.elbowX+w.tipX)/2,(w.elbowY+w.tipY)/2+12,w.elbowX,w.elbowY);
+  ctx.quadraticCurveTo((w.elbowX+w.wristX)/2+dir*(4+5*spread),(w.elbowY+w.wristY)/2+3,w.wristX,w.wristY);
+  ctx.quadraticCurveTo((w.wristX+w.tipX)/2+dir*(8+10*spread),(w.wristY+w.tipY)/2+8,w.tipX,w.tipY);
+  ctx.quadraticCurveTo((w.elbowX+w.tipX)/2,(w.elbowY+w.tipY)/2+11,w.elbowX,w.elbowY);
   ctx.fill();
   ctx.restore();
 
-  for(let i=0;i<6;i++){
-    const k=i/5;
-    const bx=lerp(w.elbowX,w.wristX,0.08+0.80*k), by=lerp(w.elbowY,w.wristY,0.08+0.80*k);
-    const a=w.a2 + dir*(-0.16 - 0.06*spread + 0.08*i);
-    const length=12+10*k+2*spread, wid=3.8-0.35*k;
-    ctx.save(); ctx.translate(bx,by); ctx.rotate(a);
-    ctx.strokeStyle='rgba(246,247,245,.98)'; ctx.lineWidth=wid; ctx.lineCap='round';
-    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(length,0); ctx.stroke();
-    ctx.strokeStyle='rgba(170,176,186,.20)'; ctx.lineWidth=0.9; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(length,0); ctx.stroke();
+  function featherStroke(bx,by,a,length,wid,shade=1,tipDark=false){
+    ctx.save();
+    ctx.translate(bx,by);
+    ctx.rotate(a);
+
+    const grad = ctx.createLinearGradient(0,0,length,0);
+    grad.addColorStop(0,'rgba(252,252,250,0.98)');
+    grad.addColorStop(0.65, shade>0.8 ? 'rgba(243,244,242,0.98)' : 'rgba(232,236,242,0.95)');
+    grad.addColorStop(1, tipDark ? 'rgba(186,193,202,0.78)' : 'rgba(224,228,234,0.86)');
+
+    ctx.strokeStyle=grad;
+    ctx.lineWidth=wid;
+    ctx.lineCap='round';
+    ctx.beginPath();
+    ctx.moveTo(0,0);
+    ctx.lineTo(length,0);
+    ctx.stroke();
+
+    // rachis
+    ctx.strokeStyle='rgba(160,166,176,0.26)';
+    ctx.lineWidth=Math.max(0.7, wid*0.16);
+    ctx.beginPath();
+    ctx.moveTo(0,0);
+    ctx.lineTo(length,0);
+    ctx.stroke();
+
     ctx.restore();
   }
 
-  for(let i=0;i<8;i++){
-    const k=i/7;
-    const bx=lerp(w.wristX,w.tipX,.08+.56*k), by=lerp(w.wristY,w.tipY,.08+.56*k);
-    const a=w.a3+dir*(-.10 - .16*spread + .09*i) + dir*(k-0.5)*(0.05+0.04*spread);
-    const length=14+14*k+5*spread, wid=4.2-.55*k;
-    ctx.save(); ctx.translate(bx,by); ctx.rotate(a);
-    ctx.strokeStyle='rgba(249,249,247,.99)'; ctx.lineWidth=wid; ctx.lineCap='round';
-    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(length,0); ctx.stroke();
-    ctx.strokeStyle='rgba(165,170,180,.24)'; ctx.lineWidth=0.9; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(length,0); ctx.stroke();
-    if(k>0.78){
-      ctx.fillStyle='rgba(130,136,146,.20)';
-      ctx.beginPath(); ctx.arc(length,0,1.4,0,Math.PI*2); ctx.fill();
-    }
-    ctx.restore();
+  // coverts near upper wing
+  for(let i=0;i<4;i++){
+    const k=i/3;
+    const bx=lerp(w.shX,w.elbowX,0.18+0.62*k);
+    const by=lerp(w.shY,w.elbowY,0.18+0.62*k);
+    const a=w.a1 + dir*(-0.26 + 0.10*i);
+    const length=8+4*k;
+    const wid=3.2-0.25*k;
+    featherStroke(bx,by,a,length,wid,0.7,false);
+  }
+
+  // secondaries
+  for(let i=0;i<7;i++){
+    const k=i/6;
+    const bx=lerp(w.elbowX,w.wristX,0.05+0.84*k);
+    const by=lerp(w.elbowY,w.wristY,0.05+0.84*k);
+    const a=w.a2 + dir*(-0.18 - 0.05*spread + 0.07*i);
+    const length=12+11*k+2*spread;
+    const wid=3.7-0.28*k;
+    featherStroke(bx,by,a,length,wid,0.85,false);
+  }
+
+  // primaries: more spread and uneven tips
+  for(let i=0;i<10;i++){
+    const k=i/9;
+    const bx=lerp(w.wristX,w.tipX,0.04+0.72*k);
+    const by=lerp(w.wristY,w.tipY,0.04+0.72*k);
+    const jitter=(k-0.5)*(0.06+0.06*spread);
+    const a=w.a3 + dir*(-0.18 - 0.18*spread + 0.075*i) + dir*jitter;
+    const length=16+16*k+7*spread + (i%2===0 ? 1.8 : -0.6);
+    const wid=4.1-0.30*k;
+    featherStroke(bx,by,a,length,wid,1.0,k>0.72);
   }
 }
 function arrow(x1,y1,x2,y2,color,label){
@@ -470,7 +519,6 @@ function drawSideBird(s,R){
   ctx.save(); ctx.beginPath(); rr(R.x,R.y,R.w,R.h,18); ctx.clip();
   const K=sideKinematics(s,R);
   const openAmt = s.open;
-  const foldAmt = s.fold;
 
   ctx.save(); ctx.translate(K.bodyCx,K.bodyCy); ctx.rotate(K.tilt);
 
@@ -510,19 +558,66 @@ function drawSideBird(s,R){
   }
   ctx.restore();
 
-  ctx.strokeStyle='rgba(235,240,245,.92)'; ctx.lineWidth=5.0; ctx.lineCap='round';
-  ctx.beginPath(); ctx.moveTo(K.shoulderX,K.shoulderY); ctx.lineTo(K.ex,K.ey); ctx.lineTo(K.wx,K.wy); ctx.stroke();
+  ctx.strokeStyle='rgba(235,240,245,.92)';
+  ctx.lineWidth=5.0;
+  ctx.lineCap='round';
+  ctx.beginPath();
+  ctx.moveTo(K.shoulderX,K.shoulderY);
+  ctx.lineTo(K.ex,K.ey);
+  ctx.lineTo(K.wx,K.wy);
+  ctx.stroke();
 
-  ctx.strokeStyle='rgba(79,168,161,.72)'; ctx.lineWidth=1.9;
-  ctx.beginPath(); ctx.moveTo(K.shoulderX,K.shoulderY); ctx.lineTo(K.ex,K.ey); ctx.stroke();
+  ctx.strokeStyle='rgba(79,168,161,.72)';
+  ctx.lineWidth=1.9;
+  ctx.beginPath();
+  ctx.moveTo(K.shoulderX,K.shoulderY);
+  ctx.lineTo(K.ex,K.ey);
+  ctx.stroke();
 
-  for(let i=0;i<5;i++){
-    const k=i/4, bx=lerp(K.ex,K.wx,0.08+0.78*k), by=lerp(K.ey,K.wy,0.08+0.78*k), a=K.a2 + (-0.14 - 0.08*openAmt + 0.07*i), length=8+6*k+2*openAmt, wid=2.8-0.25*k;
-    feather(bx,by,a,length,wid,.96);
+  function featherStroke(bx,by,a,length,wid,tipDark=false){
+    ctx.save();
+    ctx.translate(bx,by);
+    ctx.rotate(a);
+
+    const grad = ctx.createLinearGradient(0,0,length,0);
+    grad.addColorStop(0,'rgba(251,251,249,0.98)');
+    grad.addColorStop(0.65,'rgba(240,242,240,0.96)');
+    grad.addColorStop(1, tipDark ? 'rgba(182,190,200,0.76)' : 'rgba(224,228,234,0.84)');
+
+    ctx.strokeStyle=grad;
+    ctx.lineWidth=wid;
+    ctx.lineCap='round';
+    ctx.beginPath();
+    ctx.moveTo(0,0);
+    ctx.lineTo(length,0);
+    ctx.stroke();
+
+    ctx.strokeStyle='rgba(160,166,176,0.24)';
+    ctx.lineWidth=Math.max(0.7, wid*0.16);
+    ctx.beginPath();
+    ctx.moveTo(0,0);
+    ctx.lineTo(length,0);
+    ctx.stroke();
+
+    ctx.restore();
   }
-  for(let i=0;i<7;i++){
-    const k=i/6,bx=lerp(K.wx,K.tx,.10+.54*k),by=lerp(K.wy,K.ty,.10+.54*k),a=K.a3+(-.08-.18*openAmt+.09*i)+(k-0.5)*(0.03+0.03*openAmt),length=10+9*k+3*openAmt,wid=3.2-.35*k;
-    feather(bx,by,a,length,wid,.98);
+
+  // coverts
+  for(let i=0;i<3;i++){
+    const k=i/2, bx=lerp(K.shoulderX,K.ex,0.20+0.55*k), by=lerp(K.shoulderY,K.ey,0.20+0.55*k), a=K.a1 + (-0.16 + 0.08*i), length=7+2*k, wid=2.8-0.2*k;
+    featherStroke(bx,by,a,length,wid,false);
+  }
+
+  // secondaries
+  for(let i=0;i<6;i++){
+    const k=i/5, bx=lerp(K.ex,K.wx,0.08+0.78*k), by=lerp(K.ey,K.wy,0.08+0.78*k), a=K.a2 + (-0.14 - 0.08*openAmt + 0.07*i), length=8+7*k+2*openAmt, wid=2.9-0.22*k;
+    featherStroke(bx,by,a,length,wid,false);
+  }
+
+  // primaries
+  for(let i=0;i<8;i++){
+    const k=i/7,bx=lerp(K.wx,K.tx,.08+.62*k),by=lerp(K.wy,K.ty,.08+.62*k),a=K.a3+(-.12-.18*openAmt+.08*i)+(k-0.5)*0.04,length=10+10*k+3*openAmt+(i%2===0?1.0:-0.3),wid=3.3-.25*k;
+    featherStroke(bx,by,a,length,wid,k>0.7);
   }
 
   arrow(R.x+R.w-76,R.y+28,R.x+R.w-76,R.y+28-Math.min(38,8+lift*15),'#5b84c8','揚力');
