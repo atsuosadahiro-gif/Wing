@@ -572,15 +572,19 @@ function draw(dt){
   if(dt>0){fluidStep(dt,Lw,Rw,R.F,s); updateTracers(dt); updateForces(Lw,Rw,R.F);}
   prevL=Lw; prevR=Rw;
 
-  drawPressureMap(R.F);
-  drawContours(R.F);
-  drawFlowLines(R.F,frontTr);
+  if(showPressureEl && showPressureEl.checked) drawPressureMap(R.F);
+  if(showContoursEl && showContoursEl.checked) drawContours(R.F);
+  if(showFlowEl && showFlowEl.checked) drawFlowLines(R.F,frontTr);
   drawFrontBird(s,Lw,Rw,R.F);
   drawLegend(R.F);
 
-  ctx.save(); ctx.globalAlpha=.84; drawPressureMap(R.S);
-  drawContours(R.S); ctx.restore();
-  ctx.save(); ctx.globalAlpha=.62; drawFlowLines(R.S,sideTr); ctx.restore();
+  if(showPressureEl && showPressureEl.checked){
+    ctx.save(); ctx.globalAlpha=.84; drawPressureMap(R.S); ctx.restore();
+  }
+  if(showContoursEl && showContoursEl.checked) drawContours(R.S);
+  if(showFlowEl && showFlowEl.checked){
+    ctx.save(); ctx.globalAlpha=.62; drawFlowLines(R.S,sideTr); ctx.restore();
+  }
   drawSideBird(s,R.S);
 }
 function loop(now){
@@ -592,6 +596,11 @@ function loop(now){
   requestAnimationFrame(loop);
 }
 resetBtn.addEventListener('click',()=>{t0=0; simT=0; last=0; reset(); draw(0)});
+[showPressureEl, showContoursEl, showFlowEl].forEach(el => {
+  if(!el) return;
+  el.addEventListener('input', ()=>draw(0));
+  el.addEventListener('change', ()=>draw(0));
+});
 window.addEventListener('resize',resize);
 resize(); draw(0); setTimeout(()=>requestAnimationFrame(loop),80);
 })();
