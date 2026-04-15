@@ -167,8 +167,6 @@ function createField(){
     pressureCanvas:null,
     pressureCtx:null,
     pressureDirty:true,
-    dp:null,
-    dpDirty:true,
   };
 }
 
@@ -204,7 +202,6 @@ function simRect(field, cardRect){
 
 function invalidatePressureMap(field){
   field.pressureDirty = true;
-  field.dpDirty = true;
 }
 
 function initField(field, rect, mode){
@@ -228,8 +225,6 @@ function initField(field, rect, mode){
   field.pressureCanvas = null;
   field.pressureCtx = null;
   field.pressureDirty = true;
-  field.dp = new Float32Array(n);
-  field.dpDirty = true;
 }
 
 function resetField(field){
@@ -239,7 +234,6 @@ function resetField(field){
     tr.x=rand(0,field.NX-1); tr.y=rand(0,field.NY-1); tr.px=tr.x; tr.py=tr.y; tr.age=rand(0,120); tr.life=rand(90,260);
   }
   invalidatePressureMap(field);
-  field.dpDirty = true;
 }
 
 function getDisplayFlags(){
@@ -310,31 +304,157 @@ function markCap(field, x1,y1,x2,y2,rad,vx,vy,R){
   }
 }
 
+function pointInPoly(px, py, pts){
+  let inside = false;
+  for(let i=0, j=pts.length-1; i<pts.length; j=i++){
+    const xi = pts[i].x, yi = pts[i].y;
+    const xj = pts[j].x, yj = pts[j].y;
+    const intersect = ((yi > py) !== (yj > py)) &&
+      (px < (xj - xi) * (py - yi) / ((yj - yi) + 1e-9) + xi);
+    if(intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function markPolygon(field, pts, vx, vy, R){
+  const c = field.cell, NX = field.NX, NY = field.NY;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for(const p of pts){
+    if(p.x < minX) minX = p.x;
+    if(p.y < minY) minY = p.y;
+    if(p.x > maxX) maxX = p.x;
+    if(p.y > maxY) maxY = p.y;
+  }
+  const minI = clamp(Math.floor((minX - R.x) / c) - 2, 0, NX - 1);
+  const maxI = clamp(Math.ceil((maxX - R.x) / c) + 2, 0, NX - 1);
+  const minJ = clamp(Math.floor((minY - R.y) / c) - 2, 0, NY - 1);
+  const maxJ = clamp(Math.ceil((maxY - R.y) / c) + 2, 0, NY - 1);
+
+  for(let j=minJ; j<=maxJ; j++){
+    for(let i=minI; i<=maxI; i++){
+      const px = R.x + (i + 0.5) * c;
+      const py = R.y + (j + 0.5) * c;
+      if(pointInPoly(px, py, pts)){
+        const id = idx(field, i, j);
+        field.solid[id] = 1;
+        field.svx[id] = vx;
+        field.svy[id] = vy;
+      }
+    }
+  }
+}
+
+function markEllipse(field, cx, cy, rx, ry, vx, vy, R){
+  const c = field.cell, NX = field.NX, NY = field.NY;
+  const minI = clamp(Math.floor((cx - rx - R.x) / c) - 2, 0, NX - 1);
+  const maxI = clamp(Math.ceil((cx + rx - R.x) / c) + 2, 0, NX - 1);
+  const minJ = clamp(Math.floor((cy - ry - R.y) / c) - 2, 0, NY - 1);
+  const maxJ = clamp(Math.ceil((cy + ry - R.y) / c) + 2, 0, NY - 1);
+
+  for(let j=minJ; j<=maxJ; j++){
+    for(let i=minI; i<=maxI; i++){
+      const px = R.x + (i + 0.5) * c;
+      const py = R.y + (j + 0.5) * c;
+      const dx = (px - cx) / (rx + 1e-9);
+      const dy = (py - cy) / (ry + 1e-9);
+      if(dx*dx + dy*dy <= 1){
+        const id = idx(field, i, j);
+        field.solid[id] = 1;
+        field.svx[id] = vx;
+        field.svy[id] = vy;
+      }
+    }
+  }
+}
+
+function avgVel(points, prevPoints, dt){
+  if(!prevPoints || !dt) return {vx:0, vy:0};
+  let vx=0, vy=0, n=0;
+  for(let i=0;i<Math.min(points.length, prevPoints.length);i++){
+    vx += (points[i].x - prevPoints[i].x) / dt;
+    vy += (points[i].y - prevPoints[i].y) / dt;
+    n++;
+  }
+  return n ? {vx:vx/n, vy:vy/n} : {vx:0, vy:0};
+}
+
+function frontWingPolygon(w, side, sc){
+  const dir = side === 'left' ? -1 : 1;
+  const upper = [];
+  const lower = [];
+
+  upper.push({x:w.shX + dir*2*sc, y:w.shY - 5.0*sc});
+  upper.push({x:lerp(w.shX,w.elbowX,0.35) + dir*2.5*sc, y:lerp(w.shY,w.elbowY,0.35) - 7.5*sc});
+  upper.push({x:lerp(w.elbowX,w.wristX,0.20) + dir*4.0*sc, y:lerp(w.elbowY,w.wristY,0.20) - 9.0*sc});
+  upper.push({x:lerp(w.elbowX,w.wristX,0.70) + dir*5.0*sc, y:lerp(w.elbowY,w.wristY,0.70) - 8.0*sc});
+  upper.push({x:lerp(w.wristX,w.tipX,0.25) + dir*6.0*sc, y:lerp(w.wristY,w.tipY,0.25) - 6.0*sc});
+  upper.push({x:lerp(w.wristX,w.tipX,0.70) + dir*9.0*sc, y:lerp(w.wristY,w.tipY,0.70) - 4.0*sc});
+  upper.push({x:w.tipX + dir*11.0*sc, y:w.tipY - 2.0*sc});
+
+  lower.push({x:w.tipX + dir*6.0*sc, y:w.tipY + 5.5*sc});
+  lower.push({x:lerp(w.wristX,w.tipX,0.70) + dir*4.0*sc, y:lerp(w.wristY,w.tipY,0.70) + 7.0*sc});
+  lower.push({x:lerp(w.wristX,w.tipX,0.25) + dir*2.0*sc, y:lerp(w.wristY,w.tipY,0.25) + 7.5*sc});
+  lower.push({x:lerp(w.elbowX,w.wristX,0.75) + dir*1.0*sc, y:lerp(w.elbowY,w.wristY,0.75) + 7.0*sc});
+  lower.push({x:lerp(w.elbowX,w.wristX,0.20) - dir*0.5*sc, y:lerp(w.elbowY,w.wristY,0.20) + 6.0*sc});
+  lower.push({x:lerp(w.shX,w.elbowX,0.35) - dir*1.0*sc, y:lerp(w.shY,w.elbowY,0.35) + 4.0*sc});
+  lower.push({x:w.shX - dir*1.0*sc, y:w.shY + 3.0*sc});
+
+  return upper.concat(lower);
+}
+
+function sideWingPolygon(K, sc){
+  const upper = [];
+  const lower = [];
+
+  upper.push({x:K.shoulderX + 1.0*sc, y:K.shoulderY - 4.0*sc});
+  upper.push({x:lerp(K.shoulderX,K.ex,0.45) + 2.0*sc, y:lerp(K.shoulderY,K.ey,0.45) - 6.5*sc});
+  upper.push({x:lerp(K.ex,K.wx,0.25) + 3.0*sc, y:lerp(K.ey,K.wy,0.25) - 8.5*sc});
+  upper.push({x:lerp(K.ex,K.wx,0.75) + 5.0*sc, y:lerp(K.ey,K.wy,0.75) - 7.0*sc});
+  upper.push({x:lerp(K.wx,K.tx,0.35) + 7.0*sc, y:lerp(K.wy,K.ty,0.35) - 5.0*sc});
+  upper.push({x:K.tx + 10.0*sc, y:K.ty - 1.5*sc});
+
+  lower.push({x:K.tx + 5.0*sc, y:K.ty + 4.0*sc});
+  lower.push({x:lerp(K.wx,K.tx,0.55) + 2.0*sc, y:lerp(K.wy,K.ty,0.55) + 5.0*sc});
+  lower.push({x:lerp(K.ex,K.wx,0.75) + 1.0*sc, y:lerp(K.ey,K.wy,0.75) + 6.0*sc});
+  lower.push({x:lerp(K.ex,K.wx,0.25) + 0.0*sc, y:lerp(K.ey,K.wy,0.25) + 6.0*sc});
+  lower.push({x:lerp(K.shoulderX,K.ex,0.35) - 1.0*sc, y:lerp(K.shoulderY,K.ey,0.35) + 3.5*sc});
+  lower.push({x:K.shoulderX - 1.0*sc, y:K.shoulderY + 2.5*sc});
+
+  return upper.concat(lower);
+}
+
+
 function buildFrontMask(field,Lw,Rw,R,dt,s,prevL,prevR){
   field.solid.fill(0); field.svx.fill(0); field.svy.fill(0);
-  const sc=s.scale;
-  const segs=[
-    [Lw.shX,Lw.shY,Lw.elbowX,Lw.elbowY,6*sc, prevL?(Lw.shX-prevL.shX)/dt:0, prevL?(Lw.shY-prevL.shY)/dt:0],
-    [Lw.elbowX,Lw.elbowY,Lw.wristX,Lw.wristY,8*sc, prevL?(Lw.elbowX-prevL.elbowX)/dt:0, prevL?(Lw.elbowY-prevL.elbowY)/dt:0],
-    [Lw.wristX,Lw.wristY,Lw.tipX,Lw.tipY,6*sc, prevL?(Lw.wristX-prevL.wristX)/dt:0, prevL?(Lw.wristY-prevL.wristY)/dt:0],
-    [Rw.shX,Rw.shY,Rw.elbowX,Rw.elbowY,6*sc, prevR?(Rw.shX-prevR.shX)/dt:0, prevR?(Rw.shY-prevR.shY)/dt:0],
-    [Rw.elbowX,Rw.elbowY,Rw.wristX,Rw.wristY,8*sc, prevR?(Rw.elbowX-prevR.elbowX)/dt:0, prevR?(Rw.elbowY-prevR.elbowY)/dt:0],
-    [Rw.wristX,Rw.wristY,Rw.tipX,Rw.tipY,6*sc, prevR?(Rw.wristX-prevR.wristX)/dt:0, prevR?(Rw.wristY-prevR.wristY)/dt:0],
-    [s.bodyX-8*sc,s.bodyY+4*sc,s.bodyX+8*sc,s.bodyY+4*sc,12*sc,0,0]
-  ];
-  for(const seg of segs) markCap(field, ...seg, R);
+  const sc = s.scale;
+
+  const leftPoly = frontWingPolygon(Lw, 'left', sc);
+  const rightPoly = frontWingPolygon(Rw, 'right', sc);
+
+  const prevLeftPoly = prevL ? frontWingPolygon(prevL, 'left', sc) : null;
+  const prevRightPoly = prevR ? frontWingPolygon(prevR, 'right', sc) : null;
+
+  const lv = avgVel(leftPoly, prevLeftPoly, dt);
+  const rv = avgVel(rightPoly, prevRightPoly, dt);
+
+  markPolygon(field, leftPoly, lv.vx, lv.vy, R);
+  markPolygon(field, rightPoly, rv.vx, rv.vy, R);
+
+  markEllipse(field, s.bodyX, s.bodyY + 5*sc, 14*sc, 20*sc, 0, 0, R);
+  markEllipse(field, s.bodyX, s.bodyY - 10*sc, 6*sc, 7*sc, 0, 0, R);
 }
 
 function buildSideMask(field,K,R,dt,s,prevK){
   field.solid.fill(0); field.svx.fill(0); field.svy.fill(0);
-  const sc=s.scale;
-  const segs=[
-    [K.shoulderX,K.shoulderY,K.ex,K.ey,6*sc, prevK?(K.shoulderX-prevK.shoulderX)/dt:0, prevK?(K.shoulderY-prevK.shoulderY)/dt:0],
-    [K.ex,K.ey,K.wx,K.wy,8*sc, prevK?(K.ex-prevK.ex)/dt:0, prevK?(K.ey-prevK.ey)/dt:0],
-    [K.wx,K.wy,K.tx,K.ty,6*sc, prevK?(K.wx-prevK.wx)/dt:0, prevK?(K.wy-prevK.wy)/dt:0],
-    [K.bodyCx-10*sc,K.bodyCy+2*sc,K.bodyCx+10*sc,K.bodyCy+2*sc,12*sc,0,0]
-  ];
-  for(const seg of segs) markCap(field, ...seg, R);
+  const sc = s.scale;
+
+  const poly = sideWingPolygon(K, sc);
+  const prevPoly = prevK ? sideWingPolygon(prevK, sc) : null;
+  const vv = avgVel(poly, prevPoly, dt);
+
+  markPolygon(field, poly, vv.vx, vv.vy, R);
+  markEllipse(field, K.bodyCx, K.bodyCy + 3*sc, 15*sc, 9*sc, 0, 0, R);
+  markEllipse(field, K.bodyCx - 9*sc, K.bodyCy - 8*sc, 5*sc, 4*sc, 0, 0, R);
 }
 
 function samp(field,arr,x,y){
@@ -557,54 +677,6 @@ function pressureRGBA(val){
   return {r:r|0, g:g|0, b:b|0, a:Math.max(0, Math.min(255, Math.round(a*255)))};
 }
 
-
-function rebuildDisplayPressure(field){
-  if(!field.dp || field.dp.length !== field.pf.length){
-    field.dp = new Float32Array(field.pf.length);
-  }
-
-  let minI=field.NX, minJ=field.NY, maxI=-1, maxJ=-1;
-  let mean=0, count=0;
-  for(let j=0;j<field.NY;j++){
-    for(let i=0;i<field.NX;i++){
-      const id=idx(field,i,j);
-      mean += field.pf[id];
-      count++;
-      if(field.solid[id]){
-        if(i<minI) minI=i;
-        if(j<minJ) minJ=j;
-        if(i>maxI) maxI=i;
-        if(j>maxJ) maxJ=j;
-      }
-    }
-  }
-  mean /= Math.max(1,count);
-
-  if(maxI < 0){
-    for(let k=0;k<field.pf.length;k++) field.dp[k] = field.pf[k] - mean;
-    field.dpDirty = false;
-    return;
-  }
-
-  const cx = (minI + maxI) * 0.5;
-  const cy = (minJ + maxJ) * 0.5;
-  const sx = Math.max(8, (maxI - minI + 1) * 1.9);
-  const sy = Math.max(8, (maxJ - minJ + 1) * 1.9);
-
-  // suppress broad domain-scale bias, emphasize bird-near structure
-  for(let j=0;j<field.NY;j++){
-    for(let i=0;i<field.NX;i++){
-      const id=idx(field,i,j);
-      const dx=(i-cx)/sx, dy=(j-cy)/sy;
-      const w=Math.exp(-(dx*dx + dy*dy) * 1.15);
-      const centered = field.pf[id] - mean;
-      field.dp[id] = centered * (0.20 + 1.60*w);
-    }
-  }
-
-  field.dpDirty = false;
-}
-
 function buildPressureImage(field){
   const w = Math.max(1, Math.floor(field.NX * field.cell));
   const h = Math.max(1, Math.floor(field.NY * field.cell));
@@ -615,7 +687,6 @@ function buildPressureImage(field){
     field.pressureCtx = field.pressureCanvas.getContext('2d');
     field.pressureDirty = true;
   }
-  if(field.dpDirty) rebuildDisplayPressure(field);
   if(!field.pressureDirty) return field.pressureCanvas;
 
   const img = field.pressureCtx.createImageData(w,h);
@@ -627,7 +698,7 @@ function buildPressureImage(field){
       const i = Math.floor(gx), j = Math.floor(gy);
       if(i < 0 || j < 0 || i >= field.NX-1 || j >= field.NY-1) continue;
       const fx = gx - i, fy = gy - j;
-      const p00 = field.dp[idx(field,i,j)], p10 = field.dp[idx(field,i+1,j)], p01 = field.dp[idx(field,i,j+1)], p11 = field.dp[idx(field,i+1,j+1)];
+      const p00 = field.pf[idx(field,i,j)], p10 = field.pf[idx(field,i+1,j)], p01 = field.pf[idx(field,i,j+1)], p11 = field.pf[idx(field,i+1,j+1)];
       const p = p00*(1-fx)*(1-fy) + p10*fx*(1-fy) + p01*(1-fx)*fy + p11*fx*fy;
       const c = pressureRGBA(p);
       const k = (py*w + px) * 4;
@@ -690,8 +761,7 @@ function drawContours(field,R){
     ctx.lineWidth = strong ? 1.35 : mid ? 1.0 : 0.8;
     for(let j=1;j<field.NY-2;j++){
       for(let i=1;i<field.NX-2;i++){
-        if(field.dpDirty) rebuildDisplayPressure(field);
-        const v00 = field.dp[idx(field,i,j)], v10 = field.dp[idx(field,i+1,j)], v11 = field.dp[idx(field,i+1,j+1)], v01 = field.dp[idx(field,i,j+1)];
+        const v00 = field.pf[idx(field,i,j)], v10 = field.pf[idx(field,i+1,j)], v11 = field.pf[idx(field,i+1,j+1)], v01 = field.pf[idx(field,i,j+1)];
         const s0 = v00 >= level ? 1 : 0, s1 = v10 >= level ? 1 : 0, s2 = v11 >= level ? 1 : 0, s3 = v01 >= level ? 1 : 0;
         const state = s0 | (s1<<1) | (s2<<2) | (s3<<3);
         if(state === 0 || state === 15) continue;
