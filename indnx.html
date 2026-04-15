@@ -774,7 +774,7 @@ function draw(dt){
   card(R.S,'側面ビュー','圧力マップ・力・周囲流れ');
 
   const s=birdState(simT,R.F), Lw=wing(s,'left'), Rw=wing(s,'right');
-  if(dt>0){fluidStep(dt,Lw,Rw,R.F,s); updateTracers(dt); updateForces(Lw,Rw,R.F);}
+  if(dt>0){fluidStep(dt,Lw,Rw,R.F,s); updateTracers(dt); updateForces(Lw,Rw,R.F); pressureDirty = true;}
   prevL=Lw; prevR=Rw;
 
   if(showPressureEl && showPressureEl.checked) drawPressureMap(R.F);
