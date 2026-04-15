@@ -228,26 +228,48 @@ function updateForces(Lw,Rw,R){
 }
 
 function pressureColor(val){
-  // Diverging scientific-style map with stronger within-hue lightness variation
-  const v = clamp(val, -0.9, 0.9);
-  const mag = Math.min(1, Math.abs(v) / 0.9);
+  // Stronger within-hue contrast:
+  // low pressure  = pale blue -> medium blue -> deep navy
+  // high pressure = pale pink -> medium red -> deep crimson
+  const v = clamp(val, -1.0, 1.0);
+  const mag = Math.min(1, Math.abs(v));
 
   function mix(a,b,k){ return a + (b-a)*k; }
 
   let r,g,b,a;
+
   if(v < 0){
-    // low pressure: pale blue -> deep blue
-    r = mix(238, 28, Math.pow(mag, 0.82));
-    g = mix(244, 86, Math.pow(mag, 0.82));
-    b = mix(252, 185, Math.pow(mag, 0.82));
-    a = mix(0.10, 0.82, Math.pow(mag, 0.78));
+    // blue side
+    if(mag < 0.5){
+      const k = mag / 0.5;
+      r = mix(245, 120, k);
+      g = mix(248, 170, k);
+      b = mix(255, 235, k);
+      a = mix(0.18, 0.52, k);
+    }else{
+      const k = (mag - 0.5) / 0.5;
+      r = mix(120, 18, k);
+      g = mix(170, 62, k);
+      b = mix(235, 160, k);
+      a = mix(0.52, 0.92, k);
+    }
   }else{
-    // high pressure: pale red -> deep red
-    r = mix(252, 185, Math.pow(mag, 0.82));
-    g = mix(242, 38, Math.pow(mag, 0.82));
-    b = mix(242, 38, Math.pow(mag, 0.82));
-    a = mix(0.10, 0.82, Math.pow(mag, 0.78));
+    // red side
+    if(mag < 0.5){
+      const k = mag / 0.5;
+      r = mix(255, 245, k);
+      g = mix(246, 150, k);
+      b = mix(246, 150, k);
+      a = mix(0.18, 0.52, k);
+    }else{
+      const k = (mag - 0.5) / 0.5;
+      r = mix(245, 145, k);
+      g = mix(150, 24, k);
+      b = mix(150, 35, k);
+      a = mix(0.52, 0.92, k);
+    }
   }
+
   return `rgba(${r|0},${g|0},${b|0},${a.toFixed(3)})`;
 }
 function drawPressureMap(R){
@@ -481,8 +503,8 @@ function drawLegend(R){
   ctx.fillStyle='rgba(255,255,255,.74)'; ctx.fillRect(x,y,w,h);
   ctx.strokeStyle='rgba(70,90,110,.10)'; ctx.strokeRect(x,y,w,h);
   ctx.font='12px system-ui';
-  ctx.fillStyle='rgba(84,140,220,.95)'; ctx.fillText('青: 低圧（濃いほど強い）',x+10,y+18);
-  ctx.fillStyle='rgba(230,120,120,.95)'; ctx.fillText('赤: 高圧（濃いほど強い）',x+10,y+36);
+  ctx.fillStyle='rgba(84,140,220,.95)'; ctx.fillText('青: 低圧（薄→濃で強く）（薄→濃で強く）',x+10,y+18);
+  ctx.fillStyle='rgba(230,120,120,.95)'; ctx.fillText('赤: 高圧（薄→濃で強く）（薄→濃で強く）',x+10,y+36);
   ctx.fillStyle='rgba(70,176,170,.95)'; ctx.fillText('緑青線: 加速域',x+10,y+54);
   ctx.fillStyle='rgba(74,98,119,.78)'; ctx.fillText('等圧線: 圧力境界',x+10,y+72);
   ctx.fillStyle='rgba(23,48,71,.78)'; ctx.fillText('流線/点: 流れと後流渦',x+10,y+90);
