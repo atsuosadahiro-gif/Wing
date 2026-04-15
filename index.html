@@ -25,7 +25,7 @@
     <div class="row"><label>前からの風</label><input id="wind" type="range" min="5" max="50" value="18"></div>
     <div class="row"><label>羽ばたき振幅</label><input id="amp" type="range" min="8" max="80" value="36"></div>
     <div class="row"><label>周波数</label><input id="freq" type="range" min="20" max="120" value="46"></div>
-    <div class="row"><label>翼の迎角変化</label><input id="pitch" type="range" min="0" max="100" value="54"><button id="reset">リセット</button><span class="pill">形変化版</span></div>
+    <div class="row"><label>翼の迎角変化</label><input id="pitch" type="range" min="0" max="100" value="54"><label style="min-width:auto;font-size:13px"><input id="showPressure" type="checkbox" checked> 圧力</label><label style="min-width:auto;font-size:13px"><input id="showContours" type="checkbox" checked> 等圧線</label><label style="min-width:auto;font-size:13px"><input id="showFlow" type="checkbox" checked> 流線</label><button id="reset">リセット</button><span class="pill">形変化版</span></div>
     <div id="msg">重なりを避けたレイアウトを保ちながら、羽ばたき途中で翼の形そのものが変わる版です。上げ羽では翼がややたたまれ、下げ羽では翼が広がって反りも少し変わります。</div>
   </div>
   <div id="stage"><canvas id="cv"></canvas></div>
@@ -34,6 +34,7 @@
 (()=>{
 const cv=document.getElementById('cv'), st=document.getElementById('stage'), ctx=cv.getContext('2d',{alpha:false});
 const windEl=document.getElementById('wind'), ampEl=document.getElementById('amp'), freqEl=document.getElementById('freq'), pitchEl=document.getElementById('pitch');
+const showPressureEl=document.getElementById('showPressure'), showContoursEl=document.getElementById('showContours'), showFlowEl=document.getElementById('showFlow');
 const resetBtn=document.getElementById('reset');
 let W=0,H=0,DPR=Math.min(devicePixelRatio||1,2),t0=0,last=0,simT=0;
 let NX=120, NY=160,cell=7,u,v,u2,v2,pf,dv,solid,svx,svy,frontTr=[],sideTr=[],lift=0,thrust=0,prevL=null,prevR=null;
@@ -477,16 +478,15 @@ function drawSideBird(s,R){
 }
 
 function drawLegend(R){
-  // move legend to top-right of front panel to avoid bird and arrows
-  const w=170,h=92,x=R.x+R.w-w-16,y=R.y+54;
+  const w=180,h=92,x=R.x+R.w-w-16,y=R.y+54;
   ctx.fillStyle='rgba(255,255,255,.74)'; ctx.fillRect(x,y,w,h);
   ctx.strokeStyle='rgba(70,90,110,.10)'; ctx.strokeRect(x,y,w,h);
   ctx.font='12px system-ui';
-  ctx.fillStyle='rgba(84,140,220,.95)'; ctx.fillText('青系: 低圧',x+10,y+18);
-  ctx.fillStyle='rgba(230,120,120,.95)'; ctx.fillText('赤系: 高圧',x+10,y+36);
+  ctx.fillStyle='rgba(84,140,220,.95)'; ctx.fillText('青: 低圧',x+10,y+18);
+  ctx.fillStyle='rgba(230,120,120,.95)'; ctx.fillText('赤: 高圧',x+10,y+36);
   ctx.fillStyle='rgba(70,176,170,.95)'; ctx.fillText('緑青線: 加速域',x+10,y+54);
-  ctx.fillStyle='rgba(23,48,71,.78)'; ctx.fillText('青/桃点: 後流渦',x+10,y+72);
-  ctx.fillStyle='rgba(74,98,119,.78)'; ctx.fillText('流線: 周囲流れ',x+10,y+90);
+  ctx.fillStyle='rgba(74,98,119,.78)'; ctx.fillText('等圧線: 圧力境界',x+10,y+72);
+  ctx.fillStyle='rgba(23,48,71,.78)'; ctx.fillText('流線/点: 流れと後流渦',x+10,y+90);
 }
 
 
@@ -494,26 +494,68 @@ function drawContours(R){
   ctx.save();
   ctx.beginPath(); rr(R.x,R.y,R.w,R.h,18); ctx.clip();
 
-  const levels = [-0.6,-0.3,-0.1,0.1,0.3,0.6];
+  const levels = [-0.55,-0.30,-0.12,0.12,0.30,0.55];
+
+  function interp(x1,y1,v1,x2,y2,v2,level){
+    const d = (v2 - v1);
+    const t = Math.abs(d) < 1e-6 ? 0.5 : (level - v1) / d;
+    return {
+      x: x1 + (x2 - x1) * t,
+      y: y1 + (y2 - y1) * t
+    };
+  }
 
   for(const level of levels){
-    ctx.strokeStyle = level>0 ? 'rgba(180,60,60,0.6)' : 'rgba(60,80,180,0.6)';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = level > 0 ? 'rgba(170,55,55,0.72)' : 'rgba(55,80,170,0.72)';
+    ctx.lineWidth = Math.abs(level) > 0.4 ? 1.25 : 0.95;
 
-    for(let j=1;j<NY-1;j++){
-      ctx.beginPath();
-      let started=false;
-      for(let i=1;i<NY-1;i++){
-        const v1 = pf[idx(i,j)];
-        const v2 = pf[idx(i+1,j)];
-        if((v1<level && v2>=level)||(v1>=level && v2<level)){
-          const x = R.x + i*cell;
-          const y = R.y + j*cell;
-          if(!started){ ctx.moveTo(x,y); started=true; }
-          else ctx.lineTo(x,y);
+    for(let j=1;j<NY-2;j++){
+      for(let i=1;i<NX-2;i++){
+        const v00 = pf[idx(i,j)];
+        const v10 = pf[idx(i+1,j)];
+        const v11 = pf[idx(i+1,j+1)];
+        const v01 = pf[idx(i,j+1)];
+
+        const s0 = v00 >= level ? 1 : 0;
+        const s1 = v10 >= level ? 1 : 0;
+        const s2 = v11 >= level ? 1 : 0;
+        const s3 = v01 >= level ? 1 : 0;
+        const state = s0 | (s1<<1) | (s2<<2) | (s3<<3);
+        if(state === 0 || state === 15) continue;
+
+        const x = R.x + i * cell;
+        const y = R.y + j * cell;
+
+        const pTop    = interp(x,       y,       v00, x+cell,  y,       v10, level);
+        const pRight  = interp(x+cell,  y,       v10, x+cell,  y+cell,  v11, level);
+        const pBottom = interp(x,       y+cell,  v01, x+cell,  y+cell,  v11, level);
+        const pLeft   = interp(x,       y,       v00, x,       y+cell,  v01, level);
+
+        const segments = {
+          1:  [[pLeft,pTop]],
+          2:  [[pTop,pRight]],
+          3:  [[pLeft,pRight]],
+          4:  [[pRight,pBottom]],
+          5:  [[pLeft,pBottom],[pTop,pRight]],
+          6:  [[pTop,pBottom]],
+          7:  [[pLeft,pBottom]],
+          8:  [[pBottom,pLeft]],
+          9:  [[pTop,pBottom]],
+          10: [[pTop,pLeft],[pRight,pBottom]],
+          11: [[pRight,pBottom]],
+          12: [[pLeft,pRight]],
+          13: [[pTop,pRight]],
+          14: [[pLeft,pTop]]
+        }[state];
+
+        if(!segments) continue;
+        for(const seg of segments){
+          ctx.beginPath();
+          ctx.moveTo(seg[0].x, seg[0].y);
+          ctx.lineTo(seg[1].x, seg[1].y);
+          ctx.stroke();
         }
       }
-      if(started) ctx.stroke();
     }
   }
   ctx.restore();
