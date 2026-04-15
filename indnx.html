@@ -192,7 +192,7 @@ function birdState(t,r){
   const bodyX=r.x+r.w*.20+(2.0*down-0.8*up)*sc, bodyY=r.y+r.h*.66+Math.sin(ph-.2)*p.amp*.03;
   const fold=.14+.78*up, open=.68+.46*down, shSpread=Math.min(20,r.w*.044)*sc, shoulderY=bodyY-5*sc+Math.sin(ph)*p.amp*.17+2.0*down*sc, hum=Math.min(22,r.w*.045)*(0.96+0.10*down)*sc, fore=Math.min(54,r.w*.108)*(0.82+0.30*down)*(1-.14*fold)*sc, hand=Math.min(66,r.w*.125)*(0.76+0.42*down)*(1-.10*fold)*sc;
   const rightA1=clamp(-0.90+0.85*Math.sin(ph),-1.75,-0.02), rightA2=clamp(rightA1+0.30+0.28*p.pitch+0.10*down,-1.20,0.65), rightA3=clamp(rightA2+0.22+0.22*p.pitch+0.05*Math.sin(ph+0.5),-0.90,1.00);
-  return {ph,down,up,bodyX,bodyY,shSpread,shoulderY,hum,fore,hand,leftA1:Math.PI-rightA1,leftA2:Math.PI-rightA2,leftA3:Math.PI-rightA3,rightA1,rightA2,rightA3,vy:p.amp*p.freq*Math.PI*2*Math.cos(ph),fold,open};
+  return {ph,down,up,bodyX,bodyY,shSpread,shoulderY,hum,fore,hand,leftA1:Math.PI-rightA1,leftA2:Math.PI-rightA2,leftA3:Math.PI-rightA3,rightA1,rightA2,rightA3,vy:p.amp*p.freq*Math.PI*2*Math.cos(ph),fold,open,scale:sc};
 }
 function wing(s,side){
   const shX=s.bodyX+(side==='left'?-s.shSpread:s.shSpread), shY=s.shoulderY, a1=side==='left'?s.leftA1:s.rightA1, a2=side==='left'?s.leftA2:s.rightA2, a3=side==='left'?s.leftA3:s.rightA3;
@@ -210,17 +210,19 @@ function markCap(x1,y1,x2,y2,rad,vx,vy,R){
     if(rx*rx+ry*ry<=rr2){const id=idx(i,j); solid[id]=1; svx[id]=vx; svy[id]=vy;}
   }
 }
-function buildMask(Lw,Rw,R,dt){
+function buildMask(Lw,Rw,R,dt,s){
   solid.fill(0); svx.fill(0); svy.fill(0);
+  const sc = (s && s.scale) || P().scale || 1;
   const segs=[
-    [Lw.shX,Lw.shY,Lw.elbowX,Lw.elbowY,6,prevL?(Lw.shX-prevL.shX)/dt:0,prevL?(Lw.shY-prevL.shY)/dt:0],
-    [Lw.elbowX,Lw.elbowY,Lw.wristX,Lw.wristY,8,prevL?(Lw.elbowX-prevL.elbowX)/dt:0,prevL?(Lw.elbowY-prevL.elbowY)/dt:0],
-    [Lw.wristX,Lw.wristY,Lw.tipX,Lw.tipY,6,prevL?(Lw.wristX-prevL.wristX)/dt:0,prevL?(Lw.wristY-prevL.wristY)/dt:0],
-    [Rw.shX,Rw.shY,Rw.elbowX,Rw.elbowY,6,prevR?(Rw.shX-prevR.shX)/dt:0,prevR?(Rw.shY-prevR.shY)/dt:0],
-    [Rw.elbowX,Rw.elbowY,Rw.wristX,Rw.wristY,8,prevR?(Rw.elbowX-prevR.elbowX)/dt:0,prevR?(Rw.elbowY-prevR.elbowY)/dt:0],
-    [Rw.wristX,Rw.wristY,Rw.tipX,Rw.tipY,6,prevR?(Rw.wristX-prevR.wristX)/dt:0,prevR?(Rw.wristY-prevR.wristY)/dt:0]
+    [Lw.shX,Lw.shY,Lw.elbowX,Lw.elbowY,6*sc,prevL?(Lw.shX-prevL.shX)/dt:0,prevL?(Lw.shY-prevL.shY)/dt:0],
+    [Lw.elbowX,Lw.elbowY,Lw.wristX,Lw.wristY,8*sc,prevL?(Lw.elbowX-prevL.elbowX)/dt:0,prevL?(Lw.elbowY-prevL.elbowY)/dt:0],
+    [Lw.wristX,Lw.wristY,Lw.tipX,Lw.tipY,6*sc,prevL?(Lw.wristX-prevL.wristX)/dt:0,prevL?(Lw.wristY-prevL.wristY)/dt:0],
+    [Rw.shX,Rw.shY,Rw.elbowX,Rw.elbowY,6*sc,prevR?(Rw.shX-prevR.shX)/dt:0,prevR?(Rw.shY-prevR.shY)/dt:0],
+    [Rw.elbowX,Rw.elbowY,Rw.wristX,Rw.wristY,8*sc,prevR?(Rw.elbowX-prevR.elbowX)/dt:0,prevR?(Rw.elbowY-prevR.elbowY)/dt:0],
+    [Rw.wristX,Rw.wristY,Rw.tipX,Rw.tipY,6*sc,prevR?(Rw.wristX-prevR.wristX)/dt:0,prevR?(Rw.wristY-prevR.wristY)/dt:0],
+    [s.bodyX-8*sc,s.bodyY+4*sc,s.bodyX+8*sc,s.bodyY+4*sc,12*sc,0,0]
   ];
-  for(const s of segs) markCap(...s,R);
+  for(const seg of segs) markCap(...seg,R);
 }
 function samp(arr,x,y){
   x=clamp(x,.5,NX-1.5); y=clamp(y,.5,NY-1.5);
@@ -306,7 +308,7 @@ function boundaries(){
   for(let i=0;i<NX;i++){v[idx(i,0)]=0; v[idx(i,NY-1)]=0; u[idx(i,0)]=u[idx(i,1)]; u[idx(i,NY-1)]=u[idx(i,NY-2)]}
   for(let j=0;j<NY;j++) for(let i=0;i<NX;i++){const id=idx(i,j); if(solid[id]){u[id]=svx[id]/cell; v[id]=svy[id]/cell;}}
 }
-function fluidStep(dt,Lw,Rw,R,s){buildMask(Lw,Rw,R,Math.max(dt,1/60)); boundaries(); forceField(s,Lw,Rw,R,dt); repel(); advect(dt); boundaries(); confine(dt); project(28); boundaries();}
+function fluidStep(dt,Lw,Rw,R,s){buildMask(Lw,Rw,R,Math.max(dt,1/60),s); boundaries(); forceField(s,Lw,Rw,R,dt); repel(); advect(dt); boundaries(); confine(dt); project(28); boundaries();}
 function updateTracers(dt){
   for(const group of [frontTr,sideTr]) for(const tr of group){
     tr.age+=dt*60; tr.px=tr.x; tr.py=tr.y;
@@ -857,8 +859,57 @@ function drawContours(R){
 }
 
 
+
+function drawFrontPressureMap(R, alpha=1){
+  drawPressureMap(R, alpha);
+}
+
+function drawSidePressureMap(R, s, alpha=0.84){
+  const K = sideKinematics(s, R);
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.floor(R.w));
+  c.height = Math.max(1, Math.floor(R.h));
+  const g = c.getContext('2d');
+  const img = g.createImageData(c.width, c.height);
+  const data = img.data;
+  const pts = [
+    {x:(K.shoulderX+K.ex)*0.5, y:(K.shoulderY+K.ey)*0.5, q:-0.55},
+    {x:(K.ex+K.wx)*0.5, y:(K.ey+K.wy)*0.5, q:0.70},
+    {x:(K.wx+K.tx)*0.5, y:(K.wy+K.ty)*0.5, q:0.95},
+    {x:K.bodyCx, y:K.bodyCy+2*s.scale, q:0.28},
+    {x:(K.ex+K.wx)*0.5, y:(K.ey+K.wy)*0.5-18*s.scale, q:-0.48},
+    {x:(K.wx+K.tx)*0.5, y:(K.wy+K.ty)*0.5-22*s.scale, q:-0.62}
+  ];
+  const sigmaBase = Math.max(12, 24*s.scale);
+  for(let py=0; py<c.height; py++){
+    for(let px=0; px<c.width; px++){
+      const x = R.x + px;
+      const y = R.y + py;
+      let p = 0;
+      for(const pt of pts){
+        const dx = x - pt.x;
+        const dy = y - pt.y;
+        const sig = sigmaBase * (pt.q > 0 ? 1.25 : 1.0);
+        p += pt.q * Math.exp(-(dx*dx + dy*dy)/(2*sig*sig));
+      }
+      p = clamp(p, -1, 1);
+      const col = pressureRGBA(p);
+      const k = (py*c.width + px) * 4;
+      data[k] = col.r;
+      data[k+1] = col.g;
+      data[k+2] = col.b;
+      data[k+3] = Math.round(col.a * alpha);
+    }
+  }
+  g.putImageData(img, 0, 0);
+  ctx.save();
+  ctx.beginPath(); rr(R.x,R.y,R.w,R.h,18); ctx.clip();
+  ctx.drawImage(c, Math.floor(R.x), Math.floor(R.y));
+  ctx.restore();
+}
+
 function renderFrontView(rect, state, leftWing, rightWing, flags){
-  if(flags.pressure) drawPressureMap(rect);
+  if(flags.pressure) drawFrontPressureMap(rect);
   if(flags.contours) drawContours(rect);
   if(flags.flow) drawFlowLines(rect, frontTr);
   drawFrontBird(state, leftWing, rightWing, rect);
@@ -866,7 +917,7 @@ function renderFrontView(rect, state, leftWing, rightWing, flags){
 }
 
 function renderSideView(rect, state, flags){
-  if(flags.pressure) drawPressureMap(rect, .84);
+  if(flags.pressure) drawSidePressureMap(rect, state, .84);
   if(flags.contours) drawContours(rect);
   if(flags.flow){
     ctx.save();
