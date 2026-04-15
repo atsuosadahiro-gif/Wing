@@ -45,16 +45,93 @@
 </div>
 <script>
 (()=>{
-const cv=document.getElementById('cv'), st=document.getElementById('stage'), ctx=cv.getContext('2d',{alpha:false});
-const windEl=document.getElementById('wind'), ampEl=document.getElementById('amp'), freqEl=document.getElementById('freq'), birdScaleEl=document.getElementById('birdScale'), pitchEl=document.getElementById('pitch');
-const showPressureEl=document.getElementById('showPressure'), showContoursEl=document.getElementById('showContours'), showFlowEl=document.getElementById('showFlow');
-const resetBtn=document.getElementById('reset');
-let W=0,H=0,DPR=Math.min(devicePixelRatio||1,2),t0=0,last=0,simT=0;
-let NX=120, NY=160,cell=7,u,v,u2,v2,pf,dv,solid,svx,svy,frontTr=[],sideTr=[],lift=0,thrust=0,prevL=null,prevR=null;
+// ===== DOM / state ==========================================================
+const dom = {
+  canvas: document.getElementById('cv'),
+  stage: document.getElementById('stage'),
+  wind: document.getElementById('wind'),
+  amp: document.getElementById('amp'),
+  freq: document.getElementById('freq'),
+  birdScale: document.getElementById('birdScale'),
+  pitch: document.getElementById('pitch'),
+  showPressure: document.getElementById('showPressure'),
+  showContours: document.getElementById('showContours'),
+  showFlow: document.getElementById('showFlow'),
+  reset: document.getElementById('reset'),
+};
+const ctx = dom.canvas.getContext('2d', { alpha:false });
+
+const sim = {
+  W: 0,
+  H: 0,
+  DPR: Math.min(devicePixelRatio || 1, 2),
+  t0: 0,
+  last: 0,
+  simT: 0,
+  NX: 120,
+  NY: 160,
+  cell: 7,
+  u: null, v: null, u2: null, v2: null,
+  pf: null, dv: null, solid: null, svx: null, svy: null,
+  frontTr: [], sideTr: [],
+  lift: 0, thrust: 0,
+  prevL: null, prevR: null,
+  pressureCanvas: null,
+  pressureCtx: null,
+  pressureDirty: true,
+};
+
+// Backward-compatible aliases to keep the physics/drawing code stable.
+let W=0,H=0,DPR=sim.DPR,t0=0,last=0,simT=0;
+let NX=sim.NX, NY=sim.NY, cell=sim.cell, u,v,u2,v2,pf,dv,solid,svx,svy,frontTr=sim.frontTr,sideTr=sim.sideTr,lift=0,thrust=0,prevL=null,prevR=null;
 let pressureCanvas=null, pressureCtx=null, pressureDirty=true;
 
-const clamp=(x,a,b)=>Math.max(a,Math.min(b,x)), lerp=(a,b,t)=>a+(b-a)*t, rand=(a,b)=>a+Math.random()*(b-a), idx=(i,j)=>i+j*NX;
-const P=()=>{const scale=+birdScaleEl.value/100; const ampBase=+ampEl.value; return {wind:+windEl.value*0.8,ampBase,amp:ampBase*scale,freq:+freqEl.value/60,pitch:+pitchEl.value/100,scale};};
+// ===== helpers ==============================================================
+const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+const lerp=(a,b,t)=>a+(b-a)*t;
+const rand=(a,b)=>a+Math.random()*(b-a);
+const idx=(i,j)=>i+j*NX;
+
+function getParams(){
+  const scale = +dom.birdScale.value / 100;
+  const ampBase = +dom.amp.value;
+  return {
+    wind: +dom.wind.value * 0.8,
+    ampBase,
+    amp: ampBase * scale,
+    freq: +dom.freq.value / 60,
+    pitch: +dom.pitch.value / 100,
+    scale,
+  };
+}
+const P = getParams;
+
+function syncStateRefs(){
+  sim.W = W; sim.H = H; sim.DPR = DPR;
+  sim.t0 = t0; sim.last = last; sim.simT = simT;
+  sim.NX = NX; sim.NY = NY; sim.cell = cell;
+  sim.u = u; sim.v = v; sim.u2 = u2; sim.v2 = v2;
+  sim.pf = pf; sim.dv = dv; sim.solid = solid; sim.svx = svx; sim.svy = svy;
+  sim.frontTr = frontTr; sim.sideTr = sideTr;
+  sim.lift = lift; sim.thrust = thrust;
+  sim.prevL = prevL; sim.prevR = prevR;
+  sim.pressureCanvas = pressureCanvas;
+  sim.pressureCtx = pressureCtx;
+  sim.pressureDirty = pressureDirty;
+}
+
+function invalidatePressureMap(){
+  pressureDirty = true;
+  sim.pressureDirty = true;
+}
+
+function getDisplayFlags(){
+  return {
+    pressure: !!(dom.showPressure && dom.showPressure.checked),
+    contours: !!(dom.showContours && dom.showContours.checked),
+    flow: !!(dom.showFlow && dom.showFlow.checked),
+  };
+}
 
 function pad(){return Math.max(10,Math.min(20,W*0.015))}
 function gap(){return Math.max(10,Math.min(18,H*0.02))}
@@ -89,7 +166,7 @@ function initFluid(){
   const n=NX*NY;
   u=new Float32Array(n); v=new Float32Array(n); u2=new Float32Array(n); v2=new Float32Array(n);
   pf=new Float32Array(n); dv=new Float32Array(n); solid=new Uint8Array(n); svx=new Float32Array(n); svy=new Float32Array(n);
-  pressureCanvas=null; pressureCtx=null; pressureDirty=true;
+  pressureCanvas=null; pressureCtx=null; invalidatePressureMap();
 }
 function reset(){
   u.fill(0);v.fill(0);u2.fill(0);v2.fill(0);pf.fill(0);dv.fill(0);solid.fill(0);svx.fill(0);svy.fill(0);
@@ -98,13 +175,13 @@ function reset(){
     frontTr.push({x:rand(0,NX-1),y:rand(0,NY-1),px:0,py:0,age:rand(0,120),life:rand(90,260)});
     sideTr.push({x:rand(0,NX-1),y:rand(0,NY-1),px:0,py:0,age:rand(0,120),life:rand(90,260)});
   }
-  prevL=null; prevR=null; lift=0; thrust=0; pressureDirty=true;
+  prevL=null; prevR=null; lift=0; thrust=0; invalidatePressureMap();
 }
 function resize(){
-  const r=st.getBoundingClientRect();
+  const r=dom.stage.getBoundingClientRect();
   W=Math.max(320,Math.floor(r.width)); H=Math.max(320,Math.floor(r.height));
-  cv.width=Math.floor(W*DPR); cv.height=Math.floor(H*DPR);
-  cv.style.width=W+'px'; cv.style.height=H+'px';
+  dom.canvas.width=Math.floor(W*DPR); dom.canvas.height=Math.floor(H*DPR);
+  dom.canvas.style.width=W+'px'; dom.canvas.style.height=H+'px';
   ctx.setTransform(DPR,0,0,DPR,0,0);
   initFluid(); reset(); draw(0);
 }
@@ -290,7 +367,7 @@ function pressureColor(val){
   const c = pressureRGBA(val);
   return `rgba(${c.r},${c.g},${c.b},${(c.a/255).toFixed(3)})`;
 }
-function ensurePressureCanvas(){
+function buildPressureImageData(){
   const w = Math.max(1, Math.floor(NX * cell));
   const h = Math.max(1, Math.floor(NY * cell));
   if(!pressureCanvas || pressureCanvas.width !== w || pressureCanvas.height !== h){
@@ -300,7 +377,7 @@ function ensurePressureCanvas(){
     pressureCtx = pressureCanvas.getContext('2d');
     pressureDirty = true;
   }
-  if(!pressureDirty) return;
+  if(!pressureDirty) return pressureCanvas;
 
   const img = pressureCtx.createImageData(w, h);
   const data = img.data;
@@ -317,20 +394,33 @@ function ensurePressureCanvas(){
       const p = p00*(1-fx)*(1-fy) + p10*fx*(1-fy) + p01*(1-fx)*fy + p11*fx*fy;
       const c = pressureRGBA(p);
       const k = (py*w + px) * 4;
-      data[k] = c.r; data[k+1] = c.g; data[k+2] = c.b; data[k+3] = c.a;
+      data[k] = c.r;
+      data[k+1] = c.g;
+      data[k+2] = c.b;
+      data[k+3] = c.a;
     }
   }
   pressureCtx.putImageData(img, 0, 0);
   pressureDirty = false;
+  return pressureCanvas;
 }
 function drawPressureMap(R, alpha=1){
-  ensurePressureCanvas();
+  const source = buildPressureImageData();
+  if(!source) return;
+
+  const viewCanvas = document.createElement('canvas');
+  viewCanvas.width = Math.max(1, Math.floor(R.w));
+  viewCanvas.height = Math.max(1, Math.floor(R.h));
+  const viewCtx = viewCanvas.getContext('2d');
+  viewCtx.clearRect(0, 0, viewCanvas.width, viewCanvas.height);
+  viewCtx.globalAlpha = alpha;
+  viewCtx.drawImage(source, 0, 0, source.width, source.height, 0, 0, viewCanvas.width, viewCanvas.height);
+
   ctx.save();
-  ctx.globalAlpha = alpha;
   ctx.beginPath();
   rr(R.x,R.y,R.w,R.h,18);
   ctx.clip();
-  ctx.drawImage(pressureCanvas, 0, 0, pressureCanvas.width, pressureCanvas.height, R.x, R.y, R.w, R.h);
+  ctx.drawImage(viewCanvas, R.x, R.y, R.w, R.h);
   ctx.restore();
 }
 function drawFlowLines(R,set){
@@ -767,45 +857,87 @@ function drawContours(R){
 }
 
 
+function renderFrontView(rect, state, leftWing, rightWing, flags){
+  if(flags.pressure) drawPressureMap(rect);
+  if(flags.contours) drawContours(rect);
+  if(flags.flow) drawFlowLines(rect, frontTr);
+  drawFrontBird(state, leftWing, rightWing, rect);
+  drawLegend(rect);
+}
+
+function renderSideView(rect, state, flags){
+  if(flags.pressure) drawPressureMap(rect, .84);
+  if(flags.contours) drawContours(rect);
+  if(flags.flow){
+    ctx.save();
+    ctx.globalAlpha = .62;
+    drawFlowLines(rect, sideTr);
+    ctx.restore();
+  }
+  drawSideBird(state, rect);
+}
+
 function draw(dt){
-  const R=rects();
+  const R = rects();
+  const flags = getDisplayFlags();
+
   ctx.clearRect(0,0,W,H);
   card(R.F,'前面ビュー','圧力マップ・流線・周囲流れ');
   card(R.S,'側面ビュー','圧力マップ・力・周囲流れ');
 
-  const s=birdState(simT,R.F), Lw=wing(s,'left'), Rw=wing(s,'right');
-  if(dt>0){fluidStep(dt,Lw,Rw,R.F,s); updateTracers(dt); updateForces(Lw,Rw,R.F); pressureDirty = true;}
-  prevL=Lw; prevR=Rw;
+  const state = birdState(simT, R.F);
+  const leftWing = wing(state, 'left');
+  const rightWing = wing(state, 'right');
 
-  if(showPressureEl && showPressureEl.checked) drawPressureMap(R.F);
-  if(showContoursEl && showContoursEl.checked) drawContours(R.F);
-  if(showFlowEl && showFlowEl.checked) drawFlowLines(R.F,frontTr);
-  drawFrontBird(s,Lw,Rw,R.F);
-  drawLegend(R.F);
-
-  if(showPressureEl && showPressureEl.checked) drawPressureMap(R.S, .84);
-  if(showContoursEl && showContoursEl.checked) drawContours(R.S);
-  if(showFlowEl && showFlowEl.checked){
-    ctx.save(); ctx.globalAlpha=.62; drawFlowLines(R.S,sideTr); ctx.restore();
+  if(dt > 0){
+    fluidStep(dt, leftWing, rightWing, R.F, state);
+    updateTracers(dt);
+    updateForces(leftWing, rightWing, R.F);
+    invalidatePressureMap();
   }
-  drawSideBird(s,R.S);
+
+  prevL = leftWing;
+  prevR = rightWing;
+
+  renderFrontView(R.F, state, leftWing, rightWing, flags);
+  renderSideView(R.S, state, flags);
+  syncStateRefs();
 }
+
 function loop(now){
-  if(!t0){t0=now; last=now}
-  simT=(now-t0)/1000;
-  const dt=Math.min(.025,(now-last)/1000);
-  last=now;
+  if(!t0){
+    t0 = now;
+    last = now;
+  }
+  simT = (now - t0) / 1000;
+  const dt = Math.min(.025, (now - last) / 1000);
+  last = now;
   draw(dt);
   requestAnimationFrame(loop);
 }
-resetBtn.addEventListener('click',()=>{t0=0; simT=0; last=0; reset(); draw(0)});
-[showPressureEl, showContoursEl, showFlowEl, birdScaleEl].forEach(el => {
-  if(!el) return;
-  el.addEventListener('input', ()=>draw(0));
-  el.addEventListener('change', ()=>draw(0));
-});
-window.addEventListener('resize',resize);
-resize(); draw(0); setTimeout(()=>requestAnimationFrame(loop),80);
+
+function handleReset(){
+  t0 = 0;
+  simT = 0;
+  last = 0;
+  reset();
+  draw(0);
+}
+
+function bindUI(){
+  dom.reset.addEventListener('click', handleReset);
+  [dom.showPressure, dom.showContours, dom.showFlow, dom.birdScale, dom.wind, dom.amp, dom.freq, dom.pitch].forEach(el => {
+    if(!el) return;
+    el.addEventListener('input', () => { invalidatePressureMap(); draw(0); });
+    el.addEventListener('change', () => { invalidatePressureMap(); draw(0); });
+  });
+  window.addEventListener('resize', resize);
+}
+
+bindUI();
+resize();
+draw(0);
+setTimeout(() => requestAnimationFrame(loop), 80);
 })();
 </script>
 </body>
