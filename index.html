@@ -287,47 +287,50 @@ function pressureColor(val){
   return `rgba(${c.r},${c.g},${c.b},${(c.a/255).toFixed(3)})`;
 }
 function drawPressureMap(R){
-  ctx.save();
-  ctx.beginPath(); rr(R.x,R.y,R.w,R.h,18); ctx.clip();
-
-  // Smooth rendering by bilinear interpolation from the pressure grid
-  const img = ctx.createImageData(Math.floor(R.w), Math.floor(R.h));
+  const w = Math.max(1, Math.floor(R.w));
+  const h = Math.max(1, Math.floor(R.h));
+  const off = document.createElement('canvas');
+  off.width = w;
+  off.height = h;
+  const octx = off.getContext('2d');
+  const img = octx.createImageData(w, h);
   const data = img.data;
 
-  for(let py=0; py<img.height; py++){
-    for(let px=0; px<img.width; px++){
+  for(let py=0; py<h; py++){
+    for(let px=0; px<w; px++){
       const gx = px / cell;
       const gy = py / cell;
-
       const i = Math.floor(gx);
       const j = Math.floor(gy);
-
       if(i < 0 || j < 0 || i >= NX-1 || j >= NY-1) continue;
 
       const fx = gx - i;
       const fy = gy - j;
-
       const p00 = pf[idx(i,j)];
       const p10 = pf[idx(i+1,j)];
       const p01 = pf[idx(i,j+1)];
       const p11 = pf[idx(i+1,j+1)];
-
       const p =
         p00*(1-fx)*(1-fy) +
-        p10*(fx)*(1-fy) +
-        p01*(1-fx)*(fy) +
-        p11*(fx)*(fy);
+        p10*fx*(1-fy) +
+        p01*(1-fx)*fy +
+        p11*fx*fy;
 
       const c = pressureRGBA(p);
-      const k = (py*img.width + px) * 4;
-      data[k]   = c.r;
+      const k = (py*w + px) * 4;
+      data[k] = c.r;
       data[k+1] = c.g;
       data[k+2] = c.b;
       data[k+3] = c.a;
     }
   }
 
-  ctx.putImageData(img, Math.floor(R.x), Math.floor(R.y));
+  octx.putImageData(img, 0, 0);
+  ctx.save();
+  ctx.beginPath();
+  rr(R.x,R.y,R.w,R.h,18);
+  ctx.clip();
+  ctx.drawImage(off, R.x, R.y, R.w, R.h);
   ctx.restore();
 }
 function drawFlowLines(R,set){
