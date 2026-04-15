@@ -167,6 +167,8 @@ function createField(){
     pressureCanvas:null,
     pressureCtx:null,
     pressureDirty:true,
+    dp:null,
+    dpDirty:true,
   };
 }
 
@@ -202,6 +204,7 @@ function simRect(field, cardRect){
 
 function invalidatePressureMap(field){
   field.pressureDirty = true;
+  field.dpDirty = true;
 }
 
 function initField(field, rect, mode){
@@ -225,6 +228,8 @@ function initField(field, rect, mode){
   field.pressureCanvas = null;
   field.pressureCtx = null;
   field.pressureDirty = true;
+  field.dp = new Float32Array(n);
+  field.dpDirty = true;
 }
 
 function resetField(field){
@@ -234,6 +239,7 @@ function resetField(field){
     tr.x=rand(0,field.NX-1); tr.y=rand(0,field.NY-1); tr.px=tr.x; tr.py=tr.y; tr.age=rand(0,120); tr.life=rand(90,260);
   }
   invalidatePressureMap(field);
+  field.dpDirty = true;
 }
 
 function getDisplayFlags(){
@@ -551,6 +557,54 @@ function pressureRGBA(val){
   return {r:r|0, g:g|0, b:b|0, a:Math.max(0, Math.min(255, Math.round(a*255)))};
 }
 
+
+function rebuildDisplayPressure(field){
+  if(!field.dp || field.dp.length !== field.pf.length){
+    field.dp = new Float32Array(field.pf.length);
+  }
+
+  let minI=field.NX, minJ=field.NY, maxI=-1, maxJ=-1;
+  let mean=0, count=0;
+  for(let j=0;j<field.NY;j++){
+    for(let i=0;i<field.NX;i++){
+      const id=idx(field,i,j);
+      mean += field.pf[id];
+      count++;
+      if(field.solid[id]){
+        if(i<minI) minI=i;
+        if(j<minJ) minJ=j;
+        if(i>maxI) maxI=i;
+        if(j>maxJ) maxJ=j;
+      }
+    }
+  }
+  mean /= Math.max(1,count);
+
+  if(maxI < 0){
+    for(let k=0;k<field.pf.length;k++) field.dp[k] = field.pf[k] - mean;
+    field.dpDirty = false;
+    return;
+  }
+
+  const cx = (minI + maxI) * 0.5;
+  const cy = (minJ + maxJ) * 0.5;
+  const sx = Math.max(8, (maxI - minI + 1) * 1.9);
+  const sy = Math.max(8, (maxJ - minJ + 1) * 1.9);
+
+  // suppress broad domain-scale bias, emphasize bird-near structure
+  for(let j=0;j<field.NY;j++){
+    for(let i=0;i<field.NX;i++){
+      const id=idx(field,i,j);
+      const dx=(i-cx)/sx, dy=(j-cy)/sy;
+      const w=Math.exp(-(dx*dx + dy*dy) * 1.15);
+      const centered = field.pf[id] - mean;
+      field.dp[id] = centered * (0.20 + 1.60*w);
+    }
+  }
+
+  field.dpDirty = false;
+}
+
 function buildPressureImage(field){
   const w = Math.max(1, Math.floor(field.NX * field.cell));
   const h = Math.max(1, Math.floor(field.NY * field.cell));
@@ -561,6 +615,7 @@ function buildPressureImage(field){
     field.pressureCtx = field.pressureCanvas.getContext('2d');
     field.pressureDirty = true;
   }
+  if(field.dpDirty) rebuildDisplayPressure(field);
   if(!field.pressureDirty) return field.pressureCanvas;
 
   const img = field.pressureCtx.createImageData(w,h);
@@ -572,7 +627,7 @@ function buildPressureImage(field){
       const i = Math.floor(gx), j = Math.floor(gy);
       if(i < 0 || j < 0 || i >= field.NX-1 || j >= field.NY-1) continue;
       const fx = gx - i, fy = gy - j;
-      const p00 = field.pf[idx(field,i,j)], p10 = field.pf[idx(field,i+1,j)], p01 = field.pf[idx(field,i,j+1)], p11 = field.pf[idx(field,i+1,j+1)];
+      const p00 = field.dp[idx(field,i,j)], p10 = field.dp[idx(field,i+1,j)], p01 = field.dp[idx(field,i,j+1)], p11 = field.dp[idx(field,i+1,j+1)];
       const p = p00*(1-fx)*(1-fy) + p10*fx*(1-fy) + p01*(1-fx)*fy + p11*fx*fy;
       const c = pressureRGBA(p);
       const k = (py*w + px) * 4;
@@ -635,7 +690,8 @@ function drawContours(field,R){
     ctx.lineWidth = strong ? 1.35 : mid ? 1.0 : 0.8;
     for(let j=1;j<field.NY-2;j++){
       for(let i=1;i<field.NX-2;i++){
-        const v00 = field.pf[idx(field,i,j)], v10 = field.pf[idx(field,i+1,j)], v11 = field.pf[idx(field,i+1,j+1)], v01 = field.pf[idx(field,i,j+1)];
+        if(field.dpDirty) rebuildDisplayPressure(field);
+        const v00 = field.dp[idx(field,i,j)], v10 = field.dp[idx(field,i+1,j)], v11 = field.dp[idx(field,i+1,j+1)], v01 = field.dp[idx(field,i,j+1)];
         const s0 = v00 >= level ? 1 : 0, s1 = v10 >= level ? 1 : 0, s2 = v11 >= level ? 1 : 0, s3 = v01 >= level ? 1 : 0;
         const state = s0 | (s1<<1) | (s2<<2) | (s3<<3);
         if(state === 0 || state === 15) continue;
