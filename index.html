@@ -227,9 +227,27 @@ function updateForces(Lw,Rw,R){
 }
 
 function pressureColor(val){
-  const t=clamp((val+0.8)/1.6,0,1); let r,g,b,a;
-  if(t<0.5){const k=t/0.5; r=70*(1-k)+210*k; g=130*(1-k)+220*k; b=230*(1-k)+230*k; a=0.06+0.08*k;}
-  else{const k=(t-0.5)/0.5; r=210*(1-k)+235*k; g=220*(1-k)+120*k; b=230*(1-k)+120*k; a=0.14+0.12*k;}
+  // Diverging scientific-style map: blue -> light neutral -> red
+  const t = clamp((val + 0.9) / 1.8, 0, 1);
+
+  function mix(a,b,k){ return a + (b-a)*k; }
+
+  let r,g,b,a;
+  if(t < 0.5){
+    const k = t / 0.5;
+    // deep blue -> pale warm-neutral
+    r = mix(49, 241, k);
+    g = mix(84, 241, k);
+    b = mix(164, 236, k);
+    a = mix(0.16, 0.42, Math.pow(k, 0.9));
+  }else{
+    const k = (t - 0.5) / 0.5;
+    // pale neutral -> deep red
+    r = mix(241, 179, k);
+    g = mix(241, 32, k);
+    b = mix(236, 32, k);
+    a = mix(0.42, 0.78, Math.pow(k, 0.9));
+  }
   return `rgba(${r|0},${g|0},${b|0},${a.toFixed(3)})`;
 }
 function drawPressureMap(R){
@@ -464,8 +482,8 @@ function drawLegend(R){
   ctx.fillStyle='rgba(255,255,255,.74)'; ctx.fillRect(x,y,w,h);
   ctx.strokeStyle='rgba(70,90,110,.10)'; ctx.strokeRect(x,y,w,h);
   ctx.font='12px system-ui';
-  ctx.fillStyle='rgba(84,140,220,.95)'; ctx.fillText('青: 低圧',x+10,y+18);
-  ctx.fillStyle='rgba(230,120,120,.95)'; ctx.fillText('赤: 高圧',x+10,y+36);
+  ctx.fillStyle='rgba(84,140,220,.95)'; ctx.fillText('青系: 低圧',x+10,y+18);
+  ctx.fillStyle='rgba(230,120,120,.95)'; ctx.fillText('赤系: 高圧',x+10,y+36);
   ctx.fillStyle='rgba(70,176,170,.95)'; ctx.fillText('緑青線: 加速域',x+10,y+54);
   ctx.fillStyle='rgba(23,48,71,.78)'; ctx.fillText('青/桃点: 後流渦',x+10,y+72);
   ctx.fillStyle='rgba(74,98,119,.78)'; ctx.fillText('流線: 周囲流れ',x+10,y+90);
