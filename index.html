@@ -9,30 +9,50 @@
   html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(180deg,#eef5fb,#dbe8f3 45%,#c6dceb)}
   *{box-sizing:border-box}
   #wrap{position:fixed;inset:0;display:flex;flex-direction:column;min-height:100dvh}
-  #ui{flex:0 0 auto;background:rgba(255,255,255,.94);backdrop-filter:blur(10px);border-bottom:1px solid rgba(0,0,0,.08);padding:calc(var(--ui-pad-y) + var(--safe-top)) var(--ui-pad-x) 8px;z-index:10;display:flex;flex-direction:column;gap:8px}
-  .row{display:grid;grid-template-columns:minmax(92px,132px) minmax(0,1fr);align-items:center;gap:8px 10px;margin:0}
-  .row.controls{grid-template-columns:minmax(92px,132px) minmax(0,1fr) auto;align-items:center}
-  .toggles{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-  .toggles label{min-width:auto;font-size:13px;display:flex;align-items:center;gap:4px}
-  label{min-width:0;font-size:14px;line-height:1.2}
-  input[type="range"]{width:100%;min-width:0}
-  button{background:#26435e;color:#eef7ff;border:none;border-radius:12px;padding:10px 14px;font-size:14px;white-space:nowrap}
-  .pill{display:inline-block;font-size:12px;padding:3px 8px;border-radius:999px;background:rgba(38,67,94,.10);color:#26435e;border:1px solid rgba(38,67,94,.15)}
-  #msg{font-size:12px;line-height:1.45;color:#4a6277;margin-top:0}
+  #ui{flex:0 0 auto;background:rgba(255,255,255,.92);backdrop-filter:blur(10px);border-bottom:1px solid rgba(0,0,0,.08);padding:calc(6px + var(--safe-top)) 10px 4px;z-index:10;display:flex;flex-direction:column;gap:4px;transition:max-height .25s ease, padding .25s ease, opacity .2s ease;overflow:hidden;max-height:420px}
+  #ui.collapsed{max-height:0;padding-top:0;padding-bottom:0;border-bottom-color:transparent;opacity:.0;pointer-events:none}
+  .toolbar{display:flex;gap:6px;align-items:center;justify-content:space-between}
+  .toolbar-left{display:flex;align-items:center;gap:6px;min-width:0}
+  .toolbar-right{display:flex;align-items:center;gap:6px}
+  .mini-btn{background:#26435e;color:#eef7ff;border:none;border-radius:10px;padding:6px 10px;font-size:12px;line-height:1;white-space:nowrap}
+  .row{display:grid;grid-template-columns:minmax(80px,110px) 1fr;align-items:center;gap:4px 8px;margin:0}
+  .row.controls{grid-template-columns:minmax(80px,110px) 1fr auto;align-items:center}
+  .toggles{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .toggles label{min-width:auto;font-size:12px;display:flex;align-items:center;gap:4px}
+  label{min-width:0;font-size:12px;line-height:1.1}
+  input[type="range"]{width:100%;min-width:0;height:18px}
+  button{background:#26435e;color:#eef7ff;border:none;border-radius:10px;padding:6px 10px;font-size:13px;white-space:nowrap}
+  .pill{display:inline-block;font-size:11px;padding:2px 7px;border-radius:999px;background:rgba(38,67,94,.10);color:#26435e;border:1px solid rgba(38,67,94,.15)}
+  #msg{font-size:11px;line-height:1.25;color:#4a6277;margin-top:0}
   #stage{flex:1 1 auto;min-height:0;position:relative;overflow:hidden;padding-bottom:var(--safe-bottom)}
   canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+  #fabBar{position:fixed;right:10px;bottom:calc(12px + var(--safe-bottom));z-index:20;display:flex;flex-direction:column;gap:8px}
+  .fab{width:44px;height:44px;border-radius:999px;border:none;background:rgba(38,67,94,.92);color:#fff;font-size:18px;box-shadow:0 6px 20px rgba(0,0,0,.18)}
+  body.ui-hidden #stage{padding-top:0}
   @media (max-width:760px){
-    #ui{padding-left:10px;padding-right:10px}
+    #ui{padding-left:10px;padding-right:10px;max-height:360px}
     .row,.row.controls{grid-template-columns:1fr}
-    .toggles{gap:8px}
+    .toggles{gap:6px}
     button{width:100%}
     .pill{justify-self:start}
+    .toolbar{margin-bottom:2px}
+    .toolbar-right .mini-btn{padding:6px 8px;font-size:11px}
   }
 </style>
 </head>
 <body>
 <div id="wrap">
   <div id="ui">
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <span class="pill">仕上げ版</span>
+        <span id="statusText" style="font-size:11px;color:#4a6277;">独立流体場・座標整合済み</span>
+      </div>
+      <div class="toolbar-right">
+        <button id="toggleUi" class="mini-btn" type="button">折りたたむ</button>
+        <button id="fullscreen" class="mini-btn" type="button">全画面</button>
+      </div>
+    </div>
     <div class="row"><label>前からの風</label><input id="wind" type="range" min="5" max="50" value="18"></div>
     <div class="row"><label>羽ばたき振幅</label><input id="amp" type="range" min="8" max="80" value="36"></div>
     <div class="row"><label>周波数</label><input id="freq" type="range" min="20" max="120" value="46"></div>
@@ -45,12 +65,15 @@
         <label><input id="showContours" type="checkbox" checked> 等圧線</label>
         <label><input id="showFlow" type="checkbox" checked> 流線</label>
         <button id="reset">リセット</button>
-        <span class="pill">前面・側面 独立流体場版</span>
       </div>
     </div>
-    <div id="msg">前面ビューと側面ビューで、圧力場・等圧線・流線をそれぞれ独立に計算する版です。側面は疑似圧力ではなく、側面投影の翼マスクから計算します。</div>
+    <div id="msg">前面ビューと側面ビューで、圧力場・等圧線・流線をそれぞれ独立に計算します。UIは折りたたみ可能で、スマホ画面でも可視領域を広く取れるよう調整しています。</div>
   </div>
   <div id="stage"><canvas id="cv"></canvas></div>
+  <div id="fabBar">
+    <button id="fabToggleUi" class="fab" type="button" aria-label="UI表示切替">▾</button>
+    <button id="fabReset" class="fab" type="button" aria-label="リセット">↺</button>
+  </div>
 </div>
 <script>
 (()=>{
@@ -66,6 +89,11 @@ const dom = {
   showContours: document.getElementById('showContours'),
   showFlow: document.getElementById('showFlow'),
   reset: document.getElementById('reset'),
+  toggleUi: document.getElementById('toggleUi'),
+  fullscreen: document.getElementById('fullscreen'),
+  fabToggleUi: document.getElementById('fabToggleUi'),
+  fabReset: document.getElementById('fabReset'),
+  ui: document.getElementById('ui'),
 };
 const ctx = dom.canvas.getContext('2d', { alpha:false });
 
@@ -748,6 +776,31 @@ function renderSideView(rect,state,flags){
   drawLegend(sr);
 }
 
+
+let uiCollapsed = false;
+
+function setUiCollapsed(next){
+  uiCollapsed = !!next;
+  dom.ui.classList.toggle('collapsed', uiCollapsed);
+  document.body.classList.toggle('ui-hidden', uiCollapsed);
+  if(dom.toggleUi) dom.toggleUi.textContent = uiCollapsed ? '開く' : '折りたたむ';
+  if(dom.fabToggleUi) dom.fabToggleUi.textContent = uiCollapsed ? '▴' : '▾';
+  setTimeout(() => resize(), 260);
+}
+
+async function toggleFullscreen(){
+  const root = document.documentElement;
+  try{
+    if(!document.fullscreenElement){
+      if(root.requestFullscreen) await root.requestFullscreen();
+    }else{
+      if(document.exitFullscreen) await document.exitFullscreen();
+    }
+  }catch(e){
+    console.warn('fullscreen failed', e);
+  }
+}
+
 function resize(){
   const r=dom.stage.getBoundingClientRect();
   W=Math.max(320,Math.floor(r.width)); H=Math.max(320,Math.floor(r.height));
@@ -772,8 +825,8 @@ function draw(dt){
   const R = rects();
   const flags = getDisplayFlags();
   ctx.clearRect(0,0,W,H);
-  card(R.F,'前面ビュー','座標整合済み：圧力・等圧線・流線');
-  card(R.S,'側面ビュー','座標整合済み：圧力・等圧線・流線');
+  card(R.F,'前面ビュー','独立圧力場・等圧線・流線');
+  card(R.S,'側面ビュー','独立圧力場・等圧線・流線');
 
   const frontSimR = simRect(frontField, R.F);
   const sideSimR = simRect(sideField, R.S);
@@ -810,6 +863,10 @@ function loop(now){
 
 function bindUI(){
   dom.reset.addEventListener('click', handleReset);
+  if(dom.fabReset) dom.fabReset.addEventListener('click', handleReset);
+  if(dom.toggleUi) dom.toggleUi.addEventListener('click', ()=>setUiCollapsed(!uiCollapsed));
+  if(dom.fabToggleUi) dom.fabToggleUi.addEventListener('click', ()=>setUiCollapsed(!uiCollapsed));
+  if(dom.fullscreen) dom.fullscreen.addEventListener('click', toggleFullscreen);
   [dom.showPressure, dom.showContours, dom.showFlow, dom.birdScale, dom.wind, dom.amp, dom.freq, dom.pitch].forEach(el => {
     el.addEventListener('input', ()=>{ invalidatePressureMap(frontField); invalidatePressureMap(sideField); draw(0); });
     el.addEventListener('change', ()=>{ invalidatePressureMap(frontField); invalidatePressureMap(sideField); draw(0); });
