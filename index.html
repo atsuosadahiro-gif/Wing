@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>前面・側面 独立流体場版 羽ばたきシミュレーション（背景風あり・対称境界・両翼投影版）</title>
+<title>前面・側面 独立流体場版 羽ばたきシミュレーション（背景風あり・対称境界・中央配置版）</title>
 <style>
   :root{--safe-top:max(env(safe-area-inset-top),0px);--safe-bottom:max(env(safe-area-inset-bottom),0px)}
   html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(180deg,#eef5fb,#dbe8f3 45%,#c6dceb)}
@@ -62,7 +62,7 @@
         <button id="reset">リセット</button>
       </div>
     </div>
-    <div id="msg">鳥の描画に使っているPath2Dを、そのままオフスクリーンに塗ってsolidマスクを作る版です。背景風は残しつつ、左右・上下を同型の対称境界にそろえた版です。側面は真横表示に寄せ、側面マスクには奥の翼の投影も薄く重ねています。</div>
+    <div id="msg">鳥の描画に使っているPath2Dを、そのままオフスクリーンに塗ってsolidマスクを作る版です。背景風は残しつつ、左右・上下を同型の対称境界にそろえた版です。まず鳥を前面・側面とも領域中央寄りに配置し、側面は真横表示に寄せています。</div>
   </div>
   <div id="stage"><canvas id="cv"></canvas></div>
   <div id="fabBar">
@@ -176,7 +176,7 @@ function resetField(field){
 
 function birdState(t,r){
   const p=P(), ph=t*p.freq*Math.PI*2, down=Math.max(0,Math.sin(ph)), up=Math.max(0,-Math.sin(ph)), sc=p.scale;
-  const bodyX=r.x+r.w*.20+(2.0*down-0.8*up)*sc, bodyY=r.y+r.h*.66+Math.sin(ph-.2)*p.amp*.03;
+  const bodyX=r.x+r.w*.46+(2.0*down-0.8*up)*sc, bodyY=r.y+r.h*.66+Math.sin(ph-.2)*p.amp*.03;
   const fold=.14+.78*up, open=.68+.46*down, shSpread=Math.min(20,r.w*.044)*sc, shoulderY=bodyY-5*sc+Math.sin(ph)*p.amp*.17+2.0*down*sc;
   const hum=Math.min(22,r.w*.045)*(0.96+0.10*down)*sc, fore=Math.min(54,r.w*.108)*(0.82+0.30*down)*(1-.14*fold)*sc, hand=Math.min(66,r.w*.125)*(0.76+0.42*down)*(1-.10*fold)*sc;
   const rightA1=clamp(-0.90+0.85*Math.sin(ph),-1.75,-0.02), rightA2=clamp(rightA1+0.30+0.28*p.pitch+0.10*down,-1.20,0.65), rightA3=clamp(rightA2+0.22+0.22*p.pitch+0.05*Math.sin(ph+0.5),-0.90,1.00);
@@ -189,7 +189,7 @@ function wing(s,side){
 }
 function sideKinematics(s,R){
   const p=P(), sc=p.scale;
-  const bodyCx=R.x+R.w*.15, bodyCy=R.y+R.h*.67+Math.sin(s.ph-.2)*p.amp*.03, tilt=0, shoulderX=bodyCx-1.2*sc, shoulderY=bodyCy-1.6*sc;
+  const bodyCx=R.x+R.w*.46, bodyCy=R.y+R.h*.67+Math.sin(s.ph-.2)*p.amp*.03, tilt=0, shoulderX=bodyCx-1.2*sc, shoulderY=bodyCy-1.6*sc;
   const a1=-1.00+.60*Math.sin(s.ph)-0.06*s.fold, a2=a1+.20+0.22*s.open-0.18*s.fold, a3=a2+.22+0.30*s.open-0.22*s.fold;
   const ex=shoulderX+Math.cos(a1)*15*sc, ey=shoulderY+Math.sin(a1)*15*sc, wx=ex+Math.cos(a2)*(28*(1-.16*s.fold))*sc, wy=ey+Math.sin(a2)*(28*(1-.16*s.fold))*sc, tx=wx+Math.cos(a3)*(34*(1-.14*s.fold))*sc, ty=wy+Math.sin(a3)*(34*(1-.14*s.fold))*sc;
   return {bodyCx,bodyCy,tilt,shoulderX,shoulderY,ex,ey,wx,wy,tx,ty,a1,a2,a3};
@@ -553,7 +553,7 @@ function rebuildMasks(state, frontSimR, sideSimR){
 
 function draw(dt){
   const R=rects(), flags={pressure:dom.showPressure.checked,contours:dom.showContours.checked,flow:dom.showFlow.checked};
-  ctx.clearRect(0,0,W,H); card(R.F,'前面ビュー','背景風あり・対称境界・両翼投影'); card(R.S,'側面ビュー','背景風あり・対称境界・両翼投影');
+  ctx.clearRect(0,0,W,H); card(R.F,'前面ビュー','背景風あり・対称境界・中央配置'); card(R.S,'側面ビュー','背景風あり・対称境界・中央配置');
   const frontSimR=simRect(frontField,R.F), sideSimR=simRect(sideField,R.S);
   const state=birdState(simT,frontSimR);
   const kin = rebuildMasks(state, frontSimR, sideSimR);
