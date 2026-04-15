@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>前面・側面 独立流体場版 羽ばたきシミュレーション（水平風・真横側面版）</title>
+<title>前面・側面 独立流体場版 羽ばたきシミュレーション（水平風・真横側面・左右同符号版）</title>
 <style>
   :root{--safe-top:max(env(safe-area-inset-top),0px);--safe-bottom:max(env(safe-area-inset-bottom),0px)}
   html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(180deg,#eef5fb,#dbe8f3 45%,#c6dceb)}
@@ -62,7 +62,7 @@
         <button id="reset">リセット</button>
       </div>
     </div>
-    <div id="msg">鳥の描画に使っているPath2Dを、そのままオフスクリーンに塗ってsolidマスクを作る版です。風は正面から水平に固定し、側面は斜めではなく真横表示に寄せています。</div>
+    <div id="msg">鳥の描画に使っているPath2Dを、そのままオフスクリーンに塗ってsolidマスクを作る版です。風は正面から水平に固定し、側面は斜めではなく真横表示に寄せています。前面ビューの左右翼には同符号の強制項を与え、圧力方向の逆転を抑えています。</div>
   </div>
   <div id="stage"><canvas id="cv"></canvas></div>
   <div id="fabBar">
@@ -494,7 +494,7 @@ function rebuildMasks(state, frontSimR, sideSimR){
 
 function draw(dt){
   const R=rects(), flags={pressure:dom.showPressure.checked,contours:dom.showContours.checked,flow:dom.showFlow.checked};
-  ctx.clearRect(0,0,W,H); card(R.F,'前面ビュー','水平風・真横側面'); card(R.S,'側面ビュー','水平風・真横側面');
+  ctx.clearRect(0,0,W,H); card(R.F,'前面ビュー','水平風・真横側面・左右同符号'); card(R.S,'側面ビュー','水平風・真横側面・左右同符号');
   const frontSimR=simRect(frontField,R.F), sideSimR=simRect(sideField,R.S);
   const state=birdState(simT,frontSimR);
   const kin = rebuildMasks(state, frontSimR, sideSimR);
