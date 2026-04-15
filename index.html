@@ -4,12 +4,11 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>鳥の前面・側面 高度版（LEV・渦リング・境界影響）</title>
+<title>2D格子流体 + 翼マスク境界条件版</title>
 <style>
   :root{
     --bg1:#eef5fb; --bg2:#dbe8f3; --bg3:#c6dceb;
-    --panel:#ffffffc8; --ink:#173047; --muted:#4a6277; --line:#00000014;
-    --blue:#5b84c8; --pink:#d48ab0; --teal:#4fa8a1;
+    --ink:#173047; --muted:#4a6277; --line:#00000014;
   }
   html,body{
     margin:0; padding:0; width:100%; height:100%; overflow:hidden;
@@ -23,12 +22,12 @@
     border-bottom:1px solid var(--line); padding:10px 12px 8px; z-index:10;
   }
   .row{display:flex; align-items:center; gap:10px; margin:8px 0; flex-wrap:wrap;}
-  label{min-width:118px; font-size:15px;}
+  label{min-width:122px; font-size:15px;}
   input[type="range"]{width:180px; max-width:42vw;}
   button{background:#26435e; color:#eef7ff; border:none; border-radius:12px; padding:10px 16px; font-size:15px;}
   .pill{display:inline-block; font-size:12px; padding:3px 8px; border-radius:999px; background:rgba(38,67,94,.10); color:#26435e; border:1px solid rgba(38,67,94,.15);}
   #msg{font-size:13px; line-height:1.35; color:var(--muted); margin-top:6px;}
-  #stage{flex:1 1 auto; min-height:280px; position:relative; overflow:hidden;}
+  #stage{flex:1 1 auto; min-height:300px; position:relative; overflow:hidden;}
   canvas{position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none;}
 </style>
 </head>
@@ -37,24 +36,24 @@
   <div id="ui">
     <div class="row">
       <label>前からの風</label>
-      <input id="wind" type="range" min="5" max="60" value="24" />
+      <input id="wind" type="range" min="5" max="50" value="18" />
     </div>
     <div class="row">
       <label>羽ばたき振幅</label>
-      <input id="amp" type="range" min="10" max="110" value="34" />
+      <input id="amp" type="range" min="8" max="70" value="26" />
     </div>
     <div class="row">
       <label>周波数</label>
-      <input id="freq" type="range" min="20" max="160" value="52" />
+      <input id="freq" type="range" min="20" max="120" value="42" />
     </div>
     <div class="row">
-      <label>渦の強さ</label>
-      <input id="strength" type="range" min="10" max="160" value="88" />
+      <label>翼の迎角変化</label>
+      <input id="pitch" type="range" min="0" max="100" value="42" />
       <button id="reset">リセット</button>
-      <span class="pill">LEV・渦リング・境界影響</span>
+      <span class="pill">格子流体 + 物体境界</span>
     </div>
     <div id="msg">
-      左が前面、右が側面です。①前縁渦（LEV） ②渦リングっぽい放出 ③翼まわりで流れが避ける境界影響 を追加した版です。厳密CFDではなく、現象理解用の強化渦モデルです。
+      2D格子上で流速場と圧力補正を解く簡易流体版です。翼はマスク境界として扱い、空気が翼を通り抜けにくいようにしています。左が前面、右が側面です。
     </div>
   </div>
   <div id="stage"><canvas id="cv"></canvas></div>
@@ -69,28 +68,24 @@
   const windEl = document.getElementById('wind');
   const ampEl = document.getElementById('amp');
   const freqEl = document.getElementById('freq');
-  const strengthEl = document.getElementById('strength');
+  const pitchEl = document.getElementById('pitch');
   const resetBtn = document.getElementById('reset');
 
-  let W=0, H=0, DPR=Math.min(devicePixelRatio||1,2);
-  let startTime=0, lastT=0, simT=0;
-  let tracers=[], vortices=[], levs=[], touchBlasts=[];
-  let prevStrokeVel=0, emitCooldown=0;
-  let liftVal=0, thrustVal=0;
-  const MAX_TRACERS=980, MAX_VORTICES=110, MAX_LEVS=20;
+  let W = 0, H = 0, DPR = Math.min(devicePixelRatio || 1, 2);
+  let startTime = 0, lastT = 0, simT = 0;
 
-  const rand=(a,b)=>a+Math.random()*(b-a);
-  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
-  const lerp=(a,b,t)=>a+(b-a)*t;
+  let NX = 0, NY = 0;
+  let u = null, v = null, u2 = null, v2 = null, pField = null, div = null;
+  let solid = null, solidVX = null, solidVY = null;
+  let cell = 7;
+  let frontTracers = [];
+  let sideTracers = [];
+  let liftVal = 0, thrustVal = 0;
+  let prevLeftWing = null, prevRightWing = null;
 
-  function params(){
-    return {
-      wind:+windEl.value,
-      amp:+ampEl.value,
-      freq:+freqEl.value/60,
-      strength:+strengthEl.value/100
-    };
-  }
+  const clamp = (x,a,b) => Math.max(a, Math.min(b, x));
+  const lerp = (a,b,t) => a + (b-a)*t;
+  const rand = (a,b) => a + Math.random() * (b-a);
 
   function panelPadding(){ return Math.max(10, Math.min(22, W*0.015)); }
   function panelGap(){ return Math.max(10, Math.min(18, W*0.014)); }
@@ -105,65 +100,15 @@
     };
   }
 
-  function resetSim(){
-    tracers=[]; vortices=[]; levs=[]; touchBlasts=[];
-    prevStrokeVel=0; emitCooldown=0; liftVal=0; thrustVal=0;
-    const pw=panelWidth(), ph=panelHeight();
-    for(let i=0;i<MAX_TRACERS;i++){
-      const x=rand(0,pw), y=rand(0,ph);
-      tracers.push({x,y,px:x,py:y,age:rand(0,120),life:rand(60,170),a:rand(0.012,0.055)});
-    }
-  }
+  function idx(i,j){ return i + j * NX; }
 
-  function resize(){
-    const rect=stage.getBoundingClientRect();
-    W=Math.max(320,Math.floor(rect.width));
-    H=Math.max(280,Math.floor(rect.height));
-    canvas.width=Math.floor(W*DPR);
-    canvas.height=Math.floor(H*DPR);
-    canvas.style.width=W+'px';
-    canvas.style.height=H+'px';
-    ctx.setTransform(DPR,0,0,DPR,0,0);
-    resetSim();
-    drawFrame(0);
-  }
-
-  function skyCard(r){
-    ctx.save();
-    ctx.fillStyle='rgba(255,255,255,0.38)';
-    ctx.beginPath(); roundRect(ctx,r.x+4,r.y+8,r.w,r.h,18); ctx.fill();
-    ctx.fillStyle='rgba(255,255,255,0.72)';
-    ctx.beginPath(); roundRect(ctx,r.x,r.y,r.w,r.h,18); ctx.fill();
-    ctx.strokeStyle='rgba(70,90,110,0.10)';
-    ctx.lineWidth=1;
-    ctx.beginPath(); roundRect(ctx,r.x,r.y,r.w,r.h,18); ctx.stroke();
-
-    const gg=ctx.createLinearGradient(r.x,r.y,r.x,r.y+r.h);
-    gg.addColorStop(0,'rgba(244,248,252,0.88)');
-    gg.addColorStop(0.45,'rgba(220,232,243,0.80)');
-    gg.addColorStop(1,'rgba(201,220,235,0.76)');
-    ctx.fillStyle=gg;
-    ctx.beginPath(); roundRect(ctx,r.x+1,r.y+1,r.w-2,r.h-2,17); ctx.fill();
-
-    for(let i=0;i<3;i++){
-      const x=r.x+r.w*(0.18+i*0.27);
-      const lg=ctx.createLinearGradient(x-50,r.y,x+50,r.y);
-      lg.addColorStop(0,'rgba(255,255,255,0)');
-      lg.addColorStop(0.5,'rgba(255,255,255,0.14)');
-      lg.addColorStop(1,'rgba(255,255,255,0)');
-      ctx.fillStyle=lg;
-      ctx.fillRect(x-55,r.y,110,r.h);
-    }
-    ctx.restore();
-  }
-
-  function drawCardLabels(r,title,subtitle){
-    ctx.fillStyle='rgba(23,48,71,0.82)';
-    ctx.font='600 15px system-ui, sans-serif';
-    ctx.fillText(title, r.x+14, r.y+22);
-    ctx.fillStyle='rgba(74,98,119,0.85)';
-    ctx.font='12px system-ui, sans-serif';
-    ctx.fillText(subtitle, r.x+14, r.y+40);
+  function params(){
+    return {
+      wind: +windEl.value * 0.8,
+      amp: +ampEl.value,
+      freq: +freqEl.value / 60,
+      pitch: +pitchEl.value / 100,
+    };
   }
 
   function roundRect(ctx,x,y,w,h,r){
@@ -173,228 +118,430 @@
     ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y);
   }
 
-  function birdState(t,r){
-    const p=params();
-    const ph=t*p.freq*Math.PI*2;
-    const down=Math.max(0,Math.sin(ph));
-    const up=Math.max(0,-Math.sin(ph));
+  function drawCard(ctx,r,title,subtitle){
+    ctx.save();
+    ctx.fillStyle='rgba(255,255,255,0.38)';
+    ctx.beginPath(); roundRect(ctx,r.x+4,r.y+8,r.w,r.h,18); ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,0.72)';
+    ctx.beginPath(); roundRect(ctx,r.x,r.y,r.w,r.h,18); ctx.fill();
+    ctx.strokeStyle='rgba(70,90,110,0.10)';
+    ctx.lineWidth=1; ctx.beginPath(); roundRect(ctx,r.x,r.y,r.w,r.h,18); ctx.stroke();
 
-    const bodyX=r.x+r.w*0.40 + 6*down - 3*up;
-    const bodyY=r.y+r.h*0.56 + Math.sin(ph-0.2)*p.amp*0.05;
-    const fold=0.18+0.62*up;
-    const open=0.70+0.42*down;
+    const gg=ctx.createLinearGradient(r.x,r.y,r.x,r.y+r.h);
+    gg.addColorStop(0,'rgba(244,248,252,0.88)');
+    gg.addColorStop(0.45,'rgba(220,232,243,0.80)');
+    gg.addColorStop(1,'rgba(201,220,235,0.76)');
+    ctx.fillStyle=gg; ctx.beginPath(); roundRect(ctx,r.x+1,r.y+1,r.w-2,r.h-2,17); ctx.fill();
 
-    const shSpread=Math.min(24,r.w*0.075);
-    const shoulderY=bodyY-8 + Math.sin(ph)*p.amp*0.30 + 4*down;
-    const hum=Math.min(32,r.w*0.10);
-    const fore=Math.min(70,r.w*0.22)*(1.0-0.18*fold);
-    const hand=Math.min(74,r.w*0.24)*(1.0-0.16*fold);
+    ctx.fillStyle='rgba(23,48,71,0.82)';
+    ctx.font='600 15px system-ui, sans-serif';
+    ctx.fillText(title, r.x+14, r.y+22);
+    ctx.fillStyle='rgba(74,98,119,0.85)';
+    ctx.font='12px system-ui, sans-serif';
+    ctx.fillText(subtitle, r.x+14, r.y+40);
+    ctx.restore();
+  }
 
-    const rightBase=-1.15 + 0.55*Math.sin(ph) + 0.08*Math.sin(2*ph);
-    const elbowRel=0.18 + 0.24*(0.25 + 0.95*down) - 0.18*fold;
-    const wristRel=0.12 + 0.26*(0.20 + 1.0*down) - 0.22*fold;
-    const rightA1=clamp(rightBase,-1.68,-0.34);
-    const rightA2=clamp(rightA1+elbowRel,-1.40,0.28);
-    const rightA3=clamp(rightA2+wristRel,-1.18,0.62);
-    const leftA1=Math.PI-rightA1, leftA2=Math.PI-rightA2, leftA3=Math.PI-rightA3;
-    const vy=p.amp*p.freq*Math.PI*2*Math.cos(ph);
+  function initFluid(){
+    const r = panelRects().left;
+    NX = Math.max(56, Math.floor(r.w / cell));
+    NY = Math.max(44, Math.floor(r.h / cell));
+    const n = NX * NY;
+    u = new Float32Array(n); v = new Float32Array(n);
+    u2 = new Float32Array(n); v2 = new Float32Array(n);
+    pField = new Float32Array(n); div = new Float32Array(n);
+    solid = new Uint8Array(n);
+    solidVX = new Float32Array(n); solidVY = new Float32Array(n);
+  }
+
+  function resetSim(){
+    u.fill(0); v.fill(0); u2.fill(0); v2.fill(0); pField.fill(0); div.fill(0);
+    solid.fill(0); solidVX.fill(0); solidVY.fill(0);
+    frontTracers = [];
+    sideTracers = [];
+    const n = 720;
+    for(let i=0;i<n;i++){
+      frontTracers.push({x:rand(0,NX-1), y:rand(0,NY-1), age:rand(0,120), life:rand(50,150)});
+      sideTracers.push({x:rand(0,NX-1), y:rand(0,NY-1), age:rand(0,120), life:rand(50,150)});
+    }
+    liftVal = 0;
+    thrustVal = 0;
+    prevLeftWing = null;
+    prevRightWing = null;
+  }
+
+  function resize(){
+    const rect = stage.getBoundingClientRect();
+    W = Math.max(320, Math.floor(rect.width));
+    H = Math.max(300, Math.floor(rect.height));
+    canvas.width = Math.floor(W * DPR);
+    canvas.height = Math.floor(H * DPR);
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+    initFluid();
+    resetSim();
+    drawFrame(0);
+  }
+
+  function birdState(t, r){
+    const p = params();
+    const ph = t * p.freq * Math.PI * 2;
+    const down = Math.max(0, Math.sin(ph));
+    const up = Math.max(0, -Math.sin(ph));
+
+    const bodyX = r.x + r.w*0.40 + 5*down - 2*up;
+    const bodyY = r.y + r.h*0.56 + Math.sin(ph-0.2)*p.amp*0.05;
+    const fold = 0.18 + 0.62*up;
+    const open = 0.70 + 0.42*down;
+
+    const shSpread = Math.min(24, r.w*0.075);
+    const shoulderY = bodyY - 8 + Math.sin(ph)*p.amp*0.28 + 4*down;
+
+    const hum = Math.min(34, r.w*0.10);
+    const fore = Math.min(76, r.w*0.22)*(1.0 - 0.18*fold);
+    const hand = Math.min(80, r.w*0.24)*(1.0 - 0.16*fold);
+
+    const rightBase = -1.10 + 0.48*Math.sin(ph) + 0.07*Math.sin(2*ph);
+    const elbowRel = 0.16 + 0.22*p.pitch*(0.2 + 0.9*down) - 0.16*fold;
+    const wristRel = 0.12 + 0.28*p.pitch*(0.2 + 1.0*down) - 0.20*fold;
+
+    const rightA1 = clamp(rightBase, -1.55, -0.38);
+    const rightA2 = clamp(rightA1 + elbowRel, -1.30, 0.22);
+    const rightA3 = clamp(rightA2 + wristRel, -1.10, 0.52);
+    const leftA1 = Math.PI - rightA1;
+    const leftA2 = Math.PI - rightA2;
+    const leftA3 = Math.PI - rightA3;
+    const vy = p.amp * p.freq * Math.PI * 2 * Math.cos(ph);
 
     return {ph,down,up,bodyX,bodyY,shSpread,shoulderY,hum,fore,hand,leftA1,leftA2,leftA3,rightA1,rightA2,rightA3,vy,fold,open};
   }
 
   function wingJoints(s, side){
-    const shX=s.bodyX + (side==='left' ? -s.shSpread : s.shSpread);
-    const shY=s.shoulderY;
-    const a1=side==='left' ? s.leftA1 : s.rightA1;
-    const a2=side==='left' ? s.leftA2 : s.rightA2;
-    const a3=side==='left' ? s.leftA3 : s.rightA3;
-    const elbowX=shX + Math.cos(a1)*s.hum, elbowY=shY + Math.sin(a1)*s.hum;
-    const wristX=elbowX + Math.cos(a2)*s.fore, wristY=elbowY + Math.sin(a2)*s.fore;
-    const tipX=wristX + Math.cos(a3)*s.hand, tipY=wristY + Math.sin(a3)*s.hand;
+    const shX = s.bodyX + (side==='left' ? -s.shSpread : s.shSpread);
+    const shY = s.shoulderY;
+    const a1 = side==='left' ? s.leftA1 : s.rightA1;
+    const a2 = side==='left' ? s.leftA2 : s.rightA2;
+    const a3 = side==='left' ? s.leftA3 : s.rightA3;
+    const elbowX = shX + Math.cos(a1)*s.hum, elbowY = shY + Math.sin(a1)*s.hum;
+    const wristX = elbowX + Math.cos(a2)*s.fore, wristY = elbowY + Math.sin(a2)*s.fore;
+    const tipX = wristX + Math.cos(a3)*s.hand, tipY = wristY + Math.sin(a3)*s.hand;
     return {shX,shY,elbowX,elbowY,wristX,wristY,tipX,tipY,a1,a2,a3};
   }
 
-  function leadingEdgePoint(wing, frac){
-    return {
-      x: lerp(wing.shX, wing.elbowX, frac),
-      y: lerp(wing.shY, wing.elbowY, frac)
-    };
+  function markCapsule(x1,y1,x2,y2,rad, vx, vy, leftRect){
+    const lx1 = (x1 - leftRect.x) / cell, ly1 = (y1 - leftRect.y) / cell;
+    const lx2 = (x2 - leftRect.x) / cell, ly2 = (y2 - leftRect.y) / cell;
+    const minI = clamp(Math.floor(Math.min(lx1,lx2) - rad/cell - 2), 0, NX-1);
+    const maxI = clamp(Math.ceil (Math.max(lx1,lx2) + rad/cell + 2), 0, NX-1);
+    const minJ = clamp(Math.floor(Math.min(ly1,ly2) - rad/cell - 2), 0, NY-1);
+    const maxJ = clamp(Math.ceil (Math.max(ly1,ly2) + rad/cell + 2), 0, NY-1);
+    const dx = lx2-lx1, dy=ly2-ly1;
+    const l2 = dx*dx+dy*dy + 1e-6;
+    const rr = (rad/cell)*(rad/cell);
+    for(let j=minJ;j<=maxJ;j++){
+      for(let i=minI;i<=maxI;i++){
+        const px=i+0.5, py=j+0.5;
+        let t=((px-lx1)*dx + (py-ly1)*dy)/l2;
+        t=clamp(t,0,1);
+        const qx=lx1+t*dx, qy=ly1+t*dy;
+        const rx=px-qx, ry=py-qy;
+        if(rx*rx+ry*ry <= rr){
+          const id=idx(i,j);
+          solid[id]=1;
+          solidVX[id]=vx;
+          solidVY[id]=vy;
+        }
+      }
+    }
   }
 
-  function emitVortex(x,y,gamma,r,kind='shed'){
-    vortices.push({x,y,gamma,r,age:0,life:rand(2.3,4.8),kind});
-    if(vortices.length>MAX_VORTICES) vortices.splice(0, vortices.length-MAX_VORTICES);
-  }
-
-  function emitLEV(x,y,gamma,r){
-    levs.push({x,y,gamma,r,age:0,life:rand(0.30,0.62)});
-    if(levs.length>MAX_LEVS) levs.splice(0, levs.length-MAX_LEVS);
-  }
-
-  function allSwirls(){
-    return vortices.concat(levs);
-  }
-
-  function boundaryPush(x,y, wing){
-    // flow tends to avoid wing segments: repulsion normal to nearest segment
+  function buildSolidMask(leftWing, rightWing, prevLeftWing, prevRightWing, leftRect, dt){
+    solid.fill(0); solidVX.fill(0); solidVY.fill(0);
     const segs = [
-      [wing.shX, wing.shY, wing.elbowX, wing.elbowY, 18],
-      [wing.elbowX, wing.elbowY, wing.wristX, wing.wristY, 22],
-      [wing.wristX, wing.wristY, wing.tipX, wing.tipY, 16]
+      [leftWing.shX,leftWing.shY,leftWing.elbowX,leftWing.elbowY,10,
+       prevLeftWing ? (leftWing.shX-prevLeftWing.shX)/dt : 0,
+       prevLeftWing ? (leftWing.shY-prevLeftWing.shY)/dt : 0],
+      [leftWing.elbowX,leftWing.elbowY,leftWing.wristX,leftWing.wristY,12,
+       prevLeftWing ? (leftWing.elbowX-prevLeftWing.elbowX)/dt : 0,
+       prevLeftWing ? (leftWing.elbowY-prevLeftWing.elbowY)/dt : 0],
+      [leftWing.wristX,leftWing.wristY,leftWing.tipX,leftWing.tipY,9,
+       prevLeftWing ? (leftWing.wristX-prevLeftWing.wristX)/dt : 0,
+       prevLeftWing ? (leftWing.wristY-prevLeftWing.wristY)/dt : 0],
+      [rightWing.shX,rightWing.shY,rightWing.elbowX,rightWing.elbowY,10,
+       prevRightWing ? (rightWing.shX-prevRightWing.shX)/dt : 0,
+       prevRightWing ? (rightWing.shY-prevRightWing.shY)/dt : 0],
+      [rightWing.elbowX,rightWing.elbowY,rightWing.wristX,rightWing.wristY,12,
+       prevRightWing ? (rightWing.elbowX-prevRightWing.elbowX)/dt : 0,
+       prevRightWing ? (rightWing.elbowY-prevRightWing.elbowY)/dt : 0],
+      [rightWing.wristX,rightWing.wristY,rightWing.tipX,rightWing.tipY,9,
+       prevRightWing ? (rightWing.wristX-prevRightWing.wristX)/dt : 0,
+       prevRightWing ? (rightWing.wristY-prevRightWing.wristY)/dt : 0],
     ];
-    let u=0,v=0;
-    for(const [x1,y1,x2,y2,rad] of segs){
-      const dx=x2-x1, dy=y2-y1;
-      const len2=dx*dx+dy*dy + 1e-6;
-      let t=((x-x1)*dx + (y-y1)*dy)/len2;
-      t=clamp(t,0,1);
-      const px=x1+t*dx, py=y1+t*dy;
-      const rx=x-px, ry=y-py;
-      const d2=rx*rx+ry*ry + 1e-6;
-      const d=Math.sqrt(d2);
-      if(d<rad){
-        const mag=(1-d/rad) * 70;
-        u += (rx/d)*mag;
-        v += (ry/d)*mag;
-      }
-    }
-    return {u,v};
+    for(const [x1,y1,x2,y2,r,vx,vy] of segs) markCapsule(x1,y1,x2,y2,r,vx,vy,leftRect);
   }
 
-  function flowVelocity(x,y,leftWing,rightWing){
-    const p=params();
-    let u=p.wind, v=0;
-
-    for(const q of allSwirls()){
-      const dx=x-q.x, dy=y-q.y;
-      const rr=dx*dx+dy*dy+q.r*q.r;
-      const f=q.gamma/rr;
-      u += -dy*f;
-      v +=  dx*f;
-    }
-
-    const b1=boundaryPush(x,y,leftWing);
-    const b2=boundaryPush(x,y,rightWing);
-    u += b1.u+b2.u;
-    v += b1.v+b2.v;
-    return {u,v};
+  function sample(arr, x, y){
+    x = clamp(x, 0.5, NX-1.5);
+    y = clamp(y, 0.5, NY-1.5);
+    const i0 = Math.floor(x), j0 = Math.floor(y), i1 = i0+1, j1 = j0+1;
+    const sx = x-i0, sy = y-j0;
+    const a = arr[idx(i0,j0)], b = arr[idx(i1,j0)], c = arr[idx(i0,j1)], d = arr[idx(i1,j1)];
+    return lerp(lerp(a,b,sx), lerp(c,d,sx), sy);
   }
 
-  function step(dt, s, left, right, leftRect){
-    const p=params();
-    emitCooldown -= dt;
-
-    const strokeSign=Math.sign(s.vy || 1);
-    const signFlip=Math.sign(prevStrokeVel || 1)!==strokeSign;
-    prevStrokeVel=s.vy;
-
-    // ① Leading-edge vortices near start of downstroke
-    const levStrength = (0.20 + 0.65*s.down) * p.strength;
-    if(s.down > 0.18 && emitCooldown <= 0.02){
-      for(const wing of [left,right]){
-        const lp = leadingEdgePoint(wing, 0.42);
-        emitLEV(lp.x-leftRect.x, lp.y-leftRect.y, (wing===left?1:-1) * 16 * levStrength, 9 + 4*p.strength);
+  function advect(dt){
+    const p = params();
+    for(let j=0;j<NY;j++){
+      for(let i=0;i<NX;i++){
+        const id = idx(i,j);
+        if(solid[id]){
+          u2[id] = solidVX[id] / cell;
+          v2[id] = solidVY[id] / cell;
+          continue;
+        }
+        const x = i + 0.5, y = j + 0.5;
+        const bx = x - u[id] * dt;
+        const by = y - v[id] * dt;
+        u2[id] = sample(u, bx, by);
+        v2[id] = sample(v, bx, by);
+        u2[id] = 0.96*u2[id] + 0.04*(p.wind / cell);
       }
     }
-
-    // ② Ring-like shedding on sign flip: root and tip opposite-sign pair
-    if(signFlip || (Math.abs(s.vy)>42 && emitCooldown<=0)){
-      const gamma=(-strokeSign)*(18 + 82*p.strength);
-      const r=10 + 5*p.strength;
-      for(const wing of [left,right]){
-        // tip vortex
-        emitVortex(wing.tipX-leftRect.x, wing.tipY-leftRect.y, gamma, r, 'tip');
-        // root/inner opposite sign to suggest loop closure
-        emitVortex(wing.shX-leftRect.x, wing.shY-leftRect.y, -gamma*0.58, r*0.82, 'root');
-        // wrist mid component
-        emitVortex(wing.wristX-leftRect.x, wing.wristY-leftRect.y, gamma*0.22, r*0.72, 'mid');
-      }
-      emitCooldown = 0.11 + (1.0-p.freq)*0.05;
-    }
-
-    for(let i=levs.length-1;i>=0;i--){
-      const q=levs[i];
-      q.age += dt;
-      if(q.age > q.life){ levs.splice(i,1); continue; }
-      q.gamma *= Math.pow(0.96, dt*60);
-      q.r += 0.35*dt*60;
-      q.x += (p.wind*0.55)*dt; // convect slowly over wing
-    }
-
-    for(let i=vortices.length-1;i>=0;i--){
-      const q=vortices[i];
-      q.age += dt;
-      if(q.age > q.life){ vortices.splice(i,1); continue; }
-
-      let u=p.wind, v=0;
-      for(const o of allSwirls()){
-        if(o===q) continue;
-        const dx=q.x-o.x, dy=q.y-o.y;
-        const rr=dx*dx+dy*dy+o.r*o.r;
-        const f=o.gamma/rr;
-        u += -dy*f*0.18;
-        v +=  dx*f*0.18;
-      }
-      q.x += u*dt;
-      q.y += v*dt;
-      q.gamma *= Math.pow(0.986, dt*60);
-      q.r += 0.85*dt*60;
-
-      if(q.x > leftRect.w+80 || q.x < -80 || q.y < -80 || q.y > leftRect.h+80) vortices.splice(i,1);
-    }
-
-    for(const tr of tracers){
-      tr.age += dt*60;
-      tr.px=tr.x; tr.py=tr.y;
-      const vel=flowVelocity(tr.x+leftRect.x,tr.y+leftRect.y,left,right);
-      tr.x += vel.u*dt;
-      tr.y += vel.v*dt;
-      if(tr.x < -20 || tr.x > leftRect.w+20 || tr.y < -20 || tr.y > leftRect.h+20 || tr.age > tr.life){
-        tr.x=rand(-30,0); tr.y=rand(0,leftRect.h);
-        tr.px=tr.x; tr.py=tr.y; tr.age=0; tr.life=rand(60,160);
-      }
-    }
-
-    // crude force estimate from same enhanced model
-    const levBoost = levs.length * 0.18;
-    liftVal = 0.82*liftVal + 0.18*(0.6 + 1.2*s.down + levBoost);
-    thrustVal = 0.82*thrustVal + 0.18*(0.5 + 0.9*s.down + vortices.length*0.03);
+    [u, u2] = [u2, u];
+    [v, v2] = [v2, v];
   }
 
-  function drawFlow(rect){
+  function applyForcing(s, leftWing, rightWing, leftRect, dt){
+    const p = params();
+    for(let j=0;j<NY;j++){
+      for(let i=0;i<3;i++){
+        const id=idx(i,j);
+        if(!solid[id]){ u[id] = p.wind / cell; v[id] = 0; }
+      }
+    }
+
+    const wings = [leftWing, rightWing];
+    if(s.down > 0.08){
+      for(const wing of wings){
+        const pts = [
+          {x: lerp(wing.shX, wing.elbowX, 0.25), y: lerp(wing.shY, wing.elbowY, 0.25)},
+          {x: lerp(wing.shX, wing.elbowX, 0.55), y: lerp(wing.shY, wing.elbowY, 0.55)}
+        ];
+        for(const pt of pts){
+          const cx = (pt.x - leftRect.x)/cell, cy = (pt.y - leftRect.y)/cell;
+          const rad = 5 + 4*p.pitch;
+          for(let j=Math.max(0,Math.floor(cy-rad)); j<=Math.min(NY-1,Math.ceil(cy+rad)); j++){
+            for(let i=Math.max(0,Math.floor(cx-rad)); i<=Math.min(NX-1,Math.ceil(cx+rad)); i++){
+              const dx=i+0.5-cx, dy=j+0.5-cy;
+              const d2=dx*dx+dy*dy+1e-6;
+              if(d2<rad*rad){
+                const id=idx(i,j);
+                if(solid[id]) continue;
+                const swirl = (0.7 + 0.8*p.pitch) * (1 - d2/(rad*rad));
+                const sign = wing === leftWing ? 1 : -1;
+                u[id] += -dy * swirl * sign * dt;
+                v[id] +=  dx * swirl * sign * dt;
+                v[id] +=  0.5 * (1 - d2/(rad*rad)) * dt;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  function computeDivergence(){
+    for(let j=1;j<NY-1;j++){
+      for(let i=1;i<NX-1;i++){
+        const id=idx(i,j);
+        if(solid[id]){ div[id]=0; continue; }
+        const ux = u[idx(i+1,j)] - u[idx(i-1,j)];
+        const vy = v[idx(i,j+1)] - v[idx(i,j-1)];
+        div[id] = -0.5 * (ux + vy);
+        pField[id] = 0;
+      }
+    }
+  }
+
+  function project(iter=24){
+    computeDivergence();
+    for(let k=0;k<iter;k++){
+      for(let j=1;j<NY-1;j++){
+        for(let i=1;i<NX-1;i++){
+          const id=idx(i,j);
+          if(solid[id]) continue;
+          let sum=0, cnt=0;
+          const nbs=[idx(i+1,j),idx(i-1,j),idx(i,j+1),idx(i,j-1)];
+          for(const n of nbs){ if(!solid[n]){ sum += pField[n]; cnt++; } }
+          if(cnt>0) pField[id] = (div[id] + sum) / cnt;
+        }
+      }
+    }
+    for(let j=1;j<NY-1;j++){
+      for(let i=1;i<NX-1;i++){
+        const id=idx(i,j);
+        if(solid[id]){
+          u[id] = solidVX[id] / cell;
+          v[id] = solidVY[id] / cell;
+          continue;
+        }
+        u[id] -= 0.5 * (pField[idx(i+1,j)] - pField[idx(i-1,j)]);
+        v[id] -= 0.5 * (pField[idx(i,j+1)] - pField[idx(i,j-1)]);
+      }
+    }
+  }
+
+  function vorticityConfinement(dt){
+    const curl = new Float32Array(NX*NY);
+    for(let j=1;j<NY-1;j++){
+      for(let i=1;i<NX-1;i++){
+        const id=idx(i,j);
+        const du_dy = (u[idx(i,j+1)] - u[idx(i,j-1)]) * 0.5;
+        const dv_dx = (v[idx(i+1,j)] - v[idx(i-1,j)]) * 0.5;
+        curl[id] = dv_dx - du_dy;
+      }
+    }
+    for(let j=2;j<NY-2;j++){
+      for(let i=2;i<NX-2;i++){
+        const id=idx(i,j);
+        if(solid[id]) continue;
+        const nx = Math.abs(curl[idx(i+1,j)]) - Math.abs(curl[idx(i-1,j)]);
+        const ny = Math.abs(curl[idx(i,j+1)]) - Math.abs(curl[idx(i,j-1)]);
+        const len = Math.hypot(nx,ny) + 1e-6;
+        const eps = 0.12;
+        const fx = eps * (ny/len) * curl[id];
+        const fy = eps * (-nx/len) * curl[id];
+        u[id] += fx * dt;
+        v[id] += fy * dt;
+      }
+    }
+  }
+
+  function boundaryConditions(){
+    const p = params();
+    for(let j=0;j<NY;j++){
+      u[idx(0,j)] = p.wind / cell;
+      v[idx(0,j)] = 0;
+      u[idx(NX-1,j)] = u[idx(NX-2,j)];
+      v[idx(NX-1,j)] = v[idx(NX-2,j)];
+    }
+    for(let i=0;i<NX;i++){
+      v[idx(i,0)] = 0;
+      v[idx(i,NY-1)] = 0;
+      u[idx(i,0)] = u[idx(i,1)];
+      u[idx(i,NY-1)] = u[idx(i,NY-2)];
+    }
+    for(let j=0;j<NY;j++){
+      for(let i=0;i<NX;i++){
+        const id=idx(i,j);
+        if(solid[id]){
+          u[id] = solidVX[id] / cell;
+          v[id] = solidVY[id] / cell;
+        }
+      }
+    }
+  }
+
+  function stepFluid(dt, leftWing, rightWing, leftRect, s){
+    buildSolidMask(leftWing, rightWing, prevLeftWing, prevRightWing, leftRect, Math.max(dt,1/60));
+    boundaryConditions();
+    applyForcing(s, leftWing, rightWing, leftRect, dt);
+    advect(dt);
+    boundaryConditions();
+    vorticityConfinement(dt);
+    project(24);
+    boundaryConditions();
+  }
+
+  function updateTracers(dt){
+    for(const group of [frontTracers, sideTracers]){
+      for(const tr of group){
+        tr.age += dt*60;
+        tr.px = tr.x; tr.py = tr.y;
+        const vel = {u: sample(u,tr.x,tr.y), v: sample(v,tr.x,tr.y)};
+        tr.x += vel.u * dt * 28;
+        tr.y += vel.v * dt * 28;
+        if(tr.x < -2 || tr.x > NX+2 || tr.y < -2 || tr.y > NY+2 || tr.age > tr.life){
+          tr.x = rand(-3, 0);
+          tr.y = rand(0, NY);
+          tr.px = tr.x; tr.py = tr.y;
+          tr.age = 0; tr.life = rand(50,150);
+        }
+      }
+    }
+  }
+
+  function computeForces(leftWing,rightWing,leftRect){
+    let lift = 0, thrust = 0, n = 0;
+    for(const wing of [leftWing,rightWing]){
+      const pts = [
+        {x:lerp(wing.shX,wing.wristX,0.35), y:lerp(wing.shY,wing.wristY,0.35)},
+        {x:lerp(wing.elbowX,wing.tipX,0.45), y:lerp(wing.elbowY,wing.tipY,0.45)}
+      ];
+      for(const pt of pts){
+        const gx=(pt.x-leftRect.x)/cell, gy=(pt.y-leftRect.y)/cell;
+        const upv = sample(v, gx, gy-3);
+        const downv = sample(v, gx, gy+3);
+        const frontu = sample(u, gx-4, gy);
+        const backu = sample(u, gx+4, gy);
+        lift += (downv - upv);
+        thrust += (backu - frontu);
+        n++;
+      }
+    }
+    if(n>0){
+      liftVal = 0.88*liftVal + 0.12*Math.max(0, lift/n);
+      thrustVal = 0.88*thrustVal + 0.12*Math.max(0, thrust/n + 0.3);
+    }
+  }
+
+  function drawFlow(rect, tracerSet){
     ctx.save();
     ctx.beginPath(); roundRect(ctx,rect.x,rect.y,rect.w,rect.h,18); ctx.clip();
 
-    for(const tr of tracers){
+    for(const tr of tracerSet){
       const k=1-tr.age/tr.life;
-      ctx.strokeStyle=`rgba(135,160,190,${0.10 + tr.a*k})`;
+      ctx.strokeStyle=`rgba(135,160,190,${0.10 + 0.05*k})`;
       ctx.lineWidth=1;
       ctx.beginPath();
-      ctx.moveTo(rect.x+tr.px, rect.y+tr.py);
-      ctx.lineTo(rect.x+tr.x, rect.y+tr.y);
+      ctx.moveTo(rect.x + tr.px*cell, rect.y + tr.py*cell);
+      ctx.lineTo(rect.x + tr.x*cell, rect.y + tr.y*cell);
       ctx.stroke();
     }
 
-    for(const q of vortices){
-      const k=1-q.age/q.life;
-      const r=Math.max(3,q.r*0.42);
-      ctx.fillStyle=q.gamma>0 ? `rgba(120,168,230,${0.06*k})` : `rgba(220,150,182,${0.06*k})`;
-      ctx.beginPath(); ctx.arc(rect.x+q.x, rect.y+q.y, r*1.8, 0, Math.PI*2); ctx.fill();
-      ctx.strokeStyle=q.gamma>0 ? `rgba(112,160,224,${0.22*k})` : `rgba(214,142,174,${0.22*k})`;
-      ctx.lineWidth=1;
-      ctx.beginPath(); ctx.arc(rect.x+q.x, rect.y+q.y, r, 0, Math.PI*1.5); ctx.stroke();
+    for(let j=2;j<NY-2;j+=2){
+      for(let i=2;i<NX-2;i+=2){
+        const id=idx(i,j);
+        if(solid[id]) continue;
+        const du_dy = (u[idx(i,j+1)] - u[idx(i,j-1)]) * 0.5;
+        const dv_dx = (v[idx(i+1,j)] - v[idx(i-1,j)]) * 0.5;
+        const curl = dv_dx - du_dy;
+        const a = Math.min(0.12, Math.abs(curl)*0.06);
+        if(a < 0.015) continue;
+        ctx.fillStyle = curl > 0 ? `rgba(112,160,224,${a})` : `rgba(214,142,174,${a})`;
+        ctx.beginPath();
+        ctx.arc(rect.x + (i+0.5)*cell, rect.y + (j+0.5)*cell, 1.8, 0, Math.PI*2);
+        ctx.fill();
+      }
     }
 
-    for(const q of levs){
-      const k=1-q.age/q.life;
-      const r=Math.max(4,q.r*0.50);
-      ctx.fillStyle='rgba(79,168,161,'+(0.09*k)+')';
-      ctx.beginPath(); ctx.arc(rect.x+q.x, rect.y+q.y, r*1.7, 0, Math.PI*2); ctx.fill();
-      ctx.strokeStyle='rgba(79,168,161,'+(0.34*k)+')';
-      ctx.lineWidth=1.2;
-      ctx.beginPath(); ctx.arc(rect.x+q.x, rect.y+q.y, r, 0, Math.PI*1.8); ctx.stroke();
+    ctx.fillStyle='rgba(79,168,161,0.14)';
+    for(let j=1;j<NY-1;j++){
+      for(let i=1;i<NX-1;i++){
+        const id=idx(i,j);
+        if(solid[id]) continue;
+        const nearSolid = solid[idx(i+1,j)]||solid[idx(i-1,j)]||solid[idx(i,j+1)]||solid[idx(i,j-1)];
+        if(!nearSolid) continue;
+        const du_dy = (u[idx(i,j+1)] - u[idx(i,j-1)]) * 0.5;
+        const dv_dx = (v[idx(i+1,j)] - v[idx(i-1,j)]) * 0.5;
+        const curl = Math.abs(dv_dx - du_dy);
+        if(curl < 0.25) continue;
+        ctx.beginPath();
+        ctx.arc(rect.x + (i+0.5)*cell, rect.y + (j+0.5)*cell, 2.0, 0, Math.PI*2);
+        ctx.fill();
+      }
     }
-
     ctx.restore();
   }
 
@@ -420,10 +567,8 @@
 
     ctx.fillStyle='rgba(255,255,255,0.98)';
     ctx.beginPath(); ctx.ellipse(s.bodyX,s.bodyY-18,16,18,0,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle='#cf9a66';
-    ctx.beginPath(); ctx.arc(s.bodyX+4,s.bodyY-21,5,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle='#111';
-    ctx.beginPath(); ctx.arc(s.bodyX+4,s.bodyY-21,2.1,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#cf9a66'; ctx.beginPath(); ctx.arc(s.bodyX+4,s.bodyY-21,5,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(s.bodyX+4,s.bodyY-21,2.1,0,Math.PI*2); ctx.fill();
     ctx.fillStyle='#777b82';
     ctx.beginPath(); ctx.moveTo(s.bodyX-1,s.bodyY-19); ctx.lineTo(s.bodyX-14,s.bodyY-17); ctx.lineTo(s.bodyX-1,s.bodyY-15); ctx.closePath(); ctx.fill();
 
@@ -436,32 +581,25 @@
   function drawWing(w,side){
     const dir=side==='left' ? -1 : 1;
     ctx.strokeStyle='rgba(236,240,245,0.96)';
-    ctx.lineWidth=10;
-    ctx.lineCap='round';
+    ctx.lineWidth=10; ctx.lineCap='round';
     ctx.beginPath(); ctx.moveTo(w.shX,w.shY); ctx.lineTo(w.elbowX,w.elbowY); ctx.lineTo(w.wristX,w.wristY); ctx.stroke();
 
-    // leading edge highlight
-    ctx.strokeStyle='rgba(79,168,161,0.45)';
+    ctx.strokeStyle='rgba(79,168,161,0.48)';
     ctx.lineWidth=2;
     ctx.beginPath(); ctx.moveTo(w.shX,w.shY); ctx.lineTo(w.elbowX,w.elbowY); ctx.stroke();
 
     for(let i=0;i<12;i++){
       const k=i/11;
-      const bx=lerp(w.wristX,w.tipX,0.04+0.56*k);
-      const by=lerp(w.wristY,w.tipY,0.04+0.56*k);
+      const bx=lerp(w.wristX,w.tipX,0.04+0.56*k), by=lerp(w.wristY,w.tipY,0.04+0.56*k);
       const a=w.a3 + dir*(-0.10 + 0.05*i);
       const len=36+18*k, wid=7.8-1.2*k;
-      ctx.save();
-      ctx.translate(bx,by); ctx.rotate(a);
+      ctx.save(); ctx.translate(bx,by); ctx.rotate(a);
       ctx.strokeStyle='rgba(248,248,246,0.98)';
       ctx.lineWidth=wid; ctx.lineCap='round';
       ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(len,0); ctx.stroke();
       ctx.strokeStyle='rgba(180,184,190,0.30)';
       ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(len,0); ctx.stroke();
-      if(k>0.84){
-        ctx.fillStyle='rgba(120,126,138,0.42)';
-        ctx.beginPath(); ctx.arc(len,0,3.2,0,Math.PI*2); ctx.fill();
-      }
+      if(k>0.84){ ctx.fillStyle='rgba(120,126,138,0.42)'; ctx.beginPath(); ctx.arc(len,0,3.2,0,Math.PI*2); ctx.fill(); }
       ctx.restore();
     }
   }
@@ -472,6 +610,7 @@
 
     const cx=rect.x+rect.w*0.43, cy=s.bodyY+6, bodyTilt=-0.10+0.08*s.down-0.04*s.up;
     ctx.save(); ctx.translate(cx,cy); ctx.rotate(bodyTilt);
+
     const bg=ctx.createRadialGradient(-6,-10,2,0,0,58);
     bg.addColorStop(0,'rgba(255,255,255,0.98)');
     bg.addColorStop(0.55,'rgba(248,248,246,0.98)');
@@ -479,12 +618,6 @@
     bg.addColorStop(1,'rgba(205,214,224,0.92)');
     ctx.fillStyle=bg;
     ctx.beginPath(); ctx.ellipse(0,8,42,28,0.08,0,Math.PI*2); ctx.fill();
-
-    for(let i=0;i<6;i++){
-      const k=i/5;
-      const a=Math.PI-0.15+(-0.24+0.48*k)*(0.35+0.45*s.down);
-      drawFeatherSimple(30,12+(k-0.5)*6,a,20+10*(1-Math.abs(k-0.5)*2),6.8,0.82);
-    }
 
     ctx.save(); ctx.translate(-26,-10); ctx.rotate(-0.10+0.06*Math.sin(s.ph-0.3));
     ctx.strokeStyle='rgba(230,232,236,0.95)';
@@ -495,17 +628,14 @@
     ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(4,-24,1.8,0,Math.PI*2); ctx.fill();
     ctx.fillStyle='#7b7e85'; ctx.beginPath(); ctx.moveTo(-2,-21); ctx.lineTo(-16,-19); ctx.lineTo(-2,-17); ctx.closePath(); ctx.fill();
     ctx.restore();
-    ctx.fillStyle='rgba(214,126,143,0.72)';
-    ctx.beginPath(); ctx.arc(-2,26-3*s.down,5,0,Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(10,24-3*s.down,5,0,Math.PI*2); ctx.fill();
     ctx.restore();
 
     const wingY=s.shoulderY;
     const baseX=rect.x+rect.w*0.44;
     const shoulderX=baseX-4, shoulderY2=wingY;
-    const sideMain=-1.05+0.62*Math.sin(s.ph);
-    const sideFore=sideMain+0.26*(0.25+0.9*s.down)-0.16*s.fold;
-    const sideTip=sideFore+0.32*(0.25+1.0*s.down)-0.22*s.fold;
+    const sideMain=-1.00+0.46*Math.sin(s.ph);
+    const sideFore=sideMain+0.18*(0.25+0.9*s.down)-0.14*s.fold;
+    const sideTip=sideFore+0.24*(0.25+1.0*s.down)-0.18*s.fold;
 
     const elbowX=shoulderX+Math.cos(sideMain)*34, elbowY=shoulderY2+Math.sin(sideMain)*34;
     const wristX=elbowX+Math.cos(sideFore)*(70*(1-0.16*s.fold)), wristY=elbowY+Math.sin(sideFore)*(70*(1-0.16*s.fold));
@@ -516,28 +646,28 @@
     ctx.beginPath(); ctx.moveTo(shoulderX,shoulderY2); ctx.lineTo(elbowX,elbowY); ctx.lineTo(wristX,wristY); ctx.stroke();
 
     ctx.strokeStyle='rgba(79,168,161,0.48)';
-    ctx.lineWidth=2;
-    ctx.beginPath(); ctx.moveTo(shoulderX,shoulderY2); ctx.lineTo(elbowX,elbowY); ctx.stroke();
+    ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(shoulderX,shoulderY2); ctx.lineTo(elbowX,elbowY); ctx.stroke();
 
     for(let i=0;i<12;i++){
       const k=i/11;
       const bx=lerp(wristX,tipX,0.04+0.56*k), by=lerp(wristY,tipY,0.04+0.56*k);
-      const a=sideTip+(-0.10+0.05*i)+0.18*s.down-0.10*s.up;
+      const a=sideTip+(-0.10+0.05*i)+0.12*s.down-0.08*s.up;
       const len=30+16*k+10*s.open, wid=7.0-1.0*k;
       drawFeatherSimple(bx,by,a,len,wid,0.9);
     }
 
-    drawArrow(rect.x+rect.w-104, rect.y+34, rect.x+rect.w-104, rect.y+34 - Math.min(58, 10+liftVal*18), '#5b84c8', '揚力');
-    drawArrow(rect.x+rect.w-104, rect.y+72, rect.x+rect.w-104 + Math.min(58, 10+thrustVal*18), rect.y+72, '#d48ab0', '推力');
+    drawArrow(rect.x+rect.w-104, rect.y+34, rect.x+rect.w-104, rect.y+34 - Math.min(62, 10+liftVal*26), '#5b84c8', '揚力');
+    drawArrow(rect.x+rect.w-104, rect.y+72, rect.x+rect.w-104 + Math.min(62, 10+thrustVal*26), rect.y+72, '#d48ab0', '推力');
     drawArrow(rect.x+18, rect.y+rect.h-28, rect.x+94, rect.y+rect.h-28, '#5b84c8', '前から来る空気');
+
     ctx.fillStyle='rgba(79,168,161,0.9)';
     ctx.font='12px system-ui, sans-serif';
     ctx.fillText('LEV', rect.x+rect.w-46, rect.y+108);
+    ctx.restore();
   }
 
   function drawFeatherSimple(x,y,a,len,wid,alpha){
-    ctx.save();
-    ctx.translate(x,y); ctx.rotate(a); ctx.globalAlpha=alpha;
+    ctx.save(); ctx.translate(x,y); ctx.rotate(a); ctx.globalAlpha=alpha;
     ctx.strokeStyle='rgba(248,248,246,0.98)';
     ctx.lineWidth=wid; ctx.lineCap='round';
     ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(len,0); ctx.stroke();
@@ -551,8 +681,7 @@
     ctx.strokeStyle=color; ctx.fillStyle=color; ctx.lineWidth=3;
     ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
     const a=Math.atan2(y2-y1,x2-x1), h=8;
-    ctx.beginPath();
-    ctx.moveTo(x2,y2);
+    ctx.beginPath(); ctx.moveTo(x2,y2);
     ctx.lineTo(x2-h*Math.cos(a-0.4), y2-h*Math.sin(a-0.4));
     ctx.lineTo(x2-h*Math.cos(a+0.4), y2-h*Math.sin(a+0.4));
     ctx.closePath(); ctx.fill();
@@ -564,39 +693,46 @@
   function drawLegend(rect){
     const x=rect.x+14, y=rect.y+56;
     ctx.fillStyle='rgba(255,255,255,0.58)';
-    ctx.fillRect(x,y,138,52);
+    ctx.fillRect(x,y,174,68);
     ctx.strokeStyle='rgba(70,90,110,0.10)';
-    ctx.strokeRect(x,y,138,52);
+    ctx.strokeRect(x,y,174,68);
     ctx.fillStyle='rgba(23,48,71,0.78)';
     ctx.font='12px system-ui, sans-serif';
-    ctx.fillText('青/桃: 後流渦', x+10, y+18);
+    ctx.fillText('青/桃: 渦度の向き', x+10, y+18);
     ctx.fillStyle='rgba(79,168,161,0.9)';
     ctx.fillText('緑青: 前縁渦 LEV', x+10, y+36);
+    ctx.fillStyle='rgba(74,98,119,0.78)';
+    ctx.fillText('流線: 格子流体の流れ', x+10, y+54);
   }
 
   function drawFrame(dt){
     const rects=panelRects();
     ctx.clearRect(0,0,W,H);
-    skyCard(rects.left); skyCard(rects.right);
-    drawCardLabels(rects.left,'前面ビュー','流線・後流渦・前縁渦');
-    drawCardLabels(rects.right,'側面ビュー','揚力・推力・翼まわりの流れ');
+    drawCard(ctx,rects.left,'前面ビュー','格子流体・渦度・前縁渦');
+    drawCard(ctx,rects.right,'側面ビュー','同じ流れ場からみた力と運動');
 
     const s=birdState(simT,rects.left);
     const left=wingJoints(s,'left'), right=wingJoints(s,'right');
-    if(dt>0) step(dt,s,left,right,rects.left);
+    if(dt>0){
+      stepFluid(dt,left,right,rects.left,s);
+      updateTracers(dt);
+      computeForces(left,right,rects.left);
+    }
+    prevLeftWing = left;
+    prevRightWing = right;
 
-    drawFlow(rects.left);
+    drawFlow(rects.left, frontTracers);
     drawBirdFront(s,left,right,rects.left);
     drawLegend(rects.left);
 
-    ctx.save(); ctx.globalAlpha=0.42; drawFlow(rects.right); ctx.restore();
+    ctx.save(); ctx.globalAlpha=0.42; drawFlow(rects.right, sideTracers); ctx.restore();
     drawBirdSide(s,rects.right);
   }
 
   function loop(now){
     if(!startTime){ startTime=now; lastT=now; }
     simT=(now-startTime)/1000;
-    const dt=Math.min(0.033,(now-lastT)/1000);
+    const dt=Math.min(0.025,(now-lastT)/1000);
     lastT=now;
     drawFrame(dt);
     requestAnimationFrame(loop);
@@ -604,29 +740,6 @@
 
   resetBtn.addEventListener('click', ()=>{
     startTime=0; simT=0; lastT=0; resetSim(); drawFrame(0);
-  });
-
-  // optional touch blast to inspect streamlines
-  let dragging=false;
-  function pointerXY(ev){
-    const r=canvas.getBoundingClientRect();
-    const p=ev.touches ? ev.touches[0] : ev;
-    return {x:p.clientX-r.left, y:p.clientY-r.top};
-  }
-  canvas.addEventListener('pointerdown', e=>{ dragging=true; });
-  canvas.addEventListener('pointerup', e=>{ dragging=false; });
-  canvas.addEventListener('pointermove', e=>{
-    if(!dragging) return;
-    const rects=panelRects();
-    const p=pointerXY(e);
-    for(const tr of tracers){
-      const dx=(rects.left.x+tr.x)-p.x, dy=(rects.left.y+tr.y)-p.y;
-      const d2=dx*dx+dy*dy;
-      if(d2<900){
-        tr.x += dx*0.02;
-        tr.y += dy*0.02;
-      }
-    }
   });
 
   window.addEventListener('resize', resize);
