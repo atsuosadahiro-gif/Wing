@@ -499,15 +499,24 @@ function drawSideBird(s,R){
 }
 
 function drawLegend(R){
-  const w=180,h=92,x=R.x+R.w-w-16,y=R.y+54;
-  ctx.fillStyle='rgba(255,255,255,.74)'; ctx.fillRect(x,y,w,h);
-  ctx.strokeStyle='rgba(70,90,110,.10)'; ctx.strokeRect(x,y,w,h);
-  ctx.font='12px system-ui';
-  ctx.fillStyle='rgba(84,140,220,.95)'; ctx.fillText('青: 低圧（薄→濃で強く）（薄→濃で強く）',x+10,y+18);
-  ctx.fillStyle='rgba(230,120,120,.95)'; ctx.fillText('赤: 高圧（薄→濃で強く）（薄→濃で強く）',x+10,y+36);
-  ctx.fillStyle='rgba(70,176,170,.95)'; ctx.fillText('緑青線: 加速域',x+10,y+54);
-  ctx.fillStyle='rgba(74,98,119,.78)'; ctx.fillText('等圧線: 圧力境界',x+10,y+72);
-  ctx.fillStyle='rgba(23,48,71,.78)'; ctx.fillText('流線/点: 流れと後流渦',x+10,y+90);
+  const x=R.x+R.w-70, y=R.y+60, h=140, w=18;
+
+  const grad = ctx.createLinearGradient(0,y,0,y+h);
+  grad.addColorStop(0, 'rgba(180,0,0,0.9)');
+  grad.addColorStop(0.5, 'rgba(255,255,255,0.2)');
+  grad.addColorStop(1, 'rgba(0,0,180,0.9)');
+
+  ctx.fillStyle = grad;
+  ctx.fillRect(x, y, w, h);
+
+  ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+  ctx.strokeRect(x, y, w, h);
+
+  ctx.font='11px system-ui';
+  ctx.fillStyle='rgba(20,30,40,0.9)';
+  ctx.fillText('高圧', x-30, y+10);
+  ctx.fillText('0', x-15, y+h/2+4);
+  ctx.fillText('低圧', x-30, y+h-4);
 }
 
 
