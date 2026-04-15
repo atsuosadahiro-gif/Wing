@@ -149,6 +149,13 @@ let prevFrontL=null, prevFrontR=null, prevSide=null;
 
 function idx(field,i,j){ return i + j * field.NX; }
 
+function simRect(field, cardRect){
+  const simW = field.NX * field.cell;
+  const simH = field.NY * field.cell;
+  return {x:cardRect.x, y:cardRect.y, w:simW, h:simH};
+}
+
+
 function invalidatePressureMap(field){
   field.pressureDirty = true;
 }
@@ -539,7 +546,7 @@ function drawPressureMap(field,R,alpha=1){
   ctx.save();
   ctx.beginPath(); rr(R.x,R.y,R.w,R.h,18); ctx.clip();
   ctx.globalAlpha = alpha;
-  ctx.drawImage(src, 0, 0, src.width, src.height, R.x, R.y, R.w, R.h);
+  ctx.drawImage(src, R.x, R.y, R.w, R.h);
   ctx.restore();
 }
 
@@ -708,19 +715,21 @@ function drawLegend(R){
 }
 
 function renderFrontView(rect,state,leftWing,rightWing,flags){
-  if(flags.pressure) drawPressureMap(frontField,rect,1);
-  if(flags.contours) drawContours(frontField,rect);
-  if(flags.flow) drawFlowLines(frontField,rect,1);
-  drawFrontBird(state,leftWing,rightWing,rect);
-  drawLegend(rect);
+  const sr = simRect(frontField, rect);
+  if(flags.pressure) drawPressureMap(frontField,sr,1);
+  if(flags.contours) drawContours(frontField,sr);
+  if(flags.flow) drawFlowLines(frontField,sr,1);
+  drawFrontBird(state,leftWing,rightWing,sr);
+  drawLegend(sr);
 }
 
 function renderSideView(rect,state,flags){
-  if(flags.pressure) drawPressureMap(sideField,rect,.92);
-  if(flags.contours) drawContours(sideField,rect);
-  if(flags.flow) drawFlowLines(sideField,rect,.72);
-  drawSideBird(state,rect);
-  drawLegend(rect);
+  const sr = simRect(sideField, rect);
+  if(flags.pressure) drawPressureMap(sideField,sr,.92);
+  if(flags.contours) drawContours(sideField,sr);
+  if(flags.flow) drawFlowLines(sideField,sr,.72);
+  drawSideBird(state,sr);
+  drawLegend(sr);
 }
 
 function resize(){
@@ -747,20 +756,23 @@ function draw(dt){
   const R = rects();
   const flags = getDisplayFlags();
   ctx.clearRect(0,0,W,H);
-  card(R.F,'前面ビュー','独立圧力場・独立流線・前面投影マスク');
-  card(R.S,'側面ビュー','独立圧力場・独立流線・側面投影マスク');
+  card(R.F,'前面ビュー','座標整合済み：圧力・等圧線・流線');
+  card(R.S,'側面ビュー','座標整合済み：圧力・等圧線・流線');
 
-  const state = birdState(simT,R.F);
+  const frontSimR = simRect(frontField, R.F);
+  const sideSimR = simRect(sideField, R.S);
+
+  const state = birdState(simT,frontSimR);
   const leftWing = wing(state,'left');
   const rightWing = wing(state,'right');
-  const sidePose = sideKinematics(state,R.S);
+  const sidePose = sideKinematics(state,sideSimR);
 
   if(dt > 0){
-    fluidStepFront(frontField,dt,leftWing,rightWing,R.F,state);
-    fluidStepSide(sideField,dt,sidePose,R.S,state);
+    fluidStepFront(frontField,dt,leftWing,rightWing,frontSimR,state);
+    fluidStepSide(sideField,dt,sidePose,sideSimR,state);
     updateTracers(frontField,dt);
     updateTracers(sideField,dt);
-    updateForces(sideField,sidePose,R.S);
+    updateForces(sideField,sidePose,sideSimR);
   }
 
   prevFrontL = {...leftWing};
