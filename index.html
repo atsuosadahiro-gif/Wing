@@ -50,6 +50,7 @@ const showPressureEl=document.getElementById('showPressure'), showContoursEl=doc
 const resetBtn=document.getElementById('reset');
 let W=0,H=0,DPR=Math.min(devicePixelRatio||1,2),t0=0,last=0,simT=0;
 let NX=120, NY=160,cell=7,u,v,u2,v2,pf,dv,solid,svx,svy,frontTr=[],sideTr=[],lift=0,thrust=0,prevL=null,prevR=null;
+let pressureCanvas=null, pressureCtx=null, pressureDirty=true;
 
 const clamp=(x,a,b)=>Math.max(a,Math.min(b,x)), lerp=(a,b,t)=>a+(b-a)*t, rand=(a,b)=>a+Math.random()*(b-a), idx=(i,j)=>i+j*NX;
 const P=()=>({wind:+windEl.value*0.8,amp:+ampEl.value,freq:+freqEl.value/60,pitch:+pitchEl.value/100});
@@ -87,6 +88,7 @@ function initFluid(){
   const n=NX*NY;
   u=new Float32Array(n); v=new Float32Array(n); u2=new Float32Array(n); v2=new Float32Array(n);
   pf=new Float32Array(n); dv=new Float32Array(n); solid=new Uint8Array(n); svx=new Float32Array(n); svy=new Float32Array(n);
+  pressureCanvas=null; pressureCtx=null; pressureDirty=true;
 }
 function reset(){
   u.fill(0);v.fill(0);u2.fill(0);v2.fill(0);pf.fill(0);dv.fill(0);solid.fill(0);svx.fill(0);svy.fill(0);
@@ -95,7 +97,7 @@ function reset(){
     frontTr.push({x:rand(0,NX-1),y:rand(0,NY-1),px:0,py:0,age:rand(0,120),life:rand(90,260)});
     sideTr.push({x:rand(0,NX-1),y:rand(0,NY-1),px:0,py:0,age:rand(0,120),life:rand(90,260)});
   }
-  prevL=null; prevR=null; lift=0; thrust=0;
+  prevL=null; prevR=null; lift=0; thrust=0; pressureDirty=true;
 }
 function resize(){
   const r=st.getBoundingClientRect();
@@ -286,16 +288,20 @@ function pressureColor(val){
   const c = pressureRGBA(val);
   return `rgba(${c.r},${c.g},${c.b},${(c.a/255).toFixed(3)})`;
 }
-function drawPressureMap(R){
-  const w = Math.max(1, Math.floor(R.w));
-  const h = Math.max(1, Math.floor(R.h));
-  const off = document.createElement('canvas');
-  off.width = w;
-  off.height = h;
-  const octx = off.getContext('2d');
-  const img = octx.createImageData(w, h);
-  const data = img.data;
+function ensurePressureCanvas(){
+  const w = Math.max(1, Math.floor(NX * cell));
+  const h = Math.max(1, Math.floor(NY * cell));
+  if(!pressureCanvas || pressureCanvas.width !== w || pressureCanvas.height !== h){
+    pressureCanvas = document.createElement('canvas');
+    pressureCanvas.width = w;
+    pressureCanvas.height = h;
+    pressureCtx = pressureCanvas.getContext('2d');
+    pressureDirty = true;
+  }
+  if(!pressureDirty) return;
 
+  const img = pressureCtx.createImageData(w, h);
+  const data = img.data;
   for(let py=0; py<h; py++){
     for(let px=0; px<w; px++){
       const gx = px / cell;
@@ -303,34 +309,26 @@ function drawPressureMap(R){
       const i = Math.floor(gx);
       const j = Math.floor(gy);
       if(i < 0 || j < 0 || i >= NX-1 || j >= NY-1) continue;
-
       const fx = gx - i;
       const fy = gy - j;
-      const p00 = pf[idx(i,j)];
-      const p10 = pf[idx(i+1,j)];
-      const p01 = pf[idx(i,j+1)];
-      const p11 = pf[idx(i+1,j+1)];
-      const p =
-        p00*(1-fx)*(1-fy) +
-        p10*fx*(1-fy) +
-        p01*(1-fx)*fy +
-        p11*fx*fy;
-
+      const p00 = pf[idx(i,j)], p10 = pf[idx(i+1,j)], p01 = pf[idx(i,j+1)], p11 = pf[idx(i+1,j+1)];
+      const p = p00*(1-fx)*(1-fy) + p10*fx*(1-fy) + p01*(1-fx)*fy + p11*fx*fy;
       const c = pressureRGBA(p);
       const k = (py*w + px) * 4;
-      data[k] = c.r;
-      data[k+1] = c.g;
-      data[k+2] = c.b;
-      data[k+3] = c.a;
+      data[k] = c.r; data[k+1] = c.g; data[k+2] = c.b; data[k+3] = c.a;
     }
   }
-
-  octx.putImageData(img, 0, 0);
+  pressureCtx.putImageData(img, 0, 0);
+  pressureDirty = false;
+}
+function drawPressureMap(R, alpha=1){
+  ensurePressureCanvas();
   ctx.save();
+  ctx.globalAlpha = alpha;
   ctx.beginPath();
   rr(R.x,R.y,R.w,R.h,18);
   ctx.clip();
-  ctx.drawImage(off, R.x, R.y, R.w, R.h);
+  ctx.drawImage(pressureCanvas, 0, 0, pressureCanvas.width, pressureCanvas.height, R.x, R.y, R.w, R.h);
   ctx.restore();
 }
 function drawFlowLines(R,set){
@@ -780,9 +778,7 @@ function draw(dt){
   drawFrontBird(s,Lw,Rw,R.F);
   drawLegend(R.F);
 
-  if(showPressureEl && showPressureEl.checked){
-    ctx.save(); ctx.globalAlpha=.84; drawPressureMap(R.S); ctx.restore();
-  }
+  if(showPressureEl && showPressureEl.checked) drawPressureMap(R.S, .84);
   if(showContoursEl && showContoursEl.checked) drawContours(R.S);
   if(showFlowEl && showFlowEl.checked){
     ctx.save(); ctx.globalAlpha=.62; drawFlowLines(R.S,sideTr); ctx.restore();
