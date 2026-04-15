@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>上下レイアウト最適化版</title>
+<title>上下レイアウト超リアル版</title>
 <style>
   html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(180deg,#eef5fb,#dbe8f3 45%,#c6dceb);}
   #wrap{position:fixed;inset:0;display:flex;flex-direction:column;}
@@ -25,8 +25,8 @@
     <div class="row"><label>前からの風</label><input id="wind" type="range" min="5" max="50" value="18"></div>
     <div class="row"><label>羽ばたき振幅</label><input id="amp" type="range" min="8" max="80" value="36"></div>
     <div class="row"><label>周波数</label><input id="freq" type="range" min="20" max="120" value="46"></div>
-    <div class="row"><label>翼の迎角変化</label><input id="pitch" type="range" min="0" max="100" value="54"><button id="reset">リセット</button><span class="pill">最適化版</span></div>
-    <div id="msg">重なりを避けるようにレイアウトを整理し、側面ビューでは翼の描画を流体に使っている側面翼座標そのものから描くように修正した版です。</div>
+    <div class="row"><label>翼の迎角変化</label><input id="pitch" type="range" min="0" max="100" value="54"><button id="reset">リセット</button><span class="pill">超リアル版</span></div>
+    <div id="msg">重なりを避けたレイアウトを保ちながら、鳥の見た目をさらに写実寄りにした版です。胴体の陰影、首と頭のつながり、翼の層感、羽先のばらつき、尾の形を強めています。</div>
   </div>
   <div id="stage"><canvas id="cv"></canvas></div>
 </div>
@@ -91,8 +91,8 @@ function resize(){
 
 function birdState(t,r){
   const p=P(), ph=t*p.freq*Math.PI*2, down=Math.max(0,Math.sin(ph)), up=Math.max(0,-Math.sin(ph));
-  const bodyX=r.x+r.w*.18+2.0*down-0.8*up, bodyY=r.y+r.h*.66+Math.sin(ph-.2)*p.amp*.03;
-  const fold=.18+.60*up, open=.76+.30*down, shSpread=Math.min(18,r.w*.04), shoulderY=bodyY-4+Math.sin(ph)*p.amp*.16+2.0*down, hum=Math.min(20,r.w*.04), fore=Math.min(48,r.w*.10)*(1-.18*fold), hand=Math.min(58,r.w*.12)*(1-.14*fold);
+  const bodyX=r.x+r.w*.20+2.0*down-0.8*up, bodyY=r.y+r.h*.66+Math.sin(ph-.2)*p.amp*.03;
+  const fold=.18+.60*up, open=.76+.30*down, shSpread=Math.min(20,r.w*.044), shoulderY=bodyY-5+Math.sin(ph)*p.amp*.17+2.0*down, hum=Math.min(22,r.w*.045), fore=Math.min(54,r.w*.108)*(1-.18*fold), hand=Math.min(66,r.w*.125)*(1-.14*fold);
   const rightA1=clamp(-0.90+0.85*Math.sin(ph),-1.75,-0.02), rightA2=clamp(rightA1+0.30+0.28*p.pitch+0.10*down,-1.20,0.65), rightA3=clamp(rightA2+0.22+0.22*p.pitch+0.05*Math.sin(ph+0.5),-0.90,1.00);
   return {ph,down,up,bodyX,bodyY,shSpread,shoulderY,hum,fore,hand,leftA1:Math.PI-rightA1,leftA2:Math.PI-rightA2,leftA3:Math.PI-rightA3,rightA1,rightA2,rightA3,vy:p.amp*p.freq*Math.PI*2*Math.cos(ph),fold,open};
 }
@@ -259,12 +259,52 @@ function drawFlowLines(R,set){
 
 function drawFrontWing(w,side){
   const dir=side==='left'?-1:1;
-  ctx.strokeStyle='rgba(236,240,245,.96)'; ctx.lineWidth=5; ctx.lineCap='round';
+  ctx.strokeStyle='rgba(228,235,242,.96)'; ctx.lineWidth=6; ctx.lineCap='round';
   ctx.beginPath(); ctx.moveTo(w.shX,w.shY); ctx.lineTo(w.elbowX,w.elbowY); ctx.lineTo(w.wristX,w.wristY); ctx.stroke();
-  ctx.strokeStyle='rgba(79,168,161,.55)'; ctx.lineWidth=1.4; ctx.beginPath(); ctx.moveTo(w.shX,w.shY); ctx.lineTo(w.elbowX,w.elbowY); ctx.stroke();
-  for(let i=0;i<7;i++){
-    const k=i/6,bx=lerp(w.wristX,w.tipX,.10+.54*k),by=lerp(w.wristY,w.tipY,.10+.54*k),a=w.a3+dir*(-.12+.06*i),length=16+8*k,wid=3.8-.6*k;
-    ctx.save(); ctx.translate(bx,by); ctx.rotate(a); ctx.strokeStyle='rgba(248,248,246,.98)'; ctx.lineWidth=wid; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(length,0); ctx.stroke(); ctx.restore();
+
+  // leading edge / acceleration line
+  ctx.strokeStyle='rgba(79,168,161,.55)'; ctx.lineWidth=1.6;
+  ctx.beginPath(); ctx.moveTo(w.shX,w.shY); ctx.lineTo(w.elbowX,w.elbowY); ctx.stroke();
+
+  // soft wing membrane shadow
+  ctx.save();
+  ctx.fillStyle='rgba(210,216,224,0.14)';
+  ctx.beginPath();
+  ctx.moveTo(w.elbowX,w.elbowY);
+  ctx.quadraticCurveTo((w.elbowX+w.wristX)/2+dir*6,(w.elbowY+w.wristY)/2+3,w.wristX,w.wristY);
+  ctx.quadraticCurveTo((w.wristX+w.tipX)/2+dir*10,(w.wristY+w.tipY)/2+6,w.tipX,w.tipY);
+  ctx.quadraticCurveTo((w.elbowX+w.tipX)/2,(w.elbowY+w.tipY)/2+12,w.elbowX,w.elbowY);
+  ctx.fill();
+  ctx.restore();
+
+  // secondaries
+  for(let i=0;i<6;i++){
+    const k=i/5;
+    const bx=lerp(w.elbowX,w.wristX,0.08+0.80*k), by=lerp(w.elbowY,w.wristY,0.08+0.80*k);
+    const a=w.a2 + dir*(-0.22 + 0.08*i);
+    const length=14+8*k, wid=3.8-0.35*k;
+    ctx.save(); ctx.translate(bx,by); ctx.rotate(a);
+    ctx.strokeStyle='rgba(246,247,245,.98)'; ctx.lineWidth=wid; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(length,0); ctx.stroke();
+    ctx.strokeStyle='rgba(170,176,186,.20)'; ctx.lineWidth=0.9; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(length,0); ctx.stroke();
+    ctx.restore();
+  }
+
+  // primaries with slight spread/jitter
+  for(let i=0;i<8;i++){
+    const k=i/7;
+    const bx=lerp(w.wristX,w.tipX,.08+.56*k), by=lerp(w.wristY,w.tipY,.08+.56*k);
+    const a=w.a3+dir*(-.18+.07*i) + dir*(k-0.5)*0.05;
+    const length=18+12*k, wid=4.2-.55*k;
+    ctx.save(); ctx.translate(bx,by); ctx.rotate(a);
+    ctx.strokeStyle='rgba(249,249,247,.99)'; ctx.lineWidth=wid; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(length,0); ctx.stroke();
+    ctx.strokeStyle='rgba(165,170,180,.24)'; ctx.lineWidth=0.9; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(length,0); ctx.stroke();
+    if(k>0.78){
+      ctx.fillStyle='rgba(130,136,146,.20)';
+      ctx.beginPath(); ctx.arc(length,0,1.4,0,Math.PI*2); ctx.fill();
+    }
+    ctx.restore();
   }
 }
 function arrow(x1,y1,x2,y2,color,label){
@@ -275,27 +315,81 @@ function arrow(x1,y1,x2,y2,color,label){
 }
 function drawFrontBird(s,Lw,Rw,R){
   ctx.save(); ctx.beginPath(); rr(R.x,R.y,R.w,R.h,18); ctx.clip();
-  ctx.strokeStyle='rgba(215,220,228,.95)'; ctx.lineWidth=1.2;
-  for(let i=0;i<5;i++){const k=i/4,x=s.bodyX+(k-.5)*6,y=s.bodyY+16,tx=x+(k-.5)*3,ty=y+7; ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(tx,ty); ctx.stroke();}
-  const g=ctx.createRadialGradient(s.bodyX-3,s.bodyY-6,2,s.bodyX,s.bodyY,26); g.addColorStop(0,'rgba(255,255,255,.98)'); g.addColorStop(.55,'rgba(248,248,246,.98)'); g.addColorStop(.9,'rgba(226,230,236,.98)'); g.addColorStop(1,'rgba(205,214,224,.92)');
-  ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(s.bodyX,s.bodyY+5,14,21,0,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='rgba(255,255,255,.98)'; ctx.beginPath(); ctx.ellipse(s.bodyX,s.bodyY-9,6,7,0,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#cf9a66'; ctx.beginPath(); ctx.arc(s.bodyX+1.8,s.bodyY-10,2.2,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(s.bodyX+1.8,s.bodyY-10,0.9,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#777b82'; ctx.beginPath(); ctx.moveTo(s.bodyX-.8,s.bodyY-9.3); ctx.lineTo(s.bodyX-6,s.bodyY-8.3); ctx.lineTo(s.bodyX-.8,s.bodyY-7.3); ctx.closePath(); ctx.fill();
-  drawFrontWing(Lw,'left'); drawFrontWing(Rw,'right');
+
+  // tail
+  ctx.save();
+  ctx.strokeStyle='rgba(214,220,226,.85)';
+  ctx.lineWidth=1.2;
+  for(let i=0;i<5;i++){
+    const k=i/4, x=s.bodyX+(k-.5)*7, y=s.bodyY+17, tx=x+(k-.5)*4, ty=y+8;
+    ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(tx,ty); ctx.stroke();
+  }
+  ctx.restore();
+
+  // body shadow
+  const sh=ctx.createRadialGradient(s.bodyX+5,s.bodyY+13,2,s.bodyX+5,s.bodyY+13,24);
+  sh.addColorStop(0,'rgba(145,155,168,.18)');
+  sh.addColorStop(1,'rgba(145,155,168,0)');
+  ctx.fillStyle=sh; ctx.beginPath(); ctx.ellipse(s.bodyX+3,s.bodyY+12,16,24,0,0,Math.PI*2); ctx.fill();
+
+  // body
+  const g=ctx.createRadialGradient(s.bodyX-4,s.bodyY-8,2,s.bodyX,s.bodyY,28);
+  g.addColorStop(0,'rgba(255,255,255,.99)');
+  g.addColorStop(.42,'rgba(247,248,246,.99)');
+  g.addColorStop(.78,'rgba(228,232,238,.98)');
+  g.addColorStop(1,'rgba(198,207,218,.92)');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(s.bodyX,s.bodyY+5,15,22,0,0,Math.PI*2); ctx.fill();
+
+  // breast texture
+  ctx.fillStyle='rgba(186,194,204,.28)';
+  for(let j=0;j<2;j++){
+    for(let i=0;i<3;i++){
+      ctx.beginPath();
+      ctx.ellipse(s.bodyX-4+i*4.2, s.bodyY+2+j*4.5, 1.3, 0.9, 0, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+
+  // neck
+  ctx.save();
+  ctx.translate(s.bodyX-1,s.bodyY-2);
+  ctx.rotate(-0.10+0.04*Math.sin(s.ph-0.2));
+  ctx.strokeStyle='rgba(228,234,240,.95)';
+  ctx.lineWidth=4.6;
+  ctx.beginPath(); ctx.moveTo(0,0); ctx.quadraticCurveTo(-1,-7,1,-12); ctx.stroke();
+  ctx.restore();
+
+  // head
+  const hg=ctx.createRadialGradient(s.bodyX-1,s.bodyY-12,1,s.bodyX,s.bodyY-10,10);
+  hg.addColorStop(0,'rgba(255,255,255,.99)');
+  hg.addColorStop(.65,'rgba(245,246,245,.99)');
+  hg.addColorStop(1,'rgba(214,220,228,.95)');
+  ctx.fillStyle=hg; ctx.beginPath(); ctx.ellipse(s.bodyX,s.bodyY-10,6.5,7.2,0,0,Math.PI*2); ctx.fill();
+
+  // eye ring and eye
+  ctx.fillStyle='#d2a06a'; ctx.beginPath(); ctx.arc(s.bodyX+2.0,s.bodyY-11.0,2.4,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(s.bodyX+2.0,s.bodyY-11.0,1.0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,.8)'; ctx.beginPath(); ctx.arc(s.bodyX+2.5,s.bodyY-11.5,0.35,0,Math.PI*2); ctx.fill();
+
+  // beak
+  ctx.fillStyle='#777b82';
+  ctx.beginPath(); ctx.moveTo(s.bodyX-0.8,s.bodyY-10.1); ctx.lineTo(s.bodyX-6.7,s.bodyY-8.8); ctx.lineTo(s.bodyX-0.8,s.bodyY-7.4); ctx.closePath(); ctx.fill();
+
+  drawFrontWing(Lw,'left');
+  drawFrontWing(Rw,'right');
+
   arrow(R.x+12,R.y+R.h-18,R.x+88,R.y+R.h-18,'#5b84c8','前から来る空気');
   ctx.restore();
 }
 
 function sideKinematics(s,R){
-  const bodyCx=R.x+R.w*.16, bodyCy=R.y+R.h*.66+Math.sin(s.ph-.2)*P().amp*.03;
+  const bodyCx=R.x+R.w*.15, bodyCy=R.y+R.h*.67+Math.sin(s.ph-.2)*P().amp*.03;
   const tilt=-.10+.08*s.down-.04*s.up;
-  const shoulderX=bodyCx-1.5, shoulderY=bodyCy-2.0;
+  const shoulderX=bodyCx-1.2, shoulderY=bodyCy-1.6;
   const a1=-.95+.54*Math.sin(s.ph), a2=a1+.24*(.25+.9*s.down)-.14*s.fold, a3=a2+.28*(.25+1*s.down)-.18*s.fold;
-  const ex=shoulderX+Math.cos(a1)*16, ey=shoulderY+Math.sin(a1)*16;
-  const wx=ex+Math.cos(a2)*(30*(1-.16*s.fold)), wy=ey+Math.sin(a2)*(30*(1-.16*s.fold));
-  const tx=wx+Math.cos(a3)*(35*(1-.14*s.fold)), ty=wy+Math.sin(a3)*(35*(1-.14*s.fold));
+  const ex=shoulderX+Math.cos(a1)*15, ey=shoulderY+Math.sin(a1)*15;
+  const wx=ex+Math.cos(a2)*(28*(1-.16*s.fold)), wy=ey+Math.sin(a2)*(28*(1-.16*s.fold));
+  const tx=wx+Math.cos(a3)*(34*(1-.14*s.fold)), ty=wy+Math.sin(a3)*(34*(1-.14*s.fold));
   return {bodyCx,bodyCy,tilt,shoulderX,shoulderY,ex,ey,wx,wy,tx,ty,a1,a2,a3};
 }
 function feather(x,y,a,length,wid,alpha){
@@ -306,26 +400,67 @@ function drawSideBird(s,R){
   ctx.save(); ctx.beginPath(); rr(R.x,R.y,R.w,R.h,18); ctx.clip();
   const K=sideKinematics(s,R);
 
+  // body + head
   ctx.save(); ctx.translate(K.bodyCx,K.bodyCy); ctx.rotate(K.tilt);
-  const g=ctx.createRadialGradient(-3,-4,2,0,0,22); g.addColorStop(0,'rgba(255,255,255,.98)'); g.addColorStop(.55,'rgba(248,248,246,.98)'); g.addColorStop(.9,'rgba(226,230,236,.98)'); g.addColorStop(1,'rgba(205,214,224,.92)');
-  ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(0,3,16,10,.08,0,Math.PI*2); ctx.fill();
-  ctx.save(); ctx.translate(-9,-4); ctx.rotate(-.10+.06*Math.sin(s.ph-.3));
-  ctx.strokeStyle='rgba(230,232,236,.95)'; ctx.lineWidth=4.2; ctx.beginPath(); ctx.moveTo(3,3); ctx.quadraticCurveTo(0,-2,-1,-7); ctx.stroke();
-  ctx.fillStyle='rgba(255,255,255,.99)'; ctx.beginPath(); ctx.ellipse(0,-8,5,4,0,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#cf9a66'; ctx.beginPath(); ctx.arc(1.8,-8.8,1.7,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(1.8,-8.8,0.7,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#7b7e85'; ctx.beginPath(); ctx.moveTo(-0.7,-7.3); ctx.lineTo(-5.5,-6.6); ctx.lineTo(-0.7,-5.8); ctx.closePath(); ctx.fill();
-  ctx.restore(); ctx.restore();
 
-  ctx.strokeStyle='rgba(235,240,245,.90)'; ctx.lineWidth=5; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(K.shoulderX,K.shoulderY); ctx.lineTo(K.ex,K.ey); ctx.lineTo(K.wx,K.wy); ctx.stroke();
-  ctx.strokeStyle='rgba(79,168,161,.68)'; ctx.lineWidth=1.8; ctx.beginPath(); ctx.moveTo(K.shoulderX,K.shoulderY); ctx.lineTo(K.ex,K.ey); ctx.stroke();
+  const bodyShadow=ctx.createRadialGradient(4,7,1,4,7,22);
+  bodyShadow.addColorStop(0,'rgba(145,155,168,.16)');
+  bodyShadow.addColorStop(1,'rgba(145,155,168,0)');
+  ctx.fillStyle=bodyShadow; ctx.beginPath(); ctx.ellipse(2,3,17,11,0,0,Math.PI*2); ctx.fill();
 
+  const g=ctx.createRadialGradient(-3,-4,2,0,0,22);
+  g.addColorStop(0,'rgba(255,255,255,.99)');
+  g.addColorStop(.50,'rgba(246,247,245,.99)');
+  g.addColorStop(.82,'rgba(228,232,238,.98)');
+  g.addColorStop(1,'rgba(198,207,218,.92)');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(0,3,16,10,0.08,0,Math.PI*2); ctx.fill();
+
+  // neck
+  ctx.save(); ctx.translate(-8,-3); ctx.rotate(-0.18+0.05*Math.sin(s.ph-.3));
+  ctx.strokeStyle='rgba(228,234,240,.95)'; ctx.lineWidth=3.8;
+  ctx.beginPath(); ctx.moveTo(0,0); ctx.quadraticCurveTo(-1,-4,0,-8); ctx.stroke();
+  ctx.restore();
+
+  // head
+  const hg=ctx.createRadialGradient(-9,-9,1,-9,-8,7);
+  hg.addColorStop(0,'rgba(255,255,255,.99)');
+  hg.addColorStop(1,'rgba(214,220,228,.95)');
+  ctx.fillStyle=hg; ctx.beginPath(); ctx.ellipse(-9,-8,5.3,4.3,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#d2a06a'; ctx.beginPath(); ctx.arc(-7.2,-8.7,1.8,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(-7.2,-8.7,0.75,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,.8)'; ctx.beginPath(); ctx.arc(-6.8,-9.1,0.25,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#7b7e85'; ctx.beginPath(); ctx.moveTo(-10.0,-7.7); ctx.lineTo(-14.8,-6.9); ctx.lineTo(-10.0,-6.0); ctx.closePath(); ctx.fill();
+
+  // tail
+  ctx.strokeStyle='rgba(220,226,232,.90)'; ctx.lineWidth=1.0;
+  for(let i=0;i<4;i++){
+    const k=i/3;
+    ctx.beginPath();
+    ctx.moveTo(10,6+k*0.6);
+    ctx.lineTo(15+k*2,8+k*1.4);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // wing exactly from same kinematics as flow/pressure basis
+  ctx.strokeStyle='rgba(235,240,245,.92)'; ctx.lineWidth=5.0; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(K.shoulderX,K.shoulderY); ctx.lineTo(K.ex,K.ey); ctx.lineTo(K.wx,K.wy); ctx.stroke();
+
+  // acceleration region on same segment
+  ctx.strokeStyle='rgba(79,168,161,.72)'; ctx.lineWidth=1.9;
+  ctx.beginPath(); ctx.moveTo(K.shoulderX,K.shoulderY); ctx.lineTo(K.ex,K.ey); ctx.stroke();
+
+  // secondaries
+  for(let i=0;i<5;i++){
+    const k=i/4, bx=lerp(K.ex,K.wx,0.08+0.78*k), by=lerp(K.ey,K.wy,0.08+0.78*k), a=K.a2 + (-0.18 + 0.07*i), length=10+5*k, wid=2.8-0.25*k;
+    feather(bx,by,a,length,wid,.96);
+  }
+  // primaries
   for(let i=0;i<7;i++){
-    const k=i/6,bx=lerp(K.wx,K.tx,.10+.54*k),by=lerp(K.wy,K.ty,.10+.54*k),a=K.a3+(-.10+.05*i)+.12*s.down-.08*s.up,length=12+6*k,wid=3.4-.4*k;
-    feather(bx,by,a,length,wid,.95);
+    const k=i/6,bx=lerp(K.wx,K.tx,.10+.54*k),by=lerp(K.wy,K.ty,.10+.54*k),a=K.a3+(-.18+.07*i)+(k-0.5)*0.04,length=12+7*k,wid=3.2-.35*k;
+    feather(bx,by,a,length,wid,.98);
   }
 
-  // place force arrows in top-right corner with margin, away from bird and lines
   arrow(R.x+R.w-76,R.y+28,R.x+R.w-76,R.y+28-Math.min(38,8+lift*15),'#5b84c8','揚力');
   arrow(R.x+R.w-76,R.y+54,R.x+R.w-76+Math.min(40,8+thrust*16),R.y+54,'#d48ab0','推力');
   arrow(R.x+12,R.y+R.h-18,R.x+88,R.y+R.h-18,'#5b84c8','前から来る空気');
