@@ -1,503 +1,456 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>WebGPU Flapping Wing Flow</title>
-<style>
-  html, body { margin: 0; height: 100%; background: #041018; color: #d7e3ea; font-family: system-ui, sans-serif; }
-  #wrap { position: fixed; inset: 0; display: grid; grid-template-rows: auto 1fr; }
-  #ui {
-    display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
-    padding: 10px 14px; background: rgba(4,16,24,0.9); backdrop-filter: blur(4px);
-    border-bottom: 1px solid rgba(255,255,255,0.08);
-  }
-  #ui label { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
-  #ui input[type="range"] { width: 120px; }
-  #msg { opacity: 0.85; font-size: 13px; }
-  canvas { width: 100%; height: 100%; display: block; }
-  button {
-    background: #113042; color: #d7e3ea; border: 1px solid rgba(255,255,255,0.15);
-    border-radius: 8px; padding: 6px 12px; cursor: pointer;
-  }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>羽ばたき翼の流れ - スマホ対応版</title>
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #03070d;
+      color: #eaf4ff;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      overflow: hidden;
+    }
+    #wrap {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+    #ui {
+      background: linear-gradient(180deg, rgba(3,12,24,0.98), rgba(5,18,32,0.94));
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      padding: 10px 12px 12px;
+      box-sizing: border-box;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 18px;
+      align-items: center;
+    }
+    .ctl {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      white-space: nowrap;
+      font-size: 15px;
+    }
+    .ctl input[type="range"] { width: 120px; }
+    button {
+      background: #12314d;
+      color: #e7f2ff;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 10px;
+      padding: 8px 14px;
+      font-size: 15px;
+    }
+    #msg {
+      width: 100%;
+      opacity: 0.85;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+    }
+  </style>
 </head>
 <body>
 <div id="wrap">
   <div id="ui">
-    <label>羽ばたき振幅 <input id="amp" type="range" min="0.05" max="0.35" value="0.18" step="0.005"></label>
-    <label>周波数 <input id="freq" type="range" min="0.3" max="3.0" value="1.2" step="0.05"></label>
-    <label>迎角ねじり <input id="pitch" type="range" min="-1.0" max="1.0" value="0.45" step="0.01"></label>
-    <label>渦の強さ <input id="swirl" type="range" min="0.0" max="2.5" value="1.2" step="0.05"></label>
-    <button id="resetBtn">リセット</button>
-    <span id="msg">WebGPUで近似的に羽ばたき翼の後流を描画します</span>
+    <label class="ctl">羽ばたき振幅 <input id="amp" type="range" min="0.2" max="1.6" step="0.01" value="0.85"></label>
+    <label class="ctl">周波数 <input id="freq" type="range" min="0.3" max="2.4" step="0.01" value="0.95"></label>
+    <label class="ctl">迎角ねじり <input id="twist" type="range" min="0.0" max="2.4" step="0.01" value="1.35"></label>
+    <label class="ctl">渦の強さ <input id="vort" type="range" min="0.2" max="2.4" step="0.01" value="1.15"></label>
+    <button id="reset">リセット</button>
+    <div id="msg">スマホ対応の軽量版です。羽ばたきで生じる後流の渦を近似表示します。指で画面をなぞると流れを乱せます。</div>
   </div>
-  <canvas id="c"></canvas>
+  <canvas id="cv"></canvas>
 </div>
+<script>
+(() => {
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d', { alpha: false });
+  const ampEl = document.getElementById('amp');
+  const freqEl = document.getElementById('freq');
+  const twistEl = document.getElementById('twist');
+  const vortEl = document.getElementById('vort');
+  const resetBtn = document.getElementById('reset');
 
-<script type="module">
-const canvas = document.getElementById('c');
-const msg = document.getElementById('msg');
-const ampEl = document.getElementById('amp');
-const freqEl = document.getElementById('freq');
-const pitchEl = document.getElementById('pitch');
-const swirlEl = document.getElementById('swirl');
-const resetBtn = document.getElementById('resetBtn');
+  let W = 0, H = 0, DPR = Math.min(devicePixelRatio || 1, 2);
+  let simW = 0, simH = 0, N = 0;
+  let u, v, u2, v2, dye, dye2, curl;
+  let particles = [];
+  let touches = [];
+  let vortices = [];
+  let lastT = 0;
+  let simScale = 6;
 
-if (!navigator.gpu) {
-  msg.textContent = 'このブラウザは WebGPU 非対応です。Chrome / Edge の比較的新しい版で試してください。';
-  throw new Error('WebGPU unsupported');
-}
+  function idx(x, y) { return x + y * simW; }
+  function clamp(a, mn, mx) { return a < mn ? mn : a > mx ? mx : a; }
+  function lerp(a, b, t) { return a + (b - a) * t; }
 
-const adapter = await navigator.gpu.requestAdapter();
-if (!adapter) {
-  msg.textContent = 'GPUアダプタを取得できませんでした。';
-  throw new Error('No adapter');
-}
-const device = await adapter.requestDevice();
-
-const context = canvas.getContext('webgpu');
-const format = navigator.gpu.getPreferredCanvasFormat();
-
-const GRID_W = 320;
-const GRID_H = 192;
-const WORKGROUP = 8;
-const CELLS = GRID_W * GRID_H;
-const FLOATS_PER_CELL = 4; // vec4f
-const BYTES_PER_FIELD = CELLS * FLOATS_PER_CELL * 4;
-
-function resizeCanvas() {
-  const dpr = Math.min(devicePixelRatio || 1, 2);
-  const w = Math.max(1, Math.floor(canvas.clientWidth * dpr));
-  const h = Math.max(1, Math.floor(canvas.clientHeight * dpr));
-  canvas.width = w;
-  canvas.height = h;
-  context.configure({
-    device,
-    format,
-    alphaMode: 'opaque',
-  });
-}
-resizeCanvas();
-addEventListener('resize', resizeCanvas);
-
-function createFieldBuffer(label) {
-  return device.createBuffer({
-    label,
-    size: BYTES_PER_FIELD,
-    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
-  });
-}
-const velA = createFieldBuffer('velA');
-const velB = createFieldBuffer('velB');
-const dyeA = createFieldBuffer('dyeA');
-const dyeB = createFieldBuffer('dyeB');
-
-const uniformsArray = new Float32Array(16);
-const uniformsBuffer = device.createBuffer({
-  size: uniformsArray.byteLength,
-  usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-});
-
-function clearBuffer(buf) {
-  const zero = new Float32Array(BYTES_PER_FIELD / 4);
-  device.queue.writeBuffer(buf, 0, zero);
-}
-function resetSim() {
-  clearBuffer(velA);
-  clearBuffer(velB);
-  clearBuffer(dyeA);
-  clearBuffer(dyeB);
-}
-resetBtn.onclick = resetSim;
-resetSim();
-
-const simShader = device.createShaderModule({
-  label: 'simShader',
-  code: `
-struct Uniforms {
-  grid : vec2f,
-  dt : f32,
-  time : f32,
-  amp : f32,
-  freq : f32,
-  pitchBias : f32,
-  swirl : f32,
-  aspect : f32,
-  resetFlag : f32,
-  pad0 : f32,
-  pad1 : f32,
-  pad2 : f32,
-};
-
-@group(0) @binding(0) var<uniform> U : Uniforms;
-@group(0) @binding(1) var<storage, read> velIn : array<vec4f>;
-@group(0) @binding(2) var<storage, read_write> velOut : array<vec4f>;
-@group(0) @binding(3) var<storage, read> dyeIn : array<vec4f>;
-@group(0) @binding(4) var<storage, read_write> dyeOut : array<vec4f>;
-
-fn idx(x: u32, y: u32) -> u32 {
-  return y * u32(U.grid.x) + x;
-}
-
-fn clampCoord(x: i32, maxv: i32) -> i32 {
-  return max(0, min(x, maxv));
-}
-
-fn sampleField(field: ptr<function, array<vec4f>>, p: vec2f) -> vec4f {
-  let gx = U.grid.x;
-  let gy = U.grid.y;
-  let fp = vec2f(
-    clamp(p.x, 0.0, gx - 1.001),
-    clamp(p.y, 0.0, gy - 1.001)
-  );
-  let x0 = i32(floor(fp.x));
-  let y0 = i32(floor(fp.y));
-  let x1 = clampCoord(x0 + 1, i32(gx) - 1);
-  let y1 = clampCoord(y0 + 1, i32(gy) - 1);
-  let tx = fp.x - f32(x0);
-  let ty = fp.y - f32(y0);
-
-  let c00 = (*field)[idx(u32(x0), u32(y0))];
-  let c10 = (*field)[idx(u32(x1), u32(y0))];
-  let c01 = (*field)[idx(u32(x0), u32(y1))];
-  let c11 = (*field)[idx(u32(x1), u32(y1))];
-
-  let a = mix(c00, c10, tx);
-  let b = mix(c01, c11, tx);
-  return mix(a, b, ty);
-}
-
-fn wingState(t: f32) -> vec4f {
-  let cy = 0.5 + U.amp * sin(2.0 * 3.14159265 * U.freq * t);
-  let theta = 0.55 * U.amp * cos(2.0 * 3.14159265 * U.freq * t) + 0.35 * U.pitchBias * sin(4.0 * 3.14159265 * U.freq * t + 1.2);
-  return vec4f(0.34, cy, theta, 0.16);
-}
-
-fn wingVelocity(t: f32) -> vec2f {
-  let vy = U.amp * 2.0 * 3.14159265 * U.freq * cos(2.0 * 3.14159265 * U.freq * t);
-  return vec2f(0.0, vy);
-}
-
-fn distanceToSegment(p: vec2f, a: vec2f, b: vec2f) -> f32 {
-  let ab = b - a;
-  let h = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
-  return length((p - a) - ab * h);
-}
-
-@compute @workgroup_size(${WORKGROUP}, ${WORKGROUP})
-fn main(@builtin(global_invocation_id) gid: vec3u) {
-  if (gid.x >= u32(U.grid.x) || gid.y >= u32(U.grid.y)) {
-    return;
+  function alloc() {
+    simW = Math.max(90, Math.floor(W / simScale));
+    simH = Math.max(50, Math.floor(H / simScale));
+    N = simW * simH;
+    u = new Float32Array(N); v = new Float32Array(N);
+    u2 = new Float32Array(N); v2 = new Float32Array(N);
+    dye = new Float32Array(N); dye2 = new Float32Array(N);
+    curl = new Float32Array(N);
+    particles = [];
+    const pCount = Math.min(5000, Math.floor(simW * simH * 0.5));
+    for (let i = 0; i < pCount; i++) {
+      particles.push({
+        x: Math.random() * simW,
+        y: Math.random() * simH,
+        px: 0, py: 0,
+        life: Math.random() * 200
+      });
+    }
+    vortices = [];
   }
 
-  let i = idx(gid.x, gid.y);
-  let cell = vec2f(f32(gid.x), f32(gid.y));
-  let uv = (cell + vec2f(0.5, 0.5)) / U.grid;
-
-  if (U.resetFlag > 0.5) {
-    velOut[i] = vec4f(0.0);
-    dyeOut[i] = vec4f(0.0);
-    return;
+  function resize() {
+    const uiH = document.getElementById('ui').offsetHeight;
+    const rectW = window.innerWidth;
+    const rectH = window.innerHeight - uiH;
+    cv.width = Math.max(1, Math.floor(rectW * DPR));
+    cv.height = Math.max(1, Math.floor(rectH * DPR));
+    cv.style.width = rectW + 'px';
+    cv.style.height = rectH + 'px';
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.scale(DPR, DPR);
+    W = rectW;
+    H = rectH;
+    simScale = W < 500 ? 7 : 6;
+    alloc();
   }
 
-  var velArray : array<vec4f, 1>;
-  var dyeArray : array<vec4f, 1>;
-  // dummy arrays to satisfy pointers; actual indexing uses source arrays copied below
-  // WGSL doesn't support taking a pointer to runtime arrays directly in every implementation,
-  // so inline bilinear sampling is duplicated via source arrays.
-  let gx = U.grid.x;
-  let gy = U.grid.y;
+  function clearSim() {
+    u.fill(0); v.fill(0); dye.fill(0); curl.fill(0); vortices.length = 0;
+    for (const p of particles) {
+      p.x = Math.random() * simW;
+      p.y = Math.random() * simH;
+      p.life = Math.random() * 200;
+    }
+  }
 
-  let back = cell - velIn[i].xy * U.dt * vec2f(gx / gy, 1.0) * 28.0;
+  function sample(arr, x, y) {
+    x = clamp(x, 0, simW - 1.001);
+    y = clamp(y, 0, simH - 1.001);
+    const x0 = x | 0, y0 = y | 0;
+    const x1 = Math.min(x0 + 1, simW - 1), y1 = Math.min(y0 + 1, simH - 1);
+    const tx = x - x0, ty = y - y0;
+    const a = arr[idx(x0, y0)], b = arr[idx(x1, y0)], c = arr[idx(x0, y1)], d = arr[idx(x1, y1)];
+    return lerp(lerp(a, b, tx), lerp(c, d, tx), ty);
+  }
 
-  let fp = vec2f(
-    clamp(back.x, 0.0, gx - 1.001),
-    clamp(back.y, 0.0, gy - 1.001)
-  );
-  let x0 = i32(floor(fp.x));
-  let y0 = i32(floor(fp.y));
-  let x1 = clampCoord(x0 + 1, i32(gx) - 1);
-  let y1 = clampCoord(y0 + 1, i32(gy) - 1);
-  let tx = fp.x - f32(x0);
-  let ty = fp.y - f32(y0);
+  function addImpulse(cx, cy, fx, fy, radius, dyeAmount = 0) {
+    const minX = Math.max(1, Math.floor(cx - radius));
+    const maxX = Math.min(simW - 2, Math.ceil(cx + radius));
+    const minY = Math.max(1, Math.floor(cy - radius));
+    const maxY = Math.min(simH - 2, Math.ceil(cy + radius));
+    const r2 = radius * radius;
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
+        const dx = x - cx, dyv = y - cy;
+        const d2 = dx * dx + dyv * dyv;
+        if (d2 > r2) continue;
+        const fall = Math.exp(-d2 / (r2 * 0.38));
+        const i = idx(x, y);
+        u[i] += fx * fall;
+        v[i] += fy * fall;
+        dye[i] += dyeAmount * fall;
+      }
+    }
+  }
 
-  let vi00 = velIn[idx(u32(x0), u32(y0))];
-  let vi10 = velIn[idx(u32(x1), u32(y0))];
-  let vi01 = velIn[idx(u32(x0), u32(y1))];
-  let vi11 = velIn[idx(u32(x1), u32(y1))];
-  let di00 = dyeIn[idx(u32(x0), u32(y0))];
-  let di10 = dyeIn[idx(u32(x1), u32(y0))];
-  let di01 = dyeIn[idx(u32(x0), u32(y1))];
-  let di11 = dyeIn[idx(u32(x1), u32(y1))];
+  function spawnVortex(x, y, str, rad, ageMax) {
+    vortices.push({ x, y, str, rad, age: 0, ageMax });
+    if (vortices.length > 36) vortices.shift();
+  }
 
-  var vel = mix(mix(vi00, vi10, tx), mix(vi01, vi11, tx), ty);
-  var dye = mix(mix(di00, di10, tx), mix(di01, di11, tx), ty);
+  function applyVortices(dt) {
+    const advectSpeed = 7.5;
+    for (let n = vortices.length - 1; n >= 0; n--) {
+      const q = vortices[n];
+      q.age += dt;
+      q.x += advectSpeed * dt;
+      q.y += Math.sin(q.age * 2.3) * 0.03;
+      if (q.age > q.ageMax || q.x > simW + 15) {
+        vortices.splice(n, 1);
+        continue;
+      }
+      const minX = Math.max(1, Math.floor(q.x - q.rad));
+      const maxX = Math.min(simW - 2, Math.ceil(q.x + q.rad));
+      const minY = Math.max(1, Math.floor(q.y - q.rad));
+      const maxY = Math.min(simH - 2, Math.ceil(q.y + q.rad));
+      const decay = 1 - q.age / q.ageMax;
+      for (let y = minY; y <= maxY; y++) {
+        for (let x = minX; x <= maxX; x++) {
+          const dx = x - q.x, dyv = y - q.y;
+          const rr = dx * dx + dyv * dyv + 0.8;
+          const r = Math.sqrt(rr);
+          if (r > q.rad) continue;
+          const tang = q.str * decay * Math.exp(-rr / (q.rad * q.rad * 0.7));
+          const i = idx(x, y);
+          u[i] += (-dyv / r) * tang;
+          v[i] += ( dx / r) * tang;
+          dye[i] += 0.03 * decay;
+        }
+      }
+    }
+  }
 
-  // simple viscosity / smoothing
-  let xm = max(i32(gid.x) - 1, 0);
-  let xp = min(i32(gid.x) + 1, i32(gx) - 1);
-  let ym = max(i32(gid.y) - 1, 0);
-  let yp = min(i32(gid.y) + 1, i32(gy) - 1);
+  function wingForTime(t) {
+    const A = parseFloat(ampEl.value);
+    const F = parseFloat(freqEl.value);
+    const T = parseFloat(twistEl.value);
+    const cx = simW * 0.22;
+    const cy = simH * 0.50 + Math.sin(t * F * Math.PI * 2) * (simH * 0.16 * A);
+    const vy = Math.cos(t * F * Math.PI * 2) * (simH * 0.16 * A) * (F * Math.PI * 2);
+    const ang = Math.sin(t * F * Math.PI * 2 + Math.PI * 0.42) * (0.32 + T * 0.42);
+    const chord = simW * 0.085;
+    const thick = simH * 0.035;
+    return { cx, cy, vy, ang, chord, thick };
+  }
 
-  let vl = velIn[idx(u32(xm), gid.y)].xy;
-  let vr = velIn[idx(u32(xp), gid.y)].xy;
-  let vb = velIn[idx(gid.x, u32(ym))].xy;
-  let vt = velIn[idx(gid.x, u32(yp))].xy;
-  let lap = (vl + vr + vb + vt - 4.0 * vel.xy);
-  vel.xy += 0.11 * lap;
+  let prevWing = null;
+  function applyWing(t, dt) {
+    const wing = wingForTime(t);
+    const x0 = wing.cx - wing.chord * 0.5;
+    const x1 = wing.cx + wing.chord * 0.5;
+    const y0 = wing.cy;
+    const tx = Math.cos(wing.ang), ty = Math.sin(wing.ang);
+    const nx = -ty, ny = tx;
+    const V = parseFloat(vortEl.value);
 
-  vel.xy *= 0.994;
-  dye.xyz *= 0.992;
+    for (let s = 0; s <= 10; s++) {
+      const a = s / 10;
+      const px = lerp(x0, x1, a);
+      const py = y0 + (a - 0.5) * wing.chord * ty * 0.3;
+      const localBias = (a - 0.2);
+      const pushX = 1.2 + Math.abs(wing.vy) * 0.02;
+      const pushY = wing.vy * (0.65 + localBias * 0.35);
+      addImpulse(px, py, pushX, pushY, wing.thick * (1.7 - Math.abs(a - 0.5)), 0.05);
+    }
 
-  let w = wingState(U.time);
-  let center = w.xy;
-  let theta = w.z;
-  let halfLen = w.w;
-  let dir = vec2f(cos(theta), sin(theta));
-  let nrm = vec2f(-dir.y, dir.x);
-  let a = center - dir * halfLen;
-  let b = center + dir * halfLen;
-  let d = distanceToSegment(uv, a, b);
+    const edgeX = wing.cx + tx * wing.chord * 0.54;
+    const edgeY = wing.cy + ty * wing.chord * 0.18;
+    const edgeSign = Math.sign(wing.vy || 1);
+    if (prevWing) {
+      const signNow = Math.sign(wing.vy || 1);
+      const signPrev = Math.sign(prevWing.vy || 1);
+      if (signNow !== signPrev || Math.abs(wing.vy) > simH * 0.18) {
+        spawnVortex(edgeX, edgeY, -edgeSign * (1.3 + V * 2.1), 6 + V * 5, 3.4);
+      }
+    }
+    addImpulse(edgeX, edgeY, 2.2 + V * 1.8, wing.vy * 0.16, wing.thick * 1.8, 0.22 + 0.08 * V);
+    prevWing = wing;
+    return wing;
+  }
 
-  let wingVel = wingVelocity(U.time);
-  let thickness = 0.024;
-  let nearWing = exp(-pow(d / thickness, 2.0));
+  function applyTouchForces() {
+    for (const t of touches) {
+      const gx = t.x / W * simW;
+      const gy = t.y / H * simH;
+      addImpulse(gx, gy, t.vx * 0.8, t.vy * 0.8, 6, 0.18);
+      t.vx *= 0.7;
+      t.vy *= 0.7;
+    }
+  }
 
-  // push air downward/backward on downstroke; weaker opposite on upstroke
-  let stroke = wingVel.y;
-  let momentum = nearWing * (0.16 + abs(stroke) * 1.8);
-  vel.xy += (wingVel * 0.9 - dir * 0.10 * abs(stroke)) * nearWing;
+  function advect(dt) {
+    const back = dt * 0.95;
+    for (let y = 1; y < simH - 1; y++) {
+      for (let x = 1; x < simW - 1; x++) {
+        const i = idx(x, y);
+        const bx = x - u[i] * back;
+        const by = y - v[i] * back;
+        u2[i] = sample(u, bx, by) * 0.992;
+        v2[i] = sample(v, bx, by) * 0.992;
+        dye2[i] = sample(dye, bx, by) * 0.985;
+      }
+    }
+    [u, u2] = [u2, u];
+    [v, v2] = [v2, v];
+    [dye, dye2] = [dye2, dye];
+  }
 
-  // leading/trailing edge vortices
-  let rel = uv - center;
-  let span = dot(rel, dir);
-  let side = sign(span);
-  let edgeMask = exp(-pow((abs(span) - halfLen) / 0.05, 2.0));
-  let core = exp(-pow(dot(rel, nrm) / 0.03, 2.0));
-  let swirlDir = nrm * side * sign(stroke + 1e-4);
-  vel.xy += swirlDir * U.swirl * edgeMask * core * 0.035;
+  function diffuseAndBoundary() {
+    for (let y = 1; y < simH - 1; y++) {
+      for (let x = 1; x < simW - 1; x++) {
+        const i = idx(x, y);
+        u[i] = (u[i] + 0.2 * (u[idx(x-1,y)] + u[idx(x+1,y)] + u[idx(x,y-1)] + u[idx(x,y+1)])) / 1.8;
+        v[i] = (v[i] + 0.2 * (v[idx(x-1,y)] + v[idx(x+1,y)] + v[idx(x,y-1)] + v[idx(x,y+1)])) / 1.8;
+      }
+    }
+    for (let x = 0; x < simW; x++) {
+      u[idx(x, 0)] = u[idx(x, simH - 1)] = 0;
+      v[idx(x, 0)] = v[idx(x, simH - 1)] = 0;
+    }
+    for (let y = 0; y < simH; y++) {
+      u[idx(0, y)] *= 0.2;
+      v[idx(0, y)] *= 0.2;
+      u[idx(simW - 1, y)] = u[idx(simW - 2, y)] * 0.98 + 0.04;
+      v[idx(simW - 1, y)] = v[idx(simW - 2, y)] * 0.98;
+    }
+  }
 
-  // solid-ish wing region: drag local flow toward wing motion
-  let bodyMask = exp(-pow(d / 0.016, 2.0)) * exp(-pow(span / (halfLen * 1.1), 6.0));
-  vel.xy = mix(vel.xy, wingVel + dir * 0.12 * sign(-stroke), clamp(bodyMask * 0.75, 0.0, 1.0));
+  function computeCurl() {
+    for (let y = 1; y < simH - 1; y++) {
+      for (let x = 1; x < simW - 1; x++) {
+        const i = idx(x, y);
+        const dvdx = (v[idx(x+1,y)] - v[idx(x-1,y)]) * 0.5;
+        const dudy = (u[idx(x,y+1)] - u[idx(x,y-1)]) * 0.5;
+        curl[i] = dvdx - dudy;
+      }
+    }
+  }
 
-  // inject dye to visualize wake
-  let wake = max(0.0, dot(normalize(vec2f(1.0, 0.1)), vel.xy + vec2f(0.001, 0.0)));
-  let warm = vec3f(0.98, 0.83, 0.38);
-  let cool = vec3f(0.22, 0.72, 1.0);
-  let tint = mix(cool, warm, clamp(abs(stroke) * 0.8, 0.0, 1.0));
-  dye.xyz += tint * (0.018 * nearWing + 0.010 * edgeMask * core + wake * 0.0015);
-  dye.w = 1.0;
+  function step(t, dt) {
+    for (let k = 0; k < 2; k++) {
+      applyWing(t + k * dt * 0.5, dt * 0.5);
+      applyVortices(dt * 0.5);
+      applyTouchForces();
+      advect(dt * 0.5);
+      diffuseAndBoundary();
+    }
+    computeCurl();
+  }
 
-  // mild rightward flow so wake trails behind wing
-  vel.x += 0.0018;
+  function drawField() {
+    ctx.fillStyle = '#02060b';
+    ctx.fillRect(0, 0, W, H);
 
-  velOut[i] = vec4f(vel.xy, 0.0, 0.0);
-  dyeOut[i] = vec4f(dye.xyz, 1.0);
-}
-`
-});
+    const cellW = W / simW;
+    const cellH = H / simH;
+    for (let y = 1; y < simH - 1; y++) {
+      for (let x = 1; x < simW - 1; x++) {
+        const i = idx(x, y);
+        const d = dye[i];
+        const c = curl[i];
+        if (d < 0.01 && Math.abs(c) < 0.03) continue;
+        const pos = clamp(c * 0.5 + 0.5, 0, 1);
+        const blue = Math.floor(120 + d * 160 + pos * 50);
+        const red = Math.floor(40 + Math.max(0, -c) * 180 + d * 45);
+        const green = Math.floor(70 + d * 120);
+        const alpha = clamp(d * 0.12 + Math.abs(c) * 0.13, 0, 0.6);
+        ctx.fillStyle = `rgba(${red},${green},${blue},${alpha})`;
+        ctx.fillRect(x * cellW, y * cellH, cellW + 1, cellH + 1);
+      }
+    }
+  }
 
-const renderShader = device.createShaderModule({
-  label: 'renderShader',
-  code: `
-struct Uniforms {
-  grid : vec2f,
-  dt : f32,
-  time : f32,
-  amp : f32,
-  freq : f32,
-  pitchBias : f32,
-  swirl : f32,
-  aspect : f32,
-  resetFlag : f32,
-  pad0 : f32,
-  pad1 : f32,
-  pad2 : f32,
-};
+  function drawParticles() {
+    ctx.lineWidth = 1;
+    for (const p of particles) {
+      p.life -= 1;
+      if (p.life <= 0 || p.x < 0 || p.x >= simW || p.y < 0 || p.y >= simH) {
+        p.x = Math.random() * (simW * 0.55);
+        p.y = Math.random() * simH;
+        p.px = p.x; p.py = p.y;
+        p.life = 120 + Math.random() * 160;
+      }
+      p.px = p.x; p.py = p.y;
+      const vx = sample(u, p.x, p.y);
+      const vy = sample(v, p.x, p.y);
+      p.x += vx * 0.09 + 0.06;
+      p.y += vy * 0.09;
+      const sx0 = p.px / simW * W, sy0 = p.py / simH * H;
+      const sx1 = p.x / simW * W, sy1 = p.y / simH * H;
+      const speed = Math.min(1, Math.hypot(vx, vy) * 0.12);
+      ctx.strokeStyle = `rgba(${80 + speed*120}, ${170 + speed*60}, 255, ${0.10 + speed*0.22})`;
+      ctx.beginPath();
+      ctx.moveTo(sx0, sy0);
+      ctx.lineTo(sx1, sy1);
+      ctx.stroke();
+    }
+  }
 
-@group(0) @binding(0) var<uniform> U : Uniforms;
-@group(0) @binding(1) var<storage, read> vel : array<vec4f>;
-@group(0) @binding(2) var<storage, read> dye : array<vec4f>;
+  function drawWing(t) {
+    const wing = wingForTime(t);
+    const cx = wing.cx / simW * W;
+    const cy = wing.cy / simH * H;
+    const chord = wing.chord / simW * W;
+    const thick = wing.thick / simH * H;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(wing.ang);
+    const grd = ctx.createLinearGradient(-chord * 0.55, 0, chord * 0.55, 0);
+    grd.addColorStop(0, 'rgba(230,245,255,0.90)');
+    grd.addColorStop(0.45, 'rgba(135,205,255,0.95)');
+    grd.addColorStop(1, 'rgba(76,150,235,0.88)');
+    ctx.fillStyle = grd;
+    ctx.shadowBlur = 16;
+    ctx.shadowColor = 'rgba(90,180,255,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, chord * 0.52, thick * 1.05, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(-chord * 0.45, 0);
+    ctx.quadraticCurveTo(-chord * 0.1, -thick * 0.45, chord * 0.48, 0);
+    ctx.stroke();
+    ctx.restore();
+  }
 
-struct VSOut {
-  @builtin(position) pos : vec4f,
-  @location(0) uv : vec2f,
-};
+  function drawLabels(t) {
+    const wing = wingForTime(t);
+    const text = `flow: ${Math.abs(wing.vy).toFixed(1)}   vortices: ${vortices.length}`;
+    ctx.fillStyle = 'rgba(220,235,255,0.7)';
+    ctx.font = '12px system-ui, sans-serif';
+    ctx.fillText(text, 12, H - 12);
+  }
 
-fn idx(x: u32, y: u32) -> u32 {
-  return y * u32(U.grid.x) + x;
-}
+  function frame(ts) {
+    const t = ts * 0.001;
+    let dt = lastT ? Math.min(0.033, t - lastT) : 0.016;
+    lastT = t;
+    step(t, dt);
+    drawField();
+    drawParticles();
+    drawWing(t);
+    drawLabels(t);
+    requestAnimationFrame(frame);
+  }
 
-@vertex
-fn vsMain(@builtin(vertex_index) vi: u32) -> VSOut {
-  var pos = array<vec2f, 6>(
-    vec2f(-1.0, -1.0),
-    vec2f( 1.0, -1.0),
-    vec2f(-1.0,  1.0),
-    vec2f(-1.0,  1.0),
-    vec2f( 1.0, -1.0),
-    vec2f( 1.0,  1.0)
-  );
-  var out : VSOut;
-  out.pos = vec4f(pos[vi], 0.0, 1.0);
-  out.uv = pos[vi] * 0.5 + 0.5;
-  return out;
-}
+  function ptFromEvent(ev) {
+    const r = cv.getBoundingClientRect();
+    return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+  }
 
-@fragment
-fn fsMain(in: VSOut) -> @location(0) vec4f {
-  let p = vec2u(
-    min(u32(in.uv.x * U.grid.x), u32(U.grid.x) - 1u),
-    min(u32((1.0 - in.uv.y) * U.grid.y), u32(U.grid.y) - 1u)
-  );
-  let i = idx(p.x, p.y);
-  let v = vel[i].xy;
-  let d = dye[i].xyz;
-
-  let speed = length(v) * 16.0;
-  let base = vec3f(0.02, 0.05, 0.09);
-  let flow = vec3f(0.10, 0.35, 0.65) * speed;
-  var color = base + d + flow;
-
-  // overlay wing
-  let t = U.time;
-  let cy = 0.5 + U.amp * sin(2.0 * 3.14159265 * U.freq * t);
-  let theta = 0.55 * U.amp * cos(2.0 * 3.14159265 * U.freq * t) + 0.35 * U.pitchBias * sin(4.0 * 3.14159265 * U.freq * t + 1.2);
-  let center = vec2f(0.34, cy);
-  let dir = vec2f(cos(theta), sin(theta));
-  let nrm = vec2f(-dir.y, dir.x);
-  let rel = vec2f(in.uv.x, 1.0 - in.uv.y) - center;
-  let span = dot(rel, dir);
-  let chord = dot(rel, nrm);
-  let halfLen = 0.16;
-  let wingMask = smoothstep(0.022, 0.0, abs(chord)) * smoothstep(0.18, 0.14, abs(span));
-  color = mix(color, vec3f(0.92, 0.95, 0.98), wingMask);
-
-  // grid subtle
-  let gx = abs(fract(in.uv.x * 24.0) - 0.5);
-  let gy = abs(fract(in.uv.y * 14.0) - 0.5);
-  let grid = smoothstep(0.495, 0.5, max(gx, gy)) * 0.04;
-  color += grid;
-
-  color = pow(color, vec3f(0.82));
-  return vec4f(color, 1.0);
-}
-`
-});
-
-const simBindGroupLayout = device.createBindGroupLayout({
-  entries: [
-    { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
-    { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-    { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
-    { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-    { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
-  ],
-});
-
-const renderBindGroupLayout = device.createBindGroupLayout({
-  entries: [
-    { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
-    { binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
-    { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
-  ],
-});
-
-const simPipeline = device.createComputePipeline({
-  layout: device.createPipelineLayout({ bindGroupLayouts: [simBindGroupLayout] }),
-  compute: { module: simShader, entryPoint: 'main' },
-});
-
-const renderPipeline = device.createRenderPipeline({
-  layout: device.createPipelineLayout({ bindGroupLayouts: [renderBindGroupLayout] }),
-  vertex: { module: renderShader, entryPoint: 'vsMain' },
-  fragment: { module: renderShader, entryPoint: 'fsMain', targets: [{ format }] },
-  primitive: { topology: 'triangle-list' },
-});
-
-function makeSimBindGroup(inVel, outVel, inDye, outDye) {
-  return device.createBindGroup({
-    layout: simBindGroupLayout,
-    entries: [
-      { binding: 0, resource: { buffer: uniformsBuffer } },
-      { binding: 1, resource: { buffer: inVel } },
-      { binding: 2, resource: { buffer: outVel } },
-      { binding: 3, resource: { buffer: inDye } },
-      { binding: 4, resource: { buffer: outDye } },
-    ],
+  let activeTouch = false;
+  cv.addEventListener('pointerdown', (ev) => {
+    activeTouch = true;
+    const p = ptFromEvent(ev);
+    touches = [{ x: p.x, y: p.y, vx: 0, vy: 0 }];
   });
-}
-
-function makeRenderBindGroup(vel, dye) {
-  return device.createBindGroup({
-    layout: renderBindGroupLayout,
-    entries: [
-      { binding: 0, resource: { buffer: uniformsBuffer } },
-      { binding: 1, resource: { buffer: vel } },
-      { binding: 2, resource: { buffer: dye } },
-    ],
+  cv.addEventListener('pointermove', (ev) => {
+    if (!activeTouch) return;
+    const p = ptFromEvent(ev);
+    const t = touches[0] || { x: p.x, y: p.y, vx: 0, vy: 0 };
+    t.vx = (p.x - t.x) / W * simW * 1.8;
+    t.vy = (p.y - t.y) / H * simH * 1.8;
+    t.x = p.x; t.y = p.y;
+    touches[0] = t;
   });
-}
+  window.addEventListener('pointerup', () => { activeTouch = false; touches = []; });
+  window.addEventListener('pointercancel', () => { activeTouch = false; touches = []; });
+  resetBtn.addEventListener('click', clearSim);
+  window.addEventListener('resize', resize);
 
-let ping = 0;
-let lastTime = performance.now();
-let simTime = 0;
-
-function frame(now) {
-  const dt = Math.min(0.033, (now - lastTime) * 0.001 || 0.016);
-  lastTime = now;
-  simTime += dt;
-
-  uniformsArray[0] = GRID_W;
-  uniformsArray[1] = GRID_H;
-  uniformsArray[2] = dt;
-  uniformsArray[3] = simTime;
-  uniformsArray[4] = parseFloat(ampEl.value);
-  uniformsArray[5] = parseFloat(freqEl.value);
-  uniformsArray[6] = parseFloat(pitchEl.value);
-  uniformsArray[7] = parseFloat(swirlEl.value);
-  uniformsArray[8] = canvas.width / Math.max(1, canvas.height);
-  uniformsArray[9] = 0;
-  device.queue.writeBuffer(uniformsBuffer, 0, uniformsArray);
-
-  const inVel = ping === 0 ? velA : velB;
-  const outVel = ping === 0 ? velB : velA;
-  const inDye = ping === 0 ? dyeA : dyeB;
-  const outDye = ping === 0 ? dyeB : dyeA;
-
-  const simBindGroup = makeSimBindGroup(inVel, outVel, inDye, outDye);
-  const renderBindGroup = makeRenderBindGroup(outVel, outDye);
-
-  const encoder = device.createCommandEncoder();
-
-  const cpass = encoder.beginComputePass();
-  cpass.setPipeline(simPipeline);
-  cpass.setBindGroup(0, simBindGroup);
-  cpass.dispatchWorkgroups(Math.ceil(GRID_W / WORKGROUP), Math.ceil(GRID_H / WORKGROUP));
-  cpass.end();
-
-  const view = context.getCurrentTexture().createView();
-  const rpass = encoder.beginRenderPass({
-    colorAttachments: [{
-      view,
-      clearValue: { r: 0.01, g: 0.02, b: 0.035, a: 1 },
-      loadOp: 'clear',
-      storeOp: 'store',
-    }],
-  });
-  rpass.setPipeline(renderPipeline);
-  rpass.setBindGroup(0, renderBindGroup);
-  rpass.draw(6);
-  rpass.end();
-
-  device.queue.submit([encoder.finish()]);
-  ping = 1 - ping;
+  resize();
+  clearSim();
   requestAnimationFrame(frame);
-}
-
-requestAnimationFrame(frame);
+})();
 </script>
 </body>
 </html>
