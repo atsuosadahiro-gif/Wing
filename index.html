@@ -26,7 +26,7 @@
     <div class="row"><label>羽ばたき振幅</label><input id="amp" type="range" min="8" max="80" value="36"></div>
     <div class="row"><label>周波数</label><input id="freq" type="range" min="20" max="120" value="46"></div>
     <div class="row"><label>翼の迎角変化</label><input id="pitch" type="range" min="0" max="100" value="54"><label style="min-width:auto;font-size:13px"><input id="showPressure" type="checkbox" checked> 圧力</label><label style="min-width:auto;font-size:13px"><input id="showContours" type="checkbox" checked> 等圧線</label><label style="min-width:auto;font-size:13px"><input id="showFlow" type="checkbox" checked> 流線</label><button id="reset">リセット</button><span class="pill">論文図版</span></div>
-    <div id="msg">論文図寄りの可視化版です。圧力は非線形スケールで強調し、等圧線レベルを増やして、圧力勾配と渦まわりの構造を読みやすくしています。</div>
+    <div id="msg">論文図寄りの可視化版です。圧力マップはセル塗りではなくバイリニア補間で滑らかに描画し、等圧線レベルも増やして、圧力勾配と渦まわりの構造を読みやすくしています。</div>
   </div>
   <div id="stage"><canvas id="cv"></canvas></div>
 </div>
@@ -227,12 +227,10 @@ function updateForces(Lw,Rw,R){
   if(n>0){lift=.86*lift+.14*Math.max(0,lf/n); thrust=.86*thrust+.14*Math.max(0,th/n+.15)}
 }
 
-function pressureColor(val){
+function pressureRGBA(val){
   // Paper-like diverging map with stronger intra-hue shading.
-  // Negative: pale cyan -> blue -> deep navy
-  // Positive: pale peach -> red -> dark crimson
   const v = clamp(val, -1.0, 1.0);
-  const mag = Math.pow(Math.abs(v), 0.42); // stronger visual separation in low-mid range
+  const mag = Math.pow(Math.abs(v), 0.42);
 
   function mix(a,b,k){ return a + (b-a)*k; }
 
@@ -266,15 +264,54 @@ function pressureColor(val){
       a = mix(0.52, 0.98, k);
     }
   }
-  return `rgba(${r|0},${g|0},${b|0},${a.toFixed(3)})`;
+  return {r:r|0, g:g|0, b:b|0, a:Math.max(0, Math.min(255, Math.round(a*255)))};
+}
+function pressureColor(val){
+  const c = pressureRGBA(val);
+  return `rgba(${c.r},${c.g},${c.b},${(c.a/255).toFixed(3)})`;
 }
 function drawPressureMap(R){
-  ctx.save(); ctx.beginPath(); rr(R.x,R.y,R.w,R.h,18); ctx.clip();
-  for(let j=1;j<NY-1;j++) for(let i=1;i<NX-1;i++){
-    const id=idx(i,j); if(solid[id]) continue;
-    const val=clamp(pf[id]*1.4,-0.9,0.9); if(Math.abs(val)<0.05) continue;
-    ctx.fillStyle=pressureColor(val); ctx.fillRect(R.x+i*cell-0.5,R.y+j*cell-0.5,cell+1,cell+1);
+  ctx.save();
+  ctx.beginPath(); rr(R.x,R.y,R.w,R.h,18); ctx.clip();
+
+  // Smooth rendering by bilinear interpolation from the pressure grid
+  const img = ctx.createImageData(Math.floor(R.w), Math.floor(R.h));
+  const data = img.data;
+
+  for(let py=0; py<img.height; py++){
+    for(let px=0; px<img.width; px++){
+      const gx = px / cell;
+      const gy = py / cell;
+
+      const i = Math.floor(gx);
+      const j = Math.floor(gy);
+
+      if(i < 0 || j < 0 || i >= NX-1 || j >= NY-1) continue;
+
+      const fx = gx - i;
+      const fy = gy - j;
+
+      const p00 = pf[idx(i,j)];
+      const p10 = pf[idx(i+1,j)];
+      const p01 = pf[idx(i,j+1)];
+      const p11 = pf[idx(i+1,j+1)];
+
+      const p =
+        p00*(1-fx)*(1-fy) +
+        p10*(fx)*(1-fy) +
+        p01*(1-fx)*(fy) +
+        p11*(fx)*(fy);
+
+      const c = pressureRGBA(p);
+      const k = (py*img.width + px) * 4;
+      data[k]   = c.r;
+      data[k+1] = c.g;
+      data[k+2] = c.b;
+      data[k+3] = c.a;
+    }
   }
+
+  ctx.putImageData(img, Math.floor(R.x), Math.floor(R.y));
   ctx.restore();
 }
 function drawFlowLines(R,set){
