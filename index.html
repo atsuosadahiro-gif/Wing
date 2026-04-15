@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>鳥の羽 リアル強化版 + メーター</title>
+<title>鳥の2枚翼 リアル強化版 + メーター</title>
 <style>
   html, body {
     margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
@@ -39,7 +39,7 @@
   <div id="ui">
     <div class="row">
       <label>羽ばたき振幅</label>
-      <input id="amp" type="range" min="10" max="120" value="44" />
+      <input id="amp" type="range" min="10" max="120" value="42" />
     </div>
     <div class="row">
       <label>周波数</label>
@@ -51,12 +51,12 @@
     </div>
     <div class="row">
       <label>渦の強さ</label>
-      <input id="strength" type="range" min="10" max="160" value="50" />
+      <input id="strength" type="range" min="10" max="160" value="48" />
       <button id="reset">リセット</button>
-      <span class="pill">リアル強化版</span>
+      <span class="pill">左右2枚翼</span>
     </div>
     <div id="msg">
-      体幹の上下動、肩・肘・手羽の遅れ、翼端羽のしなり、上げ羽での折りたたみを強化した版です。左上に簡易の揚力・推力メーターを表示します。
+      左右2枚翼と胴体を持つ版です。肩・肘・手首の3段関節、翼端羽のしなり、上げ羽での折りたたみを入れています。左上に簡易の揚力・推力メーターを表示します。
     </div>
   </div>
   <canvas id="cv"></canvas>
@@ -82,8 +82,8 @@
   let emissionCooldown = 0;
   let liftVal = 0, thrustVal = 0, liftAvg = 0, thrustAvg = 0;
 
-  const MAX_VORTICES = 44;
-  const MAX_TRACERS = 620;
+  const MAX_VORTICES = 54;
+  const MAX_TRACERS = 700;
   const rand = (a,b) => a + Math.random() * (b-a);
 
   function resize() {
@@ -111,12 +111,14 @@
     const p = params();
     const phase = t * p.freq * Math.PI * 2;
 
-    const bodyX = W * 0.16 + Math.sin(phase) * 3.0;
-    const bodyY0 = H * 0.49;
-    const bodyY = bodyY0 + p.amp * 0.14 * Math.sin(phase - 0.25);
+    const bodyX = W * 0.28 + Math.sin(phase) * 2.5;
+    const bodyY0 = H * 0.50;
+    const bodyY = bodyY0 + p.amp * 0.10 * Math.sin(phase - 0.25);
 
-    const shoulderX = bodyX + 6;
-    const shoulderY = bodyY - 2 + p.amp * 0.90 * Math.sin(phase);
+    const spanOffset = Math.min(20, Math.max(10, W * 0.018));
+    const shoulderLeftX = bodyX - spanOffset;
+    const shoulderRightX = bodyX + spanOffset;
+    const shoulderY = bodyY - 2 + p.amp * 0.86 * Math.sin(phase);
 
     const vy = p.amp * p.freq * Math.PI * 2 * Math.cos(phase);
 
@@ -126,9 +128,9 @@
     const fold = 0.18 + 0.58 * upstroke;
     const spread = 0.72 + 0.42 * downstroke;
 
-    const innerLen = Math.min(78, Math.max(46, W * 0.108)) * (0.92 + 0.10 * downstroke);
-    const outerLen = Math.min(96, Math.max(58, W * 0.14)) * (1.00 - 0.28 * fold);
-    const handLen  = Math.min(54, Math.max(28, W * 0.075)) * (1.02 - 0.14 * fold);
+    const innerLen = Math.min(82, Math.max(48, W * 0.095)) * (0.92 + 0.10 * downstroke);
+    const outerLen = Math.min(104, Math.max(62, W * 0.122)) * (1.00 - 0.28 * fold);
+    const handLen  = Math.min(58, Math.max(30, W * 0.068)) * (1.02 - 0.14 * fold);
 
     const base = -0.28 + 0.34 * Math.sin(phase + Math.PI/2);
     const shoulderPitch = base + 0.18 * p.twist * Math.sin(phase + Math.PI/2);
@@ -142,7 +144,7 @@
 
     return {
       phase, vy, downstroke, upstroke, fold, spread,
-      bodyX, bodyY, shoulderX, shoulderY,
+      bodyX, bodyY, shoulderLeftX, shoulderRightX, shoulderY,
       innerLen, outerLen, handLen,
       angInner, angOuter, angHand
     };
@@ -203,7 +205,7 @@
 
   function computeForces() {
     let lift = 0, thrust = 0, n = 0;
-    const x0 = W * 0.24, x1 = W * 0.72;
+    const x0 = W * 0.18, x1 = W * 0.78;
     const y0 = H * 0.18, y1 = H * 0.82;
 
     for (const tr of tracers) {
@@ -219,18 +221,34 @@
     thrustAvg = thrustAvg * 0.92 + thrustVal * 0.08;
   }
 
+  function wingJoints(ws, side) {
+    // side: -1 for left, +1 for right
+    const shoulderX = side < 0 ? ws.shoulderLeftX : ws.shoulderRightX;
+    const shoulderY = ws.shoulderY;
+
+    // mirror angles horizontally
+    const a1 = side < 0 ? Math.PI - ws.angInner : ws.angInner;
+    const a2 = side < 0 ? Math.PI - ws.angOuter : ws.angOuter;
+    const a3 = side < 0 ? Math.PI - ws.angHand  : ws.angHand;
+
+    const elbowX = shoulderX + Math.cos(a1) * ws.innerLen;
+    const elbowY = shoulderY + Math.sin(a1) * ws.innerLen;
+    const wristX = elbowX + Math.cos(a2) * ws.outerLen;
+    const wristY = elbowY + Math.sin(a2) * ws.outerLen;
+    const tipX = wristX + Math.cos(a3) * ws.handLen;
+    const tipY = wristY + Math.sin(a3) * ws.handLen;
+
+    return { shoulderX, shoulderY, elbowX, elbowY, wristX, wristY, tipX, tipY, a1, a2, a3 };
+  }
+
   function step(dt) {
     simT += dt;
     const p = params();
     const ws = wingState(simT);
     emissionCooldown -= dt;
 
-    const elbowX = ws.shoulderX + Math.cos(ws.angInner) * ws.innerLen;
-    const elbowY = ws.shoulderY + Math.sin(ws.angInner) * ws.innerLen;
-    const wristX = elbowX + Math.cos(ws.angOuter) * ws.outerLen;
-    const wristY = elbowY + Math.sin(ws.angOuter) * ws.outerLen;
-    const tipX = wristX + Math.cos(ws.angHand) * ws.handLen;
-    const tipY = wristY + Math.sin(ws.angHand) * ws.handLen;
+    const left = wingJoints(ws, -1);
+    const right = wingJoints(ws, +1);
 
     const strokeSign = Math.sign(ws.vy || 1);
     const signFlip = Math.sign(prevStrokeVel || 1) !== strokeSign;
@@ -240,11 +258,11 @@
       const gamma = (-strokeSign) * (24 + 72 * p.strength + 34 * p.twist);
       const r = 13 + 9 * p.twist;
 
-      emitVortex(tipX, tipY, gamma, r);
-      emitVortex(tipX + rand(5, 11), tipY + strokeSign * rand(4, 10), -gamma * 0.30, r * 0.84);
-
-      // slightly weaker vortex from wrist for fuller wake
-      emitVortex(wristX + rand(2, 8), wristY + strokeSign * rand(2, 8), gamma * 0.35, r * 0.72);
+      for (const wing of [left, right]) {
+        emitVortex(wing.tipX, wing.tipY, gamma, r);
+        emitVortex(wing.tipX + rand(-8, 8), wing.tipY + strokeSign * rand(4, 10), -gamma * 0.30, r * 0.84);
+        emitVortex(wing.wristX + rand(-6, 6), wing.wristY + strokeSign * rand(2, 8), gamma * 0.35, r * 0.72);
+      }
 
       emissionCooldown = 0.17 + (1.0 - p.freq) * 0.05;
     }
@@ -273,7 +291,7 @@
       q.gamma *= Math.pow(0.985, dt * 60);
       q.r += 1.0 * dt * 60;
 
-      if (q.x > W + 60 || q.y < -80 || q.y > H + 80) {
+      if (q.x > W + 70 || q.x < -70 || q.y < -80 || q.y > H + 80) {
         vortices.splice(i,1);
       }
     }
@@ -351,47 +369,25 @@
     }
   }
 
-  function drawBirdWing() {
-    const ws = wingState(simT);
+  function drawWingFromJoints(ws, joint, side) {
+    const shoulderX = joint.shoulderX, shoulderY = joint.shoulderY;
+    const elbowX = joint.elbowX, elbowY = joint.elbowY;
+    const wristX = joint.wristX, wristY = joint.wristY;
+    const tipX = joint.tipX, tipY = joint.tipY;
+    const a1 = joint.a1, a2 = joint.a2, a3 = joint.a3;
 
-    const shoulderX = ws.shoulderX;
-    const shoulderY = ws.shoulderY;
-    const elbowX = shoulderX + Math.cos(ws.angInner) * ws.innerLen;
-    const elbowY = shoulderY + Math.sin(ws.angInner) * ws.innerLen;
-    const wristX = elbowX + Math.cos(ws.angOuter) * ws.outerLen;
-    const wristY = elbowY + Math.sin(ws.angOuter) * ws.outerLen;
-    const tipX = wristX + Math.cos(ws.angHand) * ws.handLen;
-    const tipY = wristY + Math.sin(ws.angHand) * ws.handLen;
+    const innerWidth = 22 * ws.spread;
+    const outerWidth = 18 * (1 - 0.22 * ws.fold);
+    const handWidth  = 11 * (1 - 0.35 * ws.fold);
 
-    const innerWidth = 24 * ws.spread;
-    const outerWidth = 19 * (1 - 0.22 * ws.fold);
-    const handWidth  = 12 * (1 - 0.35 * ws.fold);
+    const nx1 = -Math.sin(a1), ny1 = Math.cos(a1);
+    const nx2 = -Math.sin(a2), ny2 = Math.cos(a2);
+    const nx3 = -Math.sin(a3), ny3 = Math.cos(a3);
 
     ctx.save();
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
 
-    // body
-    const bodyGrad = ctx.createRadialGradient(ws.bodyX - 10, ws.bodyY - 4, 1, ws.bodyX, ws.bodyY, 34);
-    bodyGrad.addColorStop(0, 'rgba(220,238,255,0.88)');
-    bodyGrad.addColorStop(0.42, 'rgba(110,175,245,0.72)');
-    bodyGrad.addColorStop(1, 'rgba(40,100,185,0.06)');
-    ctx.fillStyle = bodyGrad;
-    ctx.beginPath();
-    ctx.ellipse(ws.bodyX - 12, ws.bodyY + 1, 23, 31, -0.10, 0, Math.PI * 2);
-    ctx.fill();
-
-    // neck/head hint
-    ctx.fillStyle = 'rgba(170,215,255,0.22)';
-    ctx.beginPath();
-    ctx.ellipse(ws.bodyX - 28, ws.bodyY - 8, 8, 10, 0.15, 0, Math.PI * 2);
-    ctx.fill();
-
-    const nx1 = -Math.sin(ws.angInner), ny1 = Math.cos(ws.angInner);
-    const nx2 = -Math.sin(ws.angOuter), ny2 = Math.cos(ws.angOuter);
-    const nx3 = -Math.sin(ws.angHand),  ny3 = Math.cos(ws.angHand);
-
-    // inner wing
     const g1 = ctx.createLinearGradient(shoulderX, shoulderY, elbowX, elbowY);
     g1.addColorStop(0, 'rgba(210,235,255,0.92)');
     g1.addColorStop(1, 'rgba(110,175,245,0.78)');
@@ -401,21 +397,20 @@
     ctx.beginPath();
     ctx.moveTo(shoulderX + nx1 * innerWidth * 0.40, shoulderY + ny1 * innerWidth * 0.40);
     ctx.quadraticCurveTo(
-      shoulderX + Math.cos(ws.angInner) * ws.innerLen * 0.34 + nx1 * innerWidth * 0.18,
-      shoulderY + Math.sin(ws.angInner) * ws.innerLen * 0.34 + ny1 * innerWidth * 0.18,
+      shoulderX + Math.cos(a1) * ws.innerLen * 0.34 + nx1 * innerWidth * 0.18,
+      shoulderY + Math.sin(a1) * ws.innerLen * 0.34 + ny1 * innerWidth * 0.18,
       elbowX + nx1 * innerWidth * 0.18, elbowY + ny1 * innerWidth * 0.18
     );
     ctx.lineTo(elbowX - nx1 * innerWidth * 0.32, elbowY - ny1 * innerWidth * 0.32);
     ctx.quadraticCurveTo(
-      shoulderX + Math.cos(ws.angInner) * ws.innerLen * 0.24 - nx1 * innerWidth * 0.34,
-      shoulderY + Math.sin(ws.angInner) * ws.innerLen * 0.24 - ny1 * innerWidth * 0.34,
+      shoulderX + Math.cos(a1) * ws.innerLen * 0.24 - nx1 * innerWidth * 0.34,
+      shoulderY + Math.sin(a1) * ws.innerLen * 0.24 - ny1 * innerWidth * 0.34,
       shoulderX - nx1 * innerWidth * 0.20, shoulderY - ny1 * innerWidth * 0.20
     );
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
 
-    // outer wing
     const g2 = ctx.createLinearGradient(elbowX, elbowY, wristX, wristY);
     g2.addColorStop(0, 'rgba(188,224,255,0.84)');
     g2.addColorStop(1, 'rgba(88,150,232,0.72)');
@@ -423,21 +418,20 @@
     ctx.beginPath();
     ctx.moveTo(elbowX + nx2 * outerWidth * 0.36, elbowY + ny2 * outerWidth * 0.36);
     ctx.quadraticCurveTo(
-      elbowX + Math.cos(ws.angOuter) * ws.outerLen * 0.42 + nx2 * outerWidth * 0.22,
-      elbowY + Math.sin(ws.angOuter) * ws.outerLen * 0.42 + ny2 * outerWidth * 0.22,
+      elbowX + Math.cos(a2) * ws.outerLen * 0.42 + nx2 * outerWidth * 0.22,
+      elbowY + Math.sin(a2) * ws.outerLen * 0.42 + ny2 * outerWidth * 0.22,
       wristX + nx2 * outerWidth * 0.10, wristY + ny2 * outerWidth * 0.10
     );
     ctx.lineTo(wristX - nx2 * outerWidth * 0.20, wristY - ny2 * outerWidth * 0.20);
     ctx.quadraticCurveTo(
-      elbowX + Math.cos(ws.angOuter) * ws.outerLen * 0.40 - nx2 * outerWidth * 0.20,
-      elbowY + Math.sin(ws.angOuter) * ws.outerLen * 0.40 - ny2 * outerWidth * 0.20,
+      elbowX + Math.cos(a2) * ws.outerLen * 0.40 - nx2 * outerWidth * 0.20,
+      elbowY + Math.sin(a2) * ws.outerLen * 0.40 - ny2 * outerWidth * 0.20,
       elbowX - nx2 * outerWidth * 0.34, elbowY - ny2 * outerWidth * 0.34
     );
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
 
-    // hand wing
     const g3 = ctx.createLinearGradient(wristX, wristY, tipX, tipY);
     g3.addColorStop(0, 'rgba(198,230,255,0.82)');
     g3.addColorStop(1, 'rgba(95,158,238,0.68)');
@@ -445,55 +439,27 @@
     ctx.beginPath();
     ctx.moveTo(wristX + nx3 * handWidth * 0.34, wristY + ny3 * handWidth * 0.34);
     ctx.quadraticCurveTo(
-      wristX + Math.cos(ws.angHand) * ws.handLen * 0.44 + nx3 * handWidth * 0.20,
-      wristY + Math.sin(ws.angHand) * ws.handLen * 0.44 + ny3 * handWidth * 0.20,
+      wristX + Math.cos(a3) * ws.handLen * 0.44 + nx3 * handWidth * 0.20,
+      wristY + Math.sin(a3) * ws.handLen * 0.44 + ny3 * handWidth * 0.20,
       tipX + nx3 * handWidth * 0.04, tipY + ny3 * handWidth * 0.04
     );
     ctx.lineTo(tipX - nx3 * handWidth * 0.14, tipY - ny3 * handWidth * 0.14);
     ctx.quadraticCurveTo(
-      wristX + Math.cos(ws.angHand) * ws.handLen * 0.42 - nx3 * handWidth * 0.16,
-      wristY + Math.sin(ws.angHand) * ws.handLen * 0.42 - ny3 * handWidth * 0.16,
+      wristX + Math.cos(a3) * ws.handLen * 0.42 - nx3 * handWidth * 0.16,
+      wristY + Math.sin(a3) * ws.handLen * 0.42 - ny3 * handWidth * 0.16,
       wristX - nx3 * handWidth * 0.32, wristY - ny3 * handWidth * 0.32
     );
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
 
-    // covert feather hints
-    for (let i=0; i<5; i++) {
-      const k = i / 4;
-      const bx = elbowX + Math.cos(ws.angOuter) * (ws.outerLen * (0.10 + 0.13 * k));
-      const by = elbowY + Math.sin(ws.angOuter) * (ws.outerLen * (0.10 + 0.13 * k));
-      const fang = ws.angOuter + (-0.10 + 0.08 * i) + 0.06 * ws.downstroke;
-      const flen = 18 + 6 * k + 6 * ws.spread;
-      const fwid = 4.6 - 0.6 * k;
-      const tx = bx + Math.cos(fang) * flen;
-      const ty = by + Math.sin(fang) * flen;
-      const fnx = -Math.sin(fang), fny = Math.cos(fang);
-      ctx.fillStyle = `rgba(186,222,255,${0.42 - 0.03 * k})`;
-      ctx.beginPath();
-      ctx.moveTo(bx + fnx * fwid, by + fny * fwid);
-      ctx.quadraticCurveTo(
-        bx + Math.cos(fang) * flen * 0.52 + fnx * fwid * 0.6,
-        by + Math.sin(fang) * flen * 0.52 + fny * fwid * 0.6,
-        tx, ty
-      );
-      ctx.quadraticCurveTo(
-        bx + Math.cos(fang) * flen * 0.42 - fnx * fwid * 0.4,
-        by + Math.sin(fang) * flen * 0.42 - fny * fwid * 0.4,
-        bx - fnx * fwid * 0.7, by - fny * fwid * 0.7
-      );
-      ctx.closePath();
-      ctx.fill();
-    }
-
-    // primary feathers with stronger splay and bend
     const featherCount = 6;
     for (let i=0; i<featherCount; i++) {
       const k = i / (featherCount - 1);
-      const baseX = wristX + Math.cos(ws.angHand) * (ws.handLen * (0.18 + 0.10 * k));
-      const baseY = wristY + Math.sin(ws.angHand) * (ws.handLen * (0.18 + 0.10 * k));
-      const fang = ws.angHand + (-0.34 + 0.16 * i) + 0.22 * ws.downstroke - 0.16 * ws.upstroke;
+      const baseX = wristX + Math.cos(a3) * (ws.handLen * (0.18 + 0.10 * k));
+      const baseY = wristY + Math.sin(a3) * (ws.handLen * (0.18 + 0.10 * k));
+      const dir = side < 0 ? -1 : 1;
+      const fang = a3 + dir * (-0.34 + 0.16 * i) + dir * 0.22 * ws.downstroke - dir * 0.16 * ws.upstroke;
       const flen = 28 + 14 * k + 12 * ws.spread;
       const curve = 0.10 + 0.14 * ws.downstroke;
       const fwid = 5.5 - 0.7 * k;
@@ -526,6 +492,44 @@
     ctx.restore();
   }
 
+  function drawBody(ws) {
+    ctx.save();
+
+    const bodyGrad = ctx.createRadialGradient(ws.bodyX - 8, ws.bodyY - 4, 1, ws.bodyX, ws.bodyY, 36);
+    bodyGrad.addColorStop(0, 'rgba(220,238,255,0.92)');
+    bodyGrad.addColorStop(0.42, 'rgba(110,175,245,0.74)');
+    bodyGrad.addColorStop(1, 'rgba(40,100,185,0.08)');
+    ctx.fillStyle = bodyGrad;
+    ctx.beginPath();
+    ctx.ellipse(ws.bodyX, ws.bodyY + 1, 28, 34, -0.06, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(175,220,255,0.30)';
+    ctx.beginPath();
+    ctx.ellipse(ws.bodyX - 22, ws.bodyY - 8, 10, 12, 0.12, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(230,245,255,0.18)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(ws.bodyX - 22, ws.bodyY + 2);
+    ctx.lineTo(ws.bodyX + 18, ws.bodyY + 2);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function drawBird() {
+    const ws = wingState(simT);
+    const left = wingJoints(ws, -1);
+    const right = wingJoints(ws, +1);
+
+    // back wing first, then body, then front wing for overlap
+    drawWingFromJoints(ws, left, -1);
+    drawBody(ws);
+    drawWingFromJoints(ws, right, +1);
+  }
+
   function drawMeter() {
     const boxX = 10, boxY = 10, boxW = 190, boxH = 86;
     ctx.fillStyle = 'rgba(4,12,20,0.68)';
@@ -552,7 +556,7 @@
   function drawLabel() {
     ctx.fillStyle = 'rgba(210,225,240,0.22)';
     ctx.font = '12px system-ui, sans-serif';
-    ctx.fillText('鳥の羽 リアル強化版 + メーター', 10, H - 12);
+    ctx.fillText('鳥の左右2枚翼 + メーター', 10, H - 12);
   }
 
   let lastStamp = performance.now();
@@ -564,7 +568,7 @@
     drawBackground();
     drawTracers();
     drawVortices();
-    drawBirdWing();
+    drawBird();
     drawMeter();
     drawLabel();
 
