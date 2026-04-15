@@ -150,9 +150,25 @@ let prevFrontL=null, prevFrontR=null, prevSide=null;
 function idx(field,i,j){ return i + j * field.NX; }
 
 function simRect(field, cardRect){
-  const simW = field.NX * field.cell;
-  const simH = field.NY * field.cell;
-  return {x:cardRect.x, y:cardRect.y, w:simW, h:simH};
+  const insetX = 8;
+  const insetBottom = 8;
+  const headerH = 52;
+  const availW = Math.max(40, cardRect.w - insetX*2);
+  const availH = Math.max(40, cardRect.h - headerH - insetBottom);
+
+  const rawW = field.NX * field.cell;
+  const rawH = field.NY * field.cell;
+  const scale = Math.min(availW / rawW, availH / rawH);
+
+  const w = Math.floor(rawW * scale);
+  const h = Math.floor(rawH * scale);
+
+  return {
+    x: cardRect.x + Math.floor((cardRect.w - w) / 2),
+    y: cardRect.y + headerH,
+    w,
+    h
+  };
 }
 
 
