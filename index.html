@@ -936,6 +936,10 @@ function draw(dt){
   const rightWing = wing(state,'right');
   const sidePose = sideKinematics(state,sideSimR);
 
+  // デバッグ用に、描画前に必ず最新のマスクを再構築する
+  buildFrontMask(frontField,leftWing,rightWing,frontSimR,Math.max(dt,1/60),state,prevFrontL,prevFrontR);
+  buildSideMask(sideField,sidePose,sideSimR,Math.max(dt,1/60),state,prevSide);
+
   if(dt > 0){
     fluidStepFront(frontField,dt,leftWing,rightWing,frontSimR,state);
     fluidStepSide(sideField,dt,sidePose,sideSimR,state);
