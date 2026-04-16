@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>前面・側面 独立流体場版 羽ばたきシミュレーション（圧力ベース力ベクトル・真横水平翼版）</title>
+<title>前面・側面 独立流体場版 羽ばたきシミュレーション（擬似3D真横側面版）</title>
 <style>
   :root{--safe-top:max(env(safe-area-inset-top),0px);--safe-bottom:max(env(safe-area-inset-bottom),0px)}
   html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(180deg,#eef5fb,#dbe8f3 45%,#c6dceb)}
@@ -64,7 +64,7 @@
         <button id="reset">リセット</button>
       </div>
     </div>
-    <div id="msg">鳥の描画に使っているPath2Dを、そのままオフスクリーンに塗ってsolidマスクを作る版です。速度勾配ではなく、平滑化した圧力場の勾配から揚力・推力ベクトルを推定する版です。側面ビューは真横シルエットに寄せ、翼角度もカモメ写真のように水平寄りへ補正しています。</div>
+    <div id="msg">鳥の描画に使っているPath2Dを、そのままオフスクリーンに塗ってsolidマスクを作る版です。側面ビューだけ擬似3Dの重なりを入れた版です。奥翼→胴体→手前翼の順で描き、手前翼が胴体に少しかぶるようにして真横感を強めています。</div>
   </div>
   <div id="stage"><canvas id="cv"></canvas></div>
   <div id="fabBar">
@@ -194,23 +194,21 @@ function wing(s,side){
 function sideKinematics(s,R){
   const p=P(), sc=p.scale;
 
-  // body stays strict side-on
   const bodyCx=R.x+R.w*.46;
   const bodyCy=R.y+R.h*.67+Math.sin(s.ph-.2)*p.amp*.02;
   const tilt=0;
-  const shoulderX=bodyCx-1.2*sc;
-  const shoulderY=bodyCy-1.6*sc;
+  // front wing shoulder slightly lower and a bit behind body front
+  const shoulderX=bodyCx-2.8*sc;
+  const shoulderY=bodyCy-0.8*sc;
 
-  // side wing: make it much more horizontal like the gull image
-  // keep some flap, but suppress the steep upward angle
   const flap = Math.sin(s.ph);
-  const a1 = -0.34 + 0.18*flap - 0.03*s.fold;
-  const a2 = -0.18 + 0.14*flap + 0.05*s.open - 0.05*s.fold;
-  const a3 = -0.08 + 0.10*flap + 0.08*s.open - 0.04*s.fold;
+  const a1 = -0.30 + 0.16*flap - 0.03*s.fold;
+  const a2 = -0.14 + 0.12*flap + 0.04*s.open - 0.05*s.fold;
+  const a3 = -0.04 + 0.08*flap + 0.07*s.open - 0.04*s.fold;
 
-  const hum = 16*sc;
-  const fore = (30*(1-.10*s.fold))*sc;
-  const hand = (36*(1-.08*s.fold))*sc;
+  const hum = 15*sc;
+  const fore = (29*(1-.10*s.fold))*sc;
+  const hand = (35*(1-.08*s.fold))*sc;
 
   const ex=shoulderX+Math.cos(a1)*hum, ey=shoulderY+Math.sin(a1)*hum;
   const wx=ex+Math.cos(a2)*fore, wy=ey+Math.sin(a2)*fore;
@@ -299,6 +297,7 @@ function makeFrontBirdPaths(state, Lw, Rw){
 function makeSideBirdPaths(state, K){
   const sc=state.scale;
 
+  // front wing (hand-side / visible wing)
   const wing = makeSideWingShape(K,sc);
   const wingFill = new Path2D();
   const pts = wing.poly;
@@ -306,9 +305,10 @@ function makeSideBirdPaths(state, K){
   for(let i=1;i<pts.length;i++) wingFill.lineTo(pts[i].x,pts[i].y);
   wingFill.closePath();
 
+  // back wing: shift upward/backward, slightly smaller -> reads as behind torso
   const rearWing = {
-    upper: wing.upper.map(p => ({x:p.x-2.2*sc, y:p.y-4.2*sc})),
-    lower: wing.lower.map(p => ({x:p.x-2.2*sc, y:p.y-4.2*sc}))
+    upper: wing.upper.map(p => ({x: K.bodyCx + (p.x-K.bodyCx)*0.88 - 4.8*sc, y: K.bodyCy + (p.y-K.bodyCy)*0.88 - 6.8*sc})),
+    lower: wing.lower.map(p => ({x: K.bodyCx + (p.x-K.bodyCx)*0.88 - 4.8*sc, y: K.bodyCy + (p.y-K.bodyCy)*0.88 - 6.8*sc}))
   };
   rearWing.poly = rearWing.upper.concat(rearWing.lower);
 
@@ -333,8 +333,8 @@ function makeSideBirdPaths(state, K){
   skeleton.moveTo(K.shoulderX,K.shoulderY); skeleton.lineTo(K.ex,K.ey); skeleton.lineTo(K.wx,K.wy); skeleton.lineTo(K.tx,K.ty);
 
   const body = new Path2D();
-  body.ellipse(K.bodyCx, K.bodyCy+3*sc, 16*sc, 10*sc, 0, 0, Math.PI*2);
-  body.ellipse(K.bodyCx-9*sc, K.bodyCy-8*sc, 5.3*sc, 4.3*sc, 0, 0, Math.PI*2);
+  body.ellipse(K.bodyCx+1.5*sc, K.bodyCy+3*sc, 17.5*sc, 10.5*sc, 0, 0, Math.PI*2);
+  body.ellipse(K.bodyCx-10.5*sc, K.bodyCy-8.1*sc, 5.8*sc, 4.5*sc, 0, 0, Math.PI*2);
 
   return {wing,wingFill,rearWing,rearWingFill,wingTex,rearWingTex,skeleton,body};
 }
@@ -698,20 +698,20 @@ function drawSideBird(state, K, paths){
   const sc=state.scale;
   ctx.save();
 
-  // rear wing first
-  ctx.fillStyle='rgba(228,234,241,.62)';
+  // 1) rear wing behind torso
+  ctx.fillStyle='rgba(226,232,239,.36)';
   ctx.fill(paths.rearWingFill);
-  const rearGrad=ctx.createLinearGradient(K.shoulderX-6*sc,K.shoulderY-4*sc,K.tx-4*sc,K.ty-4*sc);
-  rearGrad.addColorStop(0,'rgba(244,246,248,0.55)');
-  rearGrad.addColorStop(.7,'rgba(226,231,237,0.44)');
-  rearGrad.addColorStop(1,'rgba(184,194,208,0.32)');
+  const rearGrad=ctx.createLinearGradient(K.shoulderX-12*sc,K.shoulderY-10*sc,K.tx-8*sc,K.ty-8*sc);
+  rearGrad.addColorStop(0,'rgba(244,246,248,0.34)');
+  rearGrad.addColorStop(.7,'rgba(226,231,237,0.26)');
+  rearGrad.addColorStop(1,'rgba(184,194,208,0.20)');
   ctx.fillStyle=rearGrad;
   ctx.fill(paths.rearWingFill);
-  ctx.strokeStyle='rgba(255,255,255,0.18)';
-  ctx.lineWidth=Math.max(.4,0.55*sc);
+  ctx.strokeStyle='rgba(255,255,255,0.10)';
+  ctx.lineWidth=Math.max(.35,0.5*sc);
   ctx.stroke(paths.rearWingTex);
 
-  // strict side-profile body
+  // 2) torso in front of rear wing
   const bodyShadow=ctx.createRadialGradient(K.bodyCx+5*sc,K.bodyCy+6*sc,1*sc,K.bodyCx+5*sc,K.bodyCy+6*sc,22*sc);
   bodyShadow.addColorStop(0,'rgba(145,155,168,.16)');
   bodyShadow.addColorStop(1,'rgba(145,155,168,0)');
@@ -730,7 +730,6 @@ function drawSideBird(state, K, paths){
   ctx.ellipse(K.bodyCx+1.5*sc,K.bodyCy+3*sc,17.5*sc,10.5*sc,0,0,Math.PI*2);
   ctx.fill();
 
-  // neck to head in pure side view
   ctx.strokeStyle='rgba(228,234,240,.95)';
   ctx.lineWidth=3.5*Math.max(0.65,sc);
   ctx.beginPath();
@@ -746,7 +745,6 @@ function drawSideBird(state, K, paths){
   ctx.ellipse(K.bodyCx-10.5*sc,K.bodyCy-8.1*sc,5.8*sc,4.5*sc,0,0,Math.PI*2);
   ctx.fill();
 
-  // eye moved to exact side position
   ctx.fillStyle='#d2a06a';
   ctx.beginPath();
   ctx.arc(K.bodyCx-8.5*sc,K.bodyCy-8.7*sc,1.7*sc,0,Math.PI*2);
@@ -760,7 +758,6 @@ function drawSideBird(state, K, paths){
   ctx.arc(K.bodyCx-8.15*sc,K.bodyCy-9.0*sc,0.24*sc,0,Math.PI*2);
   ctx.fill();
 
-  // true side beak, horizontal
   ctx.fillStyle='#7b7e85';
   ctx.beginPath();
   ctx.moveTo(K.bodyCx-13.8*sc,K.bodyCy-8.0*sc);
@@ -769,7 +766,6 @@ function drawSideBird(state, K, paths){
   ctx.closePath();
   ctx.fill();
 
-  // small tail hint to reinforce side profile
   ctx.fillStyle='rgba(220,226,232,.75)';
   ctx.beginPath();
   ctx.moveTo(K.bodyCx+16.5*sc,K.bodyCy+2.2*sc);
@@ -778,6 +774,7 @@ function drawSideBird(state, K, paths){
   ctx.closePath();
   ctx.fill();
 
+  // 3) front wing on top of torso, slightly overlapping it
   ctx.fillStyle='rgba(235,240,245,.96)';
   ctx.fill(paths.wingFill);
   const wingGrad=ctx.createLinearGradient(K.shoulderX,K.shoulderY,K.tx,K.ty); wingGrad.addColorStop(0,'rgba(251,251,249,0.98)'); wingGrad.addColorStop(.7,'rgba(240,242,240,0.96)'); wingGrad.addColorStop(1,'rgba(206,214,224,0.84)');
@@ -932,8 +929,8 @@ function renderSideView(rect,state,flags){
     sideForceState.y = sideForceState.y*0.86 + (-F.lift)*0.14;
     sideForceState.tx = sideForceState.tx*0.86 + F.thrust*0.14;
     sideForceState.ly = sideForceState.ly*0.86 + (-F.lift)*0.14;
-    const ox = K.bodyCx + 6*state.scale;
-    const oy = K.bodyCy - 18*state.scale;
+    const ox = K.bodyCx + 3*state.scale;
+    const oy = K.bodyCy - 14*state.scale;
     drawForceVector(ox, oy, clamp(sideForceState.x*1.2,-1.2,1.2), clamp(sideForceState.y*1.2,-1.2,1.2), '#4f93ff', '合力');
     drawForceVector(ox+8, oy+8, clamp(sideForceState.tx*1.2,-1.2,1.2), 0, '#d48ab0', '推力');
     drawForceVector(ox-6, oy+6, 0, clamp(sideForceState.ly*1.2,-1.2,1.2), '#5b84c8', '揚力');
@@ -963,7 +960,7 @@ function rebuildMasks(state, frontSimR, sideSimR){
 
 function draw(dt){
   const R=rects(), flags={pressure:dom.showPressure.checked,contours:dom.showContours.checked,flow:dom.showFlow.checked,vorticity:dom.showVorticity.checked,forceVec:dom.showForceVec.checked};
-  ctx.clearRect(0,0,W,H); card(R.F,'前面ビュー','圧力ベース力ベクトル・真横水平翼'); card(R.S,'側面ビュー','圧力ベース力ベクトル・真横水平翼');
+  ctx.clearRect(0,0,W,H); card(R.F,'前面ビュー','擬似3D真横側面'); card(R.S,'側面ビュー','擬似3D真横側面');
   const frontSimR=simRect(frontField,R.F), sideSimR=simRect(sideField,R.S);
   const state=birdState(simT,frontSimR);
   const kin = rebuildMasks(state, frontSimR, sideSimR);
