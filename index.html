@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>前面・側面 独立流体場版 羽ばたきシミュレーション（背景風あり・対称境界・中央配置版）</title>
+<title>前面・側面 独立流体場版 羽ばたきシミュレーション（分布力・対称境界・中央配置版）</title>
 <style>
   :root{--safe-top:max(env(safe-area-inset-top),0px);--safe-bottom:max(env(safe-area-inset-bottom),0px)}
   html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(180deg,#eef5fb,#dbe8f3 45%,#c6dceb)}
@@ -62,7 +62,7 @@
         <button id="reset">リセット</button>
       </div>
     </div>
-    <div id="msg">鳥の描画に使っているPath2Dを、そのままオフスクリーンに塗ってsolidマスクを作る版です。背景風は残しつつ、左右・上下を同型の対称境界にそろえた版です。まず鳥を前面・側面とも領域中央寄りに配置し、側面は真横表示に寄せています。</div>
+    <div id="msg">鳥の描画に使っているPath2Dを、そのままオフスクリーンに塗ってsolidマスクを作る版です。翼近傍の少数点ではなく、翼全体に沿って力を分散して入れる版です。左右・上下は同型の対称境界にそろえ、鳥は中央寄りに配置しています。</div>
   </div>
   <div id="stage"><canvas id="cv"></canvas></div>
   <div id="fabBar">
@@ -373,14 +373,56 @@ function repel(field){
 }
 function forceFieldFront(field,s,Lw,Rw,R,dt){
   const p=P(), c=field.cell;
-  for(let j=0;j<field.NY;j++) for(let i=0;i<3;i++){const id=idx(field,i,j); if(!field.solid[id]){field.u[id]=p.wind/c; field.v[id]=0;}}
-  if(s.down>.05){
-    for(const wing of [Lw,Rw]){
-      const pts=[{x:lerp(wing.shX,wing.elbowX,.28),y:lerp(wing.shY,wing.elbowY,.28)},{x:lerp(wing.shX,wing.elbowX,.58),y:lerp(wing.shY,wing.elbowY,.58)}];
-      for(const pt of pts){
-        const cx=(pt.x-R.x)/c, cy=(pt.y-R.y)/c, rad=5+5*p.pitch;
-        for(let j=Math.max(0,Math.floor(cy-rad)); j<=Math.min(field.NY-1,Math.ceil(cy+rad)); j++) for(let i=Math.max(0,Math.floor(cx-rad)); i<=Math.min(field.NX-1,Math.ceil(cx+rad)); i++){
-          const dx=i+.5-cx, dy=j+.5-cy, d2=dx*dx+dy*dy+1e-6; if(d2<rad*rad){ const id=idx(field,i,j); if(field.solid[id]) continue; const swirl=(.9+1.1*p.pitch)*(1-d2/(rad*rad)), sign=wing===Lw?1:-1; field.u[id]+=-dy*swirl*sign*dt; field.v[id]+=dx*swirl*sign*dt; field.v[id]+=.8*(1-d2/(rad*rad))*dt; }
+
+  // 背景風
+  if(p.wind > 0){
+    for(let j=0;j<field.NY;j++) for(let i=0;i<3;i++){
+      const id=idx(field,i,j);
+      if(!field.solid[id]){ field.u[id]=p.wind/c; field.v[id]=0; }
+    }
+  }
+
+  // 翼全体に沿って分散して力を入れる
+  const wings = [Lw, Rw];
+  for(const wing of wings){
+    const samples = [];
+    // 上腕〜前腕
+    for(const t of [0.15, 0.35, 0.55, 0.78]){
+      samples.push({
+        x: lerp(wing.elbowX, wing.wristX, t),
+        y: lerp(wing.elbowY, wing.wristY, t),
+        q: 0.75 + 0.35 * t
+      });
+    }
+    // 手首〜翼端
+    for(const t of [0.12, 0.30, 0.50, 0.72, 0.90]){
+      samples.push({
+        x: lerp(wing.wristX, wing.tipX, t),
+        y: lerp(wing.wristY, wing.tipY, t),
+        q: 0.95 + 0.55 * t
+      });
+    }
+
+    for(const pt of samples){
+      const cx=(pt.x-R.x)/c, cy=(pt.y-R.y)/c;
+      const rad = 3.2 + 2.0*p.pitch + 1.1*pt.q;
+
+      for(let j=Math.max(0,Math.floor(cy-rad)); j<=Math.min(field.NY-1,Math.ceil(cy+rad)); j++){
+        for(let i=Math.max(0,Math.floor(cx-rad)); i<=Math.min(field.NX-1,Math.ceil(cx+rad)); i++){
+          const dx=i+.5-cx, dy=j+.5-cy, d2=dx*dx+dy*dy+1e-6;
+          if(d2 < rad*rad){
+            const id=idx(field,i,j);
+            if(field.solid[id]) continue;
+
+            const k = (1 - d2/(rad*rad)) * pt.q;
+            // 分布循環：左右で鏡対称の見た目になるよう、横成分は弱める
+            field.u[id] += (-0.18 * dy) * k * dt;
+            field.v[id] += ( 0.42 * dx) * k * dt;
+
+            // 羽ばたきの押し下げ/引き上げを翼全体で与える
+            const flapPush = (0.55*s.down - 0.20*s.up) * (0.85 + 0.35*p.pitch);
+            field.v[id] += flapPush * k * dt;
+          }
         }
       }
     }
@@ -388,12 +430,47 @@ function forceFieldFront(field,s,Lw,Rw,R,dt){
 }
 function forceFieldSide(field,s,K,R,dt){
   const p=P(), c=field.cell;
-  for(let j=0;j<field.NY;j++) for(let i=0;i<3;i++){const id=idx(field,i,j); if(!field.solid[id]){field.u[id]=p.wind/c; field.v[id]=0;}}
-  const span=[{x:lerp(K.shoulderX,K.ex,.35),y:lerp(K.shoulderY,K.ey,.35),q:.65},{x:lerp(K.ex,K.wx,.45),y:lerp(K.ey,K.wy,.45),q:1.0},{x:lerp(K.wx,K.tx,.55),y:lerp(K.wy,K.ty,.55),q:1.25}];
-  for(const pt of span){
-    const cx=(pt.x-R.x)/c, cy=(pt.y-R.y)/c, rad=6+8*p.pitch+2*s.open;
-    for(let j=Math.max(0,Math.floor(cy-rad)); j<=Math.min(field.NY-1,Math.ceil(cy+rad)); j++) for(let i=Math.max(0,Math.floor(cx-rad)); i<=Math.min(field.NX-1,Math.ceil(cx+rad)); i++){
-      const dx=i+.5-cx, dy=j+.5-cy, d2=dx*dx+dy*dy+1e-6; if(d2<rad*rad){ const id=idx(field,i,j); if(field.solid[id]) continue; const k=(1-d2/(rad*rad))*pt.q; field.u[id]+=0.35*k*dt; field.v[id]+=(0.95+0.55*p.pitch)*k*dt; }
+
+  if(p.wind > 0){
+    for(let j=0;j<field.NY;j++) for(let i=0;i<3;i++){
+      const id=idx(field,i,j);
+      if(!field.solid[id]){ field.u[id]=p.wind/c; field.v[id]=0; }
+    }
+  }
+
+  const samples = [];
+  for(const t of [0.18,0.38,0.58,0.80]){
+    samples.push({
+      x: lerp(K.ex, K.wx, t),
+      y: lerp(K.ey, K.wy, t),
+      q: 0.80 + 0.35*t
+    });
+  }
+  for(const t of [0.18,0.38,0.58,0.80,0.95]){
+    samples.push({
+      x: lerp(K.wx, K.tx, t),
+      y: lerp(K.wy, K.ty, t),
+      q: 0.95 + 0.45*t
+    });
+  }
+
+  for(const pt of samples){
+    const cx=(pt.x-R.x)/c, cy=(pt.y-R.y)/c;
+    const rad = 3.0 + 1.8*p.pitch + 1.1*pt.q;
+
+    for(let j=Math.max(0,Math.floor(cy-rad)); j<=Math.min(field.NY-1,Math.ceil(cy+rad)); j++){
+      for(let i=Math.max(0,Math.floor(cx-rad)); i<=Math.min(field.NX-1,Math.ceil(cx+rad)); i++){
+        const dx=i+.5-cx, dy=j+.5-cy, d2=dx*dx+dy*dy+1e-6;
+        if(d2 < rad*rad){
+          const id=idx(field,i,j);
+          if(field.solid[id]) continue;
+          const k = (1-d2/(rad*rad))*pt.q;
+
+          // 側面は後流を伸ばしつつ、局所塊を作りすぎないよう穏やかに
+          field.u[id] += 0.18*k*dt;
+          field.v[id] += (0.42*s.down - 0.12*s.up) * (0.85 + 0.30*p.pitch) * k * dt;
+        }
+      }
     }
   }
 }
@@ -457,7 +534,7 @@ function buildPressureImage(field){
   field.pressureCtx.putImageData(img,0,0); field.pressureDirty=false; return field.pressureCanvas;
 }
 function drawPressureMap(field,R,alpha=1){ const src=buildPressureImage(field); if(!src) return; ctx.save(); ctx.beginPath(); rr(R.x,R.y,R.w,R.h,16); ctx.clip(); ctx.globalAlpha=alpha; ctx.drawImage(src,0,0,src.width,src.height,R.x,R.y,R.w,R.h); ctx.restore(); }
-function drawFlowLines(field,R,alpha=1){ const sx=R.w/(field.NX*field.cell), sy=R.h/(field.NY*field.cell); ctx.save(); ctx.beginPath(); rr(R.x,R.y,R.w,R.h,16); ctx.clip(); ctx.globalAlpha=alpha; for(const tr of field.tracers){ const k=1-tr.age/tr.life, px=R.x+tr.px*field.cell*sx, py=R.y+tr.py*field.cell*sy, x=R.x+tr.x*field.cell*sx, y=R.y+tr.y*field.cell*sy; const uu=samp(field,field.u,tr.x,tr.y), vv=samp(field,field.v,tr.x,tr.y), speed=Math.hypot(uu,vv); let color='rgba(84,140,220,'+(0.10+0.07*k)+')'; if(speed>2.2) color='rgba(70,176,170,'+(0.13+0.09*k)+')'; ctx.strokeStyle=color; ctx.lineWidth=speed>2.0?1.2:0.8; ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(x,y); ctx.stroke(); } ctx.restore(); }
+function drawFlowLines(field,R,alpha=1){ const sx=R.w/(field.NX*field.cell), sy=R.h/(field.NY*field.cell); const p=P(); if(p.wind===0) alpha*=0.35; ctx.save(); ctx.beginPath(); rr(R.x,R.y,R.w,R.h,16); ctx.clip(); ctx.globalAlpha=alpha; for(const tr of field.tracers){ const k=1-tr.age/tr.life, px=R.x+tr.px*field.cell*sx, py=R.y+tr.py*field.cell*sy, x=R.x+tr.x*field.cell*sx, y=R.y+tr.y*field.cell*sy; const uu=samp(field,field.u,tr.x,tr.y), vv=samp(field,field.v,tr.x,tr.y), speed=Math.hypot(uu,vv); let color='rgba(84,140,220,'+(0.10+0.07*k)+')'; if(speed>2.2) color='rgba(70,176,170,'+(0.13+0.09*k)+')'; ctx.strokeStyle=color; ctx.lineWidth=speed>2.0?1.2:0.8; ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(x,y); ctx.stroke(); } ctx.restore(); }
 function drawContours(field,R){ const sx=R.w/(field.NX*field.cell), sy=R.h/(field.NY*field.cell); ctx.save(); ctx.beginPath(); rr(R.x,R.y,R.w,R.h,16); ctx.clip(); const levels=[-0.85,-0.65,-0.48,-0.34,-0.22,-0.12,-0.05,0.05,0.12,0.22,0.34,0.48,0.65,0.85]; const interp=(x1,y1,v1,x2,y2,v2,level)=>{const d=(v2-v1), t=Math.abs(d)<1e-6?.5:(level-v1)/d; return {x:x1+(x2-x1)*t,y:y1+(y2-y1)*t};}; for(const level of levels){ const strong=Math.abs(level)>.6, mid=Math.abs(level)>.2; ctx.strokeStyle= level>0 ? (strong?'rgba(132,28,28,0.80)':mid?'rgba(170,58,58,0.62)':'rgba(210,120,120,0.42)') : (strong?'rgba(18,46,120,0.80)':mid?'rgba(52,82,170,0.62)':'rgba(120,150,220,0.42)'); ctx.lineWidth=strong?1.35:mid?1.0:.8; for(let j=1;j<field.NY-2;j++) for(let i=1;i<field.NX-2;i++){ const v00=field.pf[idx(field,i,j)],v10=field.pf[idx(field,i+1,j)],v11=field.pf[idx(field,i+1,j+1)],v01=field.pf[idx(field,i,j+1)]; const s0=v00>=level?1:0,s1=v10>=level?1:0,s2=v11>=level?1:0,s3=v01>=level?1:0, state=s0|(s1<<1)|(s2<<2)|(s3<<3); if(state===0||state===15) continue; const x=R.x+i*field.cell*sx, y=R.y+j*field.cell*sy; const pTop=interp(x,y,v00,x+field.cell*sx,y,v10,level), pRight=interp(x+field.cell*sx,y,v10,x+field.cell*sx,y+field.cell*sy,v11,level), pBottom=interp(x,y+field.cell*sy,v01,x+field.cell*sx,y+field.cell*sy,v11,level), pLeft=interp(x,y,v00,x,y+field.cell*sy,v01,level); const segments={1:[[pLeft,pTop]],2:[[pTop,pRight]],3:[[pLeft,pRight]],4:[[pRight,pBottom]],5:[[pLeft,pBottom],[pTop,pRight]],6:[[pTop,pBottom]],7:[[pLeft,pBottom]],8:[[pBottom,pLeft]],9:[[pTop,pBottom]],10:[[pTop,pLeft],[pRight,pBottom]],11:[[pRight,pBottom]],12:[[pLeft,pRight]],13:[[pTop,pRight]],14:[[pLeft,pTop]]}[state]; if(!segments) continue; for(const seg of segments){ ctx.beginPath(); ctx.moveTo(seg[0].x,seg[0].y); ctx.lineTo(seg[1].x,seg[1].y); ctx.stroke(); } } } ctx.restore(); }
 
 function arrow(x1,y1,x2,y2,color,label){ ctx.save(); ctx.strokeStyle=color; ctx.fillStyle=color; ctx.lineWidth=2.4; ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); const a=Math.atan2(y2-y1,x2-x1),h=6; ctx.beginPath(); ctx.moveTo(x2,y2); ctx.lineTo(x2-h*Math.cos(a-.4),y2-h*Math.sin(a-.4)); ctx.lineTo(x2-h*Math.cos(a+.4),y2-h*Math.sin(a+.4)); ctx.closePath(); ctx.fill(); ctx.font='10px system-ui'; ctx.fillText(label,x2+4,y2-2); ctx.restore(); }
@@ -553,7 +630,7 @@ function rebuildMasks(state, frontSimR, sideSimR){
 
 function draw(dt){
   const R=rects(), flags={pressure:dom.showPressure.checked,contours:dom.showContours.checked,flow:dom.showFlow.checked};
-  ctx.clearRect(0,0,W,H); card(R.F,'前面ビュー','背景風あり・対称境界・中央配置'); card(R.S,'側面ビュー','背景風あり・対称境界・中央配置');
+  ctx.clearRect(0,0,W,H); card(R.F,'前面ビュー','分布力・対称境界・中央配置'); card(R.S,'側面ビュー','分布力・対称境界・中央配置');
   const frontSimR=simRect(frontField,R.F), sideSimR=simRect(sideField,R.S);
   const state=birdState(simT,frontSimR);
   const kin = rebuildMasks(state, frontSimR, sideSimR);
