@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>前面・側面 独立流体場版 羽ばたきシミュレーション（圧力ベース力ベクトル・真横側面版）</title>
+<title>前面・側面 独立流体場版 羽ばたきシミュレーション（圧力ベース力ベクトル・真横水平翼版）</title>
 <style>
   :root{--safe-top:max(env(safe-area-inset-top),0px);--safe-bottom:max(env(safe-area-inset-bottom),0px)}
   html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(180deg,#eef5fb,#dbe8f3 45%,#c6dceb)}
@@ -64,7 +64,7 @@
         <button id="reset">リセット</button>
       </div>
     </div>
-    <div id="msg">鳥の描画に使っているPath2Dを、そのままオフスクリーンに塗ってsolidマスクを作る版です。速度勾配ではなく、平滑化した圧力場の勾配から揚力・推力ベクトルを推定する版です。側面ビューの頭・胴体・くちばしは真横シルエットに寄せ、ベクトルは少し時間平均して安定表示しています。</div>
+    <div id="msg">鳥の描画に使っているPath2Dを、そのままオフスクリーンに塗ってsolidマスクを作る版です。速度勾配ではなく、平滑化した圧力場の勾配から揚力・推力ベクトルを推定する版です。側面ビューは真横シルエットに寄せ、翼角度もカモメ写真のように水平寄りへ補正しています。</div>
   </div>
   <div id="stage"><canvas id="cv"></canvas></div>
   <div id="fabBar">
@@ -193,9 +193,29 @@ function wing(s,side){
 }
 function sideKinematics(s,R){
   const p=P(), sc=p.scale;
-  const bodyCx=R.x+R.w*.46, bodyCy=R.y+R.h*.67+Math.sin(s.ph-.2)*p.amp*.03, tilt=0, shoulderX=bodyCx-1.2*sc, shoulderY=bodyCy-1.6*sc;
-  const a1=-1.00+.60*Math.sin(s.ph)-0.06*s.fold, a2=a1+.20+0.22*s.open-0.18*s.fold, a3=a2+.22+0.30*s.open-0.22*s.fold;
-  const ex=shoulderX+Math.cos(a1)*15*sc, ey=shoulderY+Math.sin(a1)*15*sc, wx=ex+Math.cos(a2)*(28*(1-.16*s.fold))*sc, wy=ey+Math.sin(a2)*(28*(1-.16*s.fold))*sc, tx=wx+Math.cos(a3)*(34*(1-.14*s.fold))*sc, ty=wy+Math.sin(a3)*(34*(1-.14*s.fold))*sc;
+
+  // body stays strict side-on
+  const bodyCx=R.x+R.w*.46;
+  const bodyCy=R.y+R.h*.67+Math.sin(s.ph-.2)*p.amp*.02;
+  const tilt=0;
+  const shoulderX=bodyCx-1.2*sc;
+  const shoulderY=bodyCy-1.6*sc;
+
+  // side wing: make it much more horizontal like the gull image
+  // keep some flap, but suppress the steep upward angle
+  const flap = Math.sin(s.ph);
+  const a1 = -0.34 + 0.18*flap - 0.03*s.fold;
+  const a2 = -0.18 + 0.14*flap + 0.05*s.open - 0.05*s.fold;
+  const a3 = -0.08 + 0.10*flap + 0.08*s.open - 0.04*s.fold;
+
+  const hum = 16*sc;
+  const fore = (30*(1-.10*s.fold))*sc;
+  const hand = (36*(1-.08*s.fold))*sc;
+
+  const ex=shoulderX+Math.cos(a1)*hum, ey=shoulderY+Math.sin(a1)*hum;
+  const wx=ex+Math.cos(a2)*fore, wy=ey+Math.sin(a2)*fore;
+  const tx=wx+Math.cos(a3)*hand, ty=wy+Math.sin(a3)*hand;
+
   return {bodyCx,bodyCy,tilt,shoulderX,shoulderY,ex,ey,wx,wy,tx,ty,a1,a2,a3};
 }
 
@@ -943,7 +963,7 @@ function rebuildMasks(state, frontSimR, sideSimR){
 
 function draw(dt){
   const R=rects(), flags={pressure:dom.showPressure.checked,contours:dom.showContours.checked,flow:dom.showFlow.checked,vorticity:dom.showVorticity.checked,forceVec:dom.showForceVec.checked};
-  ctx.clearRect(0,0,W,H); card(R.F,'前面ビュー','圧力ベース力ベクトル・真横側面'); card(R.S,'側面ビュー','圧力ベース力ベクトル・真横側面');
+  ctx.clearRect(0,0,W,H); card(R.F,'前面ビュー','圧力ベース力ベクトル・真横水平翼'); card(R.S,'側面ビュー','圧力ベース力ベクトル・真横水平翼');
   const frontSimR=simRect(frontField,R.F), sideSimR=simRect(sideField,R.S);
   const state=birdState(simT,frontSimR);
   const kin = rebuildMasks(state, frontSimR, sideSimR);
