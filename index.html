@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>前面・側面 独立流体場版 羽ばたきシミュレーション（CFD最終寄せ・中央配置版）</title>
+<title>前面・側面 独立流体場版 羽ばたきシミュレーション（CFD最終寄せ・力ベクトル版）</title>
 <style>
   :root{--safe-top:max(env(safe-area-inset-top),0px);--safe-bottom:max(env(safe-area-inset-bottom),0px)}
   html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(180deg,#eef5fb,#dbe8f3 45%,#c6dceb)}
@@ -60,10 +60,11 @@
         <label><input id="showContours" type="checkbox" checked> 等圧線</label>
         <label><input id="showFlow" type="checkbox" checked> 流線</label>
         <label><input id="showVorticity" type="checkbox" checked> 渦</label>
+        <label><input id="showForceVec" type="checkbox" checked> 力ベクトル</label>
         <button id="reset">リセット</button>
       </div>
     </div>
-    <div id="msg">鳥の描画に使っているPath2Dを、そのままオフスクリーンに塗ってsolidマスクを作る版です。速度場から圧力をより強く解く方向に寄せ、軽い粘性拡散と壁まわりの抑制を追加した版です。渦も可視化して、流れの回り込みを見やすくしています。</div>
+    <div id="msg">鳥の描画に使っているPath2Dを、そのままオフスクリーンに塗ってsolidマスクを作る版です。軽い粘性拡散と壁まわりの抑制に加え、場から推定した揚力・推力ベクトルを表示する版です。渦も可視化して、流れの回り込みを見やすくしています。</div>
   </div>
   <div id="stage"><canvas id="cv"></canvas></div>
   <div id="fabBar">
@@ -86,6 +87,7 @@ const dom = {
   showContours: document.getElementById('showContours'),
   showFlow: document.getElementById('showFlow'),
   showVorticity: document.getElementById('showVorticity'),
+  showForceVec: document.getElementById('showForceVec'),
   reset: document.getElementById('reset'),
   toggleUi: document.getElementById('toggleUi'),
   fullscreen: document.getElementById('fullscreen'),
@@ -729,18 +731,124 @@ function drawVorticity(field,R,alpha=0.28){
   ctx.restore();
 }
 
+
+function estimateFrontForce(field, state, Lw, Rw, R){
+  const samples = [];
+  for(const wing of [Lw, Rw]){
+    for(const t of [0.18,0.38,0.58,0.78]){
+      samples.push({x:lerp(wing.elbowX,wing.wristX,t), y:lerp(wing.elbowY,wing.wristY,t)});
+    }
+    for(const t of [0.16,0.36,0.58,0.82]){
+      samples.push({x:lerp(wing.wristX,wing.tipX,t), y:lerp(wing.wristY,wing.tipY,t)});
+    }
+  }
+  let up=0, side=0, n=0;
+  for(const pt of samples){
+    const gx=(pt.x-R.x)/field.cell, gy=(pt.y-R.y)/field.cell;
+    const du = samp(field, field.u, gx+2, gy) - samp(field, field.u, gx-2, gy);
+    const dv = samp(field, field.v, gx, gy+2) - samp(field, field.v, gx, gy-2);
+    side += du;
+    up += -dv;
+    n++;
+  }
+  if(n===0) return {lift:0, side:0};
+  return {lift: up/n, side: side/n};
+}
+
+function estimateSideForce(field, K, R){
+  const samples = [];
+  for(const t of [0.18,0.38,0.58,0.78]){
+    samples.push({x:lerp(K.ex,K.wx,t), y:lerp(K.ey,K.wy,t)});
+  }
+  for(const t of [0.16,0.36,0.58,0.82]){
+    samples.push({x:lerp(K.wx,K.tx,t), y:lerp(K.wy,K.ty,t)});
+  }
+  let lift=0, thrust=0, n=0;
+  for(const pt of samples){
+    const gx=(pt.x-R.x)/field.cell, gy=(pt.y-R.y)/field.cell;
+    const du = samp(field, field.u, gx+2, gy) - samp(field, field.u, gx-2, gy);
+    const dv = samp(field, field.v, gx, gy+2) - samp(field, field.v, gx, gy-2);
+    thrust += -du;
+    lift += -dv;
+    n++;
+  }
+  if(n===0) return {lift:0, thrust:0};
+  return {lift: lift/n, thrust: thrust/n};
+}
+
+function drawForceVector(originX, originY, vecX, vecY, color, label){
+  const mag = Math.hypot(vecX, vecY);
+  if(mag < 0.001) return;
+  const scale = 55;
+  const x2 = originX + vecX * scale;
+  const y2 = originY + vecY * scale;
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 2.6;
+  ctx.beginPath();
+  ctx.moveTo(originX, originY);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  const a = Math.atan2(y2-originY, x2-originX);
+  const h = 7;
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - h*Math.cos(a-0.42), y2 - h*Math.sin(a-0.42));
+  ctx.lineTo(x2 - h*Math.cos(a+0.42), y2 - h*Math.sin(a+0.42));
+  ctx.closePath();
+  ctx.fill();
+  ctx.font='11px system-ui';
+  ctx.fillText(label, x2 + 5, y2 - 3);
+  ctx.restore();
+}
+
 function drawLegend(x,y){ const h=156,w=18, grad=ctx.createLinearGradient(0,y,0,y+h); grad.addColorStop(0,'rgba(118,16,28,0.98)'); grad.addColorStop(.22,'rgba(205,88,88,0.82)'); grad.addColorStop(.50,'rgba(252,252,252,0.18)'); grad.addColorStop(.78,'rgba(88,132,230,0.82)'); grad.addColorStop(1,'rgba(8,52,150,0.98)'); ctx.fillStyle='rgba(255,255,255,0.72)'; ctx.fillRect(x-34,y-8,64,h+16); ctx.fillStyle=grad; ctx.fillRect(x,y,w,h); ctx.strokeStyle='rgba(0,0,0,0.22)'; ctx.strokeRect(x,y,w,h); ctx.font='11px system-ui'; ctx.fillStyle='rgba(20,30,40,0.92)'; const ticks=[{label:'+1.0',yy:y+4},{label:'+0.5',yy:y+h*.25},{label:'0',yy:y+h*.50},{label:'-0.5',yy:y+h*.75},{label:'-1.0',yy:y+h-2}]; for(const t of ticks){ctx.beginPath();ctx.moveTo(x+w+2,t.yy);ctx.lineTo(x+w+8,t.yy);ctx.strokeStyle='rgba(20,30,40,0.55)';ctx.stroke();ctx.fillStyle='rgba(20,30,40,0.92)';ctx.fillText(t.label,x-30,t.yy+4);} ctx.fillText('高圧',x-30,y-12); ctx.fillText('低圧',x-30,y+h+14); }
 
 function renderFrontView(rect,state,Lw,Rw,flags){
   const sr=simRect(frontField,rect), paths=makeFrontBirdPaths(state,Lw,Rw);
-  if(flags.pressure) drawPressureMap(frontField,sr,1); if(flags.contours) drawContours(frontField,sr); if(flags.flow) drawFlowLines(frontField,sr,1); if(flags.vorticity) drawVorticity(frontField,sr,0.30);
-  ctx.save(); ctx.beginPath(); rr(sr.x,sr.y,sr.w,sr.h,16); ctx.clip(); drawFrontBird(state,paths); arrow(sr.x+12,sr.y+sr.h-18,sr.x+88,sr.y+sr.h-18,'#5b84c8','前から来る空気'); ctx.restore();
+  if(flags.pressure) drawPressureMap(frontField,sr,1);
+  if(flags.contours) drawContours(frontField,sr);
+  if(flags.flow) drawFlowLines(frontField,sr,1);
+  if(flags.vorticity) drawVorticity(frontField,sr,0.30);
+
+  ctx.save();
+  ctx.beginPath(); rr(sr.x,sr.y,sr.w,sr.h,16); ctx.clip();
+  drawFrontBird(state,paths);
+  arrow(sr.x+12,sr.y+sr.h-18,sr.x+88,sr.y+sr.h-18,'#5b84c8','前から来る空気');
+
+  if(flags.forceVec){
+    const F = estimateFrontForce(frontField, state, Lw, Rw, sr);
+    const ox = state.bodyX;
+    const oy = state.bodyY - 18*state.scale;
+    drawForceVector(ox, oy, clamp(F.side*0.9,-1.2,1.2), clamp(-F.lift*1.2,-1.2,1.2), '#4f93ff', '揚力ベクトル');
+  }
+  ctx.restore();
+
   drawLegend(sr.x+sr.w-64,sr.y+18);
 }
 function renderSideView(rect,state,flags){
   const sr=simRect(sideField,rect), K=sideKinematics(state,sr), paths=makeSideBirdPaths(state,K);
-  if(flags.pressure) drawPressureMap(sideField,sr,.92); if(flags.contours) drawContours(sideField,sr); if(flags.flow) drawFlowLines(sideField,sr,.72); if(flags.vorticity) drawVorticity(sideField,sr,0.28);
-  ctx.save(); ctx.beginPath(); rr(sr.x,sr.y,sr.w,sr.h,16); ctx.clip(); drawSideBird(state,K,paths); arrow(sr.x+sr.w-76,sr.y+28,sr.x+sr.w-76,sr.y+28-Math.min(38,8+lift*15),'#5b84c8','揚力'); arrow(sr.x+sr.w-76,sr.y+54,sr.x+sr.w-76+Math.min(40,8+thrust*16),sr.y+54,'#d48ab0','推力'); arrow(sr.x+12,sr.y+sr.h-18,sr.x+88,sr.y+sr.h-18,'#5b84c8','前から来る空気'); ctx.restore();
+  if(flags.pressure) drawPressureMap(sideField,sr,.92);
+  if(flags.contours) drawContours(sideField,sr);
+  if(flags.flow) drawFlowLines(sideField,sr,.72);
+  if(flags.vorticity) drawVorticity(sideField,sr,0.28);
+
+  ctx.save();
+  ctx.beginPath(); rr(sr.x,sr.y,sr.w,sr.h,16); ctx.clip();
+  drawSideBird(state,K,paths);
+  arrow(sr.x+12,sr.y+sr.h-18,sr.x+88,sr.y+sr.h-18,'#5b84c8','前から来る空気');
+
+  if(flags.forceVec){
+    const F = estimateSideForce(sideField, K, sr);
+    const ox = K.bodyCx + 6*state.scale;
+    const oy = K.bodyCy - 18*state.scale;
+    drawForceVector(ox, oy, clamp(F.thrust*1.15,-1.2,1.2), clamp(-F.lift*1.15,-1.2,1.2), '#4f93ff', '合力');
+    drawForceVector(ox+8, oy+8, clamp(F.thrust*1.15,-1.2,1.2), 0, '#d48ab0', '推力');
+    drawForceVector(ox-6, oy+6, 0, clamp(-F.lift*1.15,-1.2,1.2), '#5b84c8', '揚力');
+  }
+  ctx.restore();
+
   drawLegend(sr.x+sr.w-64,sr.y+18);
 }
 
@@ -763,8 +871,8 @@ function rebuildMasks(state, frontSimR, sideSimR){
 }
 
 function draw(dt){
-  const R=rects(), flags={pressure:dom.showPressure.checked,contours:dom.showContours.checked,flow:dom.showFlow.checked,vorticity:dom.showVorticity.checked};
-  ctx.clearRect(0,0,W,H); card(R.F,'前面ビュー','CFD最終寄せ・中央配置'); card(R.S,'側面ビュー','CFD最終寄せ・中央配置');
+  const R=rects(), flags={pressure:dom.showPressure.checked,contours:dom.showContours.checked,flow:dom.showFlow.checked,vorticity:dom.showVorticity.checked,forceVec:dom.showForceVec.checked};
+  ctx.clearRect(0,0,W,H); card(R.F,'前面ビュー','CFD最終寄せ・力ベクトル'); card(R.S,'側面ビュー','CFD最終寄せ・力ベクトル');
   const frontSimR=simRect(frontField,R.F), sideSimR=simRect(sideField,R.S);
   const state=birdState(simT,frontSimR);
   const kin = rebuildMasks(state, frontSimR, sideSimR);
@@ -784,7 +892,7 @@ function draw(dt){
 function loop(now){ if(!t0){t0=now; last=now;} simT=(now-t0)/1000; const dt=Math.min(.025,(now-last)/1000); last=now; draw(dt); requestAnimationFrame(loop); }
 function bindUI(){
   dom.reset.addEventListener('click', handleReset); dom.fabReset.addEventListener('click', handleReset); dom.toggleUi.addEventListener('click', ()=>setUiCollapsed(!uiCollapsed)); dom.fabToggleUi.addEventListener('click', ()=>setUiCollapsed(!uiCollapsed)); dom.fullscreen.addEventListener('click', toggleFullscreen);
-  [dom.showPressure,dom.showContours,dom.showFlow,dom.showVorticity,dom.birdScale,dom.wind,dom.amp,dom.freq,dom.pitch].forEach(el=>{ el.addEventListener('input',()=>{ invalidatePressureMap(frontField); invalidatePressureMap(sideField); draw(0); }); el.addEventListener('change',()=>{ invalidatePressureMap(frontField); invalidatePressureMap(sideField); draw(0); }); });
+  [dom.showPressure,dom.showContours,dom.showFlow,dom.showVorticity,dom.showForceVec,dom.birdScale,dom.wind,dom.amp,dom.freq,dom.pitch].forEach(el=>{ el.addEventListener('input',()=>{ invalidatePressureMap(frontField); invalidatePressureMap(sideField); draw(0); }); el.addEventListener('change',()=>{ invalidatePressureMap(frontField); invalidatePressureMap(sideField); draw(0); }); });
   window.addEventListener('resize', resize);
 }
 bindUI(); resize(); draw(0); setTimeout(()=>requestAnimationFrame(loop),80);
