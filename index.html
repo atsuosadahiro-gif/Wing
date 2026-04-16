@@ -191,30 +191,83 @@ function wing(s,side){
   const ex=shX+Math.cos(a1)*s.hum, ey=shY+Math.sin(a1)*s.hum, wx=ex+Math.cos(a2)*s.fore, wy=ey+Math.sin(a2)*s.fore, tx=wx+Math.cos(a3)*s.hand, ty=wy+Math.sin(a3)*s.hand;
   return {shX,shY,elbowX:ex,elbowY:ey,wristX:wx,wristY:wy,tipX:tx,tipY:ty,a1,a2,a3};
 }
+
+function sidePhaseTemplates(sc, fan, thick){
+  return [
+    { // 上げ翼
+      lead:[{x:0,y:0},{x:-4*sc,y:-30*sc},{x:-14*sc,y:-58*sc},{x:-30*sc,y:-82*sc},{x:-52*sc,y:-96*sc}],
+      trail:[{x:7*sc,y:8*sc},{x:5*sc,y:-8*sc},{x:-2*sc,y:-34*sc},{x:-12*sc,y:-60*sc},{x:-24*sc,y:-84*sc}]},
+    { // 中間
+      lead:[{x:0,y:0},{x:-14*sc,y:-18*sc},{x:-38*sc,y:-36*sc},{x:-74*sc,y:-48*sc},{x:-114*sc,y:-52*sc}],
+      trail:[{x:7*sc,y:8*sc},{x:-1*sc,y:-4*sc},{x:-18*sc,y:-18*sc},{x:-48*sc,y:-32*sc},{x:-90*sc,y:-42*sc}]},
+    { // 下げ翼
+      lead:[{x:0,y:0},{x:-20*sc,y:10*sc},{x:-54*sc,y:26*sc},{x:-100*sc,y:42*sc},{x:-146*sc,y:50*sc}],
+      trail:[{x:7*sc,y:8*sc},{x:-10*sc,y:16*sc},{x:-38*sc,y:30*sc},{x:-82*sc,y:46*sc},{x:-130*sc,y:60*sc}]},
+    { // 戻り
+      lead:[{x:0,y:0},{x:-10*sc,y:-8*sc},{x:-28*sc,y:-20*sc},{x:-54*sc,y:-28*sc},{x:-88*sc,y:-28*sc}],
+      trail:[{x:7*sc,y:8*sc},{x:0*sc,y:0*sc},{x:-16*sc,y:-8*sc},{x:-40*sc,y:-14*sc},{x:-70*sc,y:-16*sc}]},
+  ].map(ph=>({
+    lead: ph.lead.map((p,i)=>({x:p.x - (i>=3 ? fan*(i-2)*0.9*sc : 0), y:p.y - (i>=3 ? fan*(i-2)*0.45*sc : 0)})),
+    trail: ph.trail.map((p,i)=>({x:p.x - (i>=3 ? fan*(i-2)*0.45*sc : 0), y:p.y + thick*0.12*(1-i/4)*sc}))
+  }));
+}
+function sideInterpPhase(phases, cyc){
+  const i0=Math.floor(cyc)%4, i1=(i0+1)%4, t=cyc-Math.floor(cyc);
+  const A=phases[i0], B=phases[i1];
+  return {
+    t,
+    lead:A.lead.map((p,i)=>({x:lerp(p.x,B.lead[i].x,t), y:lerp(p.y,B.lead[i].y,t)})),
+    trail:A.trail.map((p,i)=>({x:lerp(p.x,B.trail[i].x,t), y:lerp(p.y,B.trail[i].y,t)})),
+  };
+}
+function buildIntegratedSideWing(root, s, sc){
+  const p=P();
+  const cyc = (((s.ph%(Math.PI*2))+Math.PI*2)%(Math.PI*2)) / (Math.PI*2) * 4;
+  const fan = 1.2 + 1.8*s.down;
+  const thick = 8 + 8*s.down + 3*s.up;
+  const base = sideInterpPhase(sidePhaseTemplates(sc, fan, thick), cyc);
+  let exposure;
+  const q=cyc%4;
+  if(q<1) exposure=lerp(-0.48,-0.08,q);
+  else if(q<2) exposure=lerp(-0.08,0.95,q-1);
+  else if(q<3) exposure=lerp(0.95,0.18,q-2);
+  else exposure=lerp(0.18,-0.48,q-3);
+
+  const twist = (10 + 18*p.pitch) * exposure;
+  const downGain = 8 + 16*s.down;
+  const lead=[], trail=[];
+  for(let i=0;i<base.lead.length;i++){
+    const t=i/(base.lead.length-1);
+    const lp={x:root.x+base.lead[i].x, y:root.y+base.lead[i].y};
+    const tp={x:root.x+base.trail[i].x, y:root.y+base.trail[i].y};
+    const dx=lp.x-tp.x, dy=lp.y-tp.y;
+    const local = twist*(0.25+0.75*t);
+    const extra = Math.max(0, exposure)*downGain*(0.15+0.85*t);
+    lead.push({x:lp.x + dx*(local*0.10/100), y:lp.y + dy*(local*0.10/100)});
+    trail.push({x:tp.x - dx*((local*0.40 + extra*0.20)/100), y:tp.y - dy*((local*0.40 + extra*0.20)/100)});
+  }
+  return {lead, trail, cyc, exposure};
+}
+
 function sideKinematics(s,R){
   const p=P(), sc=p.scale;
-
   const bodyCx=R.x+R.w*.46;
   const bodyCy=R.y+R.h*.67+Math.sin(s.ph-.2)*p.amp*.02;
   const tilt=0;
-  // front wing shoulder slightly lower and a bit behind body front
-  const shoulderX=bodyCx-2.8*sc;
-  const shoulderY=bodyCy-0.8*sc;
 
-  const flap = Math.sin(s.ph);
-  const a1 = -0.30 + 0.16*flap - 0.03*s.fold;
-  const a2 = -0.14 + 0.12*flap + 0.04*s.open - 0.05*s.fold;
-  const a3 = -0.04 + 0.08*flap + 0.07*s.open - 0.04*s.fold;
+  // shoulder/root sits on the upper-rear body, matching the reference sprite sheet
+  const shoulderX=bodyCx+1.8*sc;
+  const shoulderY=bodyCy-6.4*sc;
 
-  const hum = 15*sc;
-  const fore = (29*(1-.10*s.fold))*sc;
-  const hand = (35*(1-.08*s.fold))*sc;
+  const wing = buildIntegratedSideWing({x:shoulderX,y:shoulderY}, s, sc);
 
-  const ex=shoulderX+Math.cos(a1)*hum, ey=shoulderY+Math.sin(a1)*hum;
-  const wx=ex+Math.cos(a2)*fore, wy=ey+Math.sin(a2)*fore;
-  const tx=wx+Math.cos(a3)*hand, ty=wy+Math.sin(a3)*hand;
+  // representative control points reused by flow / force estimation
+  const ex = wing.lead[1].x, ey = wing.lead[1].y;
+  const wx = wing.lead[2].x, wy = wing.lead[2].y;
+  const tx = wing.lead[4].x, ty = wing.lead[4].y;
 
-  return {bodyCx,bodyCy,tilt,shoulderX,shoulderY,ex,ey,wx,wy,tx,ty,a1,a2,a3};
+  return {bodyCx,bodyCy,tilt,shoulderX,shoulderY,ex,ey,wx,wy,tx,ty,
+          lead: wing.lead, trail: wing.trail, cyc: wing.cyc, exposure: wing.exposure};
 }
 
 function makeFrontWingShape(w, side, sc){
@@ -245,26 +298,8 @@ function makeFrontWingShape(w, side, sc){
   return {upper, lower, poly: upper.concat(lower)};
 }
 function makeSideWingShape(K, sc){
-  const upper = [
-    {x:K.shoulderX + 0.8*sc, y:K.shoulderY - 4.0*sc},
-    {x:lerp(K.shoulderX,K.ex,0.24) + 1.8*sc, y:lerp(K.shoulderY,K.ey,0.24) - 5.6*sc},
-    {x:lerp(K.shoulderX,K.ex,0.66) + 2.8*sc, y:lerp(K.shoulderY,K.ey,0.66) - 6.7*sc},
-    {x:lerp(K.ex,K.wx,0.20) + 3.8*sc, y:lerp(K.ey,K.wy,0.20) - 8.3*sc},
-    {x:lerp(K.ex,K.wx,0.62) + 5.4*sc, y:lerp(K.ey,K.wy,0.62) - 7.4*sc},
-    {x:lerp(K.wx,K.tx,0.28) + 7.4*sc, y:lerp(K.wy,K.ty,0.28) - 5.2*sc},
-    {x:lerp(K.wx,K.tx,0.68) + 9.0*sc, y:lerp(K.wy,K.ty,0.68) - 3.3*sc},
-    {x:K.tx + 10.5*sc, y:K.ty - 1.4*sc},
-  ];
-  const lower = [
-    {x:K.tx + 5.6*sc, y:K.ty + 4.4*sc},
-    {x:lerp(K.wx,K.tx,0.70) + 2.5*sc, y:lerp(K.wy,K.ty,0.70) + 5.5*sc},
-    {x:lerp(K.wx,K.tx,0.30) + 1.2*sc, y:lerp(K.wy,K.ty,0.30) + 5.7*sc},
-    {x:lerp(K.ex,K.wx,0.78) + 1.0*sc, y:lerp(K.ey,K.wy,0.78) + 6.1*sc},
-    {x:lerp(K.ex,K.wx,0.30) + 0.0*sc, y:lerp(K.ey,K.wy,0.30) + 6.0*sc},
-    {x:lerp(K.shoulderX,K.ex,0.60) - 0.7*sc, y:lerp(K.shoulderY,K.ey,0.60) + 4.0*sc},
-    {x:lerp(K.shoulderX,K.ex,0.20) - 1.0*sc, y:lerp(K.shoulderY,K.ey,0.20) + 3.0*sc},
-    {x:K.shoulderX - 0.8*sc, y:K.shoulderY + 2.4*sc},
-  ];
+  const upper = K.lead.map(p => ({x:p.x, y:p.y}));
+  const lower = K.trail.slice().reverse().map(p => ({x:p.x, y:p.y}));
   return {upper, lower, poly: upper.concat(lower)};
 }
 
@@ -307,8 +342,8 @@ function makeSideBirdPaths(state, K){
 
   // back wing: shift upward/backward, slightly smaller -> reads as behind torso
   const rearWing = {
-    upper: wing.upper.map(p => ({x: K.bodyCx + (p.x-K.bodyCx)*0.88 - 4.8*sc, y: K.bodyCy + (p.y-K.bodyCy)*0.88 - 6.8*sc})),
-    lower: wing.lower.map(p => ({x: K.bodyCx + (p.x-K.bodyCx)*0.88 - 4.8*sc, y: K.bodyCy + (p.y-K.bodyCy)*0.88 - 6.8*sc}))
+    upper: wing.upper.map(p => ({x: K.bodyCx + (p.x-K.bodyCx)*0.84 - 3.6*sc, y: K.bodyCy + (p.y-K.bodyCy)*0.84 - 5.8*sc})),
+    lower: wing.lower.map(p => ({x: K.bodyCx + (p.x-K.bodyCx)*0.84 - 3.6*sc, y: K.bodyCy + (p.y-K.bodyCy)*0.84 - 5.8*sc}))
   };
   rearWing.poly = rearWing.upper.concat(rearWing.lower);
 
@@ -712,65 +747,81 @@ function drawSideBird(state, K, paths){
   ctx.stroke(paths.rearWingTex);
 
   // 2) torso in front of rear wing
-  const bodyShadow=ctx.createRadialGradient(K.bodyCx+5*sc,K.bodyCy+6*sc,1*sc,K.bodyCx+5*sc,K.bodyCy+6*sc,22*sc);
+  // flight-pose accurate side silhouette: horizontal fuselage, short neck, compact head, narrow tail
+  const bodyShadow=ctx.createRadialGradient(K.bodyCx+8*sc,K.bodyCy+7*sc,1*sc,K.bodyCx+8*sc,K.bodyCy+7*sc,32*sc);
   bodyShadow.addColorStop(0,'rgba(145,155,168,.16)');
   bodyShadow.addColorStop(1,'rgba(145,155,168,0)');
   ctx.fillStyle=bodyShadow;
   ctx.beginPath();
-  ctx.ellipse(K.bodyCx+2.5*sc,K.bodyCy+3.2*sc,18*sc,10.5*sc,0,0,Math.PI*2);
+  ctx.ellipse(K.bodyCx+7.5*sc,K.bodyCy+7.2*sc,29*sc,12.5*sc,-0.05,0,Math.PI*2);
   ctx.fill();
 
-  const g=ctx.createRadialGradient(K.bodyCx-5*sc,K.bodyCy-2*sc,2*sc,K.bodyCx+1*sc,K.bodyCy+2*sc,24*sc);
+  // main fuselage: longer and flatter than before
+  const g=ctx.createRadialGradient(K.bodyCx-8*sc,K.bodyCy-1*sc,2*sc,K.bodyCx+8*sc,K.bodyCy+3*sc,40*sc);
   g.addColorStop(0,'rgba(255,255,255,.99)');
-  g.addColorStop(.55,'rgba(246,247,245,.99)');
-  g.addColorStop(.85,'rgba(228,232,238,.98)');
+  g.addColorStop(.50,'rgba(246,247,245,.99)');
+  g.addColorStop(.82,'rgba(228,232,238,.98)');
   g.addColorStop(1,'rgba(198,207,218,.92)');
   ctx.fillStyle=g;
   ctx.beginPath();
-  ctx.ellipse(K.bodyCx+1.5*sc,K.bodyCy+3*sc,17.5*sc,10.5*sc,0,0,Math.PI*2);
+  ctx.ellipse(K.bodyCx+6.5*sc,K.bodyCy+3.5*sc,28*sc,11.2*sc,-0.05,0,Math.PI*2);
   ctx.fill();
 
-  ctx.strokeStyle='rgba(228,234,240,.95)';
-  ctx.lineWidth=3.5*Math.max(0.65,sc);
+  // subtle belly highlight / dorsal shading
+  ctx.fillStyle='rgba(255,255,255,.20)';
   ctx.beginPath();
-  ctx.moveTo(K.bodyCx-6.5*sc,K.bodyCy-1.5*sc);
-  ctx.quadraticCurveTo(K.bodyCx-8.5*sc,K.bodyCy-5.5*sc,K.bodyCx-10.5*sc,K.bodyCy-8.2*sc);
+  ctx.ellipse(K.bodyCx+1.5*sc,K.bodyCy-0.5*sc,16*sc,4.2*sc,-0.08,0,Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle='rgba(180,190,204,.15)';
+  ctx.beginPath();
+  ctx.ellipse(K.bodyCx+12*sc,K.bodyCy+6.2*sc,20*sc,5.4*sc,-0.03,0,Math.PI*2);
+  ctx.fill();
+
+  // short neck tucked into flight posture
+  ctx.strokeStyle='rgba(228,234,240,.95)';
+  ctx.lineWidth=3.2*Math.max(0.65,sc);
+  ctx.beginPath();
+  ctx.moveTo(K.bodyCx-11.0*sc,K.bodyCy+0.8*sc);
+  ctx.quadraticCurveTo(K.bodyCx-13.0*sc,K.bodyCy-2.8*sc,K.bodyCx-15.4*sc,K.bodyCy-5.2*sc);
   ctx.stroke();
 
-  const hg=ctx.createRadialGradient(K.bodyCx-11.2*sc,K.bodyCy-8.6*sc,1*sc,K.bodyCx-10.4*sc,K.bodyCy-8.1*sc,7.5*sc);
+  // compact head pushed forward, not tall
+  const hg=ctx.createRadialGradient(K.bodyCx-16.2*sc,K.bodyCy-5.8*sc,1*sc,K.bodyCx-15.1*sc,K.bodyCy-5.4*sc,8.0*sc);
   hg.addColorStop(0,'rgba(255,255,255,.99)');
   hg.addColorStop(1,'rgba(214,220,228,.95)');
   ctx.fillStyle=hg;
   ctx.beginPath();
-  ctx.ellipse(K.bodyCx-10.5*sc,K.bodyCy-8.1*sc,5.8*sc,4.5*sc,0,0,Math.PI*2);
+  ctx.ellipse(K.bodyCx-15.2*sc,K.bodyCy-5.5*sc,6.6*sc,4.1*sc,-0.05,0,Math.PI*2);
   ctx.fill();
 
   ctx.fillStyle='#d2a06a';
   ctx.beginPath();
-  ctx.arc(K.bodyCx-8.5*sc,K.bodyCy-8.7*sc,1.7*sc,0,Math.PI*2);
+  ctx.arc(K.bodyCx-12.8*sc,K.bodyCy-5.8*sc,1.45*sc,0,Math.PI*2);
   ctx.fill();
   ctx.fillStyle='#111';
   ctx.beginPath();
-  ctx.arc(K.bodyCx-8.5*sc,K.bodyCy-8.7*sc,0.72*sc,0,Math.PI*2);
+  ctx.arc(K.bodyCx-12.8*sc,K.bodyCy-5.8*sc,0.62*sc,0,Math.PI*2);
   ctx.fill();
   ctx.fillStyle='rgba(255,255,255,.8)';
   ctx.beginPath();
-  ctx.arc(K.bodyCx-8.15*sc,K.bodyCy-9.0*sc,0.24*sc,0,Math.PI*2);
+  ctx.arc(K.bodyCx-12.5*sc,K.bodyCy-6.1*sc,0.2*sc,0,Math.PI*2);
   ctx.fill();
 
+  // longer, slimmer beak aligned with flight direction
   ctx.fillStyle='#7b7e85';
   ctx.beginPath();
-  ctx.moveTo(K.bodyCx-13.8*sc,K.bodyCy-8.0*sc);
-  ctx.lineTo(K.bodyCx-19.8*sc,K.bodyCy-7.3*sc);
-  ctx.lineTo(K.bodyCx-13.8*sc,K.bodyCy-6.6*sc);
+  ctx.moveTo(K.bodyCx-21.4*sc,K.bodyCy-5.4*sc);
+  ctx.lineTo(K.bodyCx-30.8*sc,K.bodyCy-4.3*sc);
+  ctx.lineTo(K.bodyCx-21.4*sc,K.bodyCy-3.2*sc);
   ctx.closePath();
   ctx.fill();
 
-  ctx.fillStyle='rgba(220,226,232,.75)';
+  // narrow tail aligned with body axis
+  ctx.fillStyle='rgba(220,226,232,.82)';
   ctx.beginPath();
-  ctx.moveTo(K.bodyCx+16.5*sc,K.bodyCy+2.2*sc);
-  ctx.lineTo(K.bodyCx+23.0*sc,K.bodyCy+0.2*sc);
-  ctx.lineTo(K.bodyCx+18.0*sc,K.bodyCy+5.5*sc);
+  ctx.moveTo(K.bodyCx+30.6*sc,K.bodyCy+2.0*sc);
+  ctx.lineTo(K.bodyCx+42.0*sc,K.bodyCy-0.4*sc);
+  ctx.lineTo(K.bodyCx+34.0*sc,K.bodyCy+5.2*sc);
   ctx.closePath();
   ctx.fill();
 
@@ -887,203 +938,6 @@ function drawForceVector(originX, originY, vecX, vecY, color, label){
 
 function drawLegend(x,y){ const h=156,w=18, grad=ctx.createLinearGradient(0,y,0,y+h); grad.addColorStop(0,'rgba(118,16,28,0.98)'); grad.addColorStop(.22,'rgba(205,88,88,0.82)'); grad.addColorStop(.50,'rgba(252,252,252,0.18)'); grad.addColorStop(.78,'rgba(88,132,230,0.82)'); grad.addColorStop(1,'rgba(8,52,150,0.98)'); ctx.fillStyle='rgba(255,255,255,0.72)'; ctx.fillRect(x-34,y-8,64,h+16); ctx.fillStyle=grad; ctx.fillRect(x,y,w,h); ctx.strokeStyle='rgba(0,0,0,0.22)'; ctx.strokeRect(x,y,w,h); ctx.font='11px system-ui'; ctx.fillStyle='rgba(20,30,40,0.92)'; const ticks=[{label:'+1.0',yy:y+4},{label:'+0.5',yy:y+h*.25},{label:'0',yy:y+h*.50},{label:'-0.5',yy:y+h*.75},{label:'-1.0',yy:y+h-2}]; for(const t of ticks){ctx.beginPath();ctx.moveTo(x+w+2,t.yy);ctx.lineTo(x+w+8,t.yy);ctx.strokeStyle='rgba(20,30,40,0.55)';ctx.stroke();ctx.fillStyle='rgba(20,30,40,0.92)';ctx.fillText(t.label,x-30,t.yy+4);} ctx.fillText('高圧',x-30,y-12); ctx.fillText('低圧',x-30,y+h+14); }
 
-
-// ===== integrated side wing override =======================================
-function sideKinematics(s,R){
-  const p=P(), sc=p.scale;
-  const bodyCx=R.x+R.w*.46;
-  const bodyCy=R.y+R.h*.67+Math.sin(s.ph-.2)*p.amp*.02;
-  const root = {x:bodyCx+4*sc, y:bodyCy-16*sc};
-  const rootHidden = {x:bodyCx+4*sc, y:bodyCy-4*sc};
-  const phase=((s.ph%(Math.PI*2)) + Math.PI*2)%(Math.PI*2)/(Math.PI*2)*4;
-  return {bodyCx,bodyCy,tilt:0,root,rootHidden,phase};
-}
-function sideLerpPt(a,b,t){ return {x:lerp(a.x,b.x,t), y:lerp(a.y,b.y,t)}; }
-function sideAdd(a,b){ return {x:a.x+b.x, y:a.y+b.y}; }
-function buildSidePhaseTemplates(sc, pitch, down, up){
-  const fan = (6 + 12*down + 3*pitch) * sc;
-  const thick = (10 + 7*pitch + 2*down) * sc;
-  const phases = [
-    {name:'上げ翼', lead:[{x:0,y:0},{x:-4,y:-70},{x:-16,y:-132},{x:-34,y:-176},{x:-58,y:-202}],
-                   trail:[{x:8,y:10},{x:6,y:-26},{x:-4,y:-84},{x:-16,y:-138},{x:-28,y:-178}]},
-    {name:'中間',   lead:[{x:0,y:0},{x:-18,y:-46},{x:-46,y:-88},{x:-82,y:-110},{x:-124,y:-116}],
-                   trail:[{x:8,y:10},{x:-2,y:-18},{x:-24,y:-58},{x:-56,y:-88},{x:-98,y:-104}]},
-    {name:'下げ翼', lead:[{x:0,y:0},{x:-28,y:12},{x:-68,y:34},{x:-116,y:54},{x:-164,y:64}],
-                   trail:[{x:8,y:10},{x:-12,y:22},{x:-48,y:42},{x:-94,y:60},{x:-146,y:76}]},
-    {name:'戻り',   lead:[{x:0,y:0},{x:-10,y:-18},{x:-30,y:-38},{x:-58,y:-48},{x:-92,y:-44}],
-                   trail:[{x:8,y:10},{x:0,y:-2},{x:-18,y:-18},{x:-44,y:-28},{x:-76,y:-30}]}
-  ];
-  for(const ph of phases){
-    ph.lead = ph.lead.map((p,i)=>({x:p.x*sc - (i>=3 ? fan*(i-2)*0.7 : 0), y:p.y*sc - (i>=3 ? fan*(i-2)*0.4 : 0)}));
-    ph.trail = ph.trail.map((p,i)=>({x:p.x*sc - (i>=3 ? fan*(i-2)*0.35 : 0), y:p.y*sc + thick*0.15*(1-i/4)}));
-  }
-  return phases;
-}
-function interpolateSidePhase(phases, phase){
-  const i0=Math.floor(phase)%4, i1=(i0+1)%4, t=phase-Math.floor(phase);
-  const a=phases[i0], b=phases[i1];
-  return {
-    nameA:a.name, nameB:b.name, t,
-    lead:a.lead.map((p,idx)=>sideLerpPt(p,b.lead[idx],t)),
-    trail:a.trail.map((p,idx)=>sideLerpPt(p,b.trail[idx],t))
-  };
-}
-function buildSideWingIntegrated(root, phase, params){
-  const phases=buildSidePhaseTemplates(params.sc, params.pitch, params.down, params.up);
-  const interp=interpolateSidePhase(phases, phase);
-  const p = phase % 4;
-  let exposure = 0;
-  if (p < 1) exposure = lerp(-0.55, -0.05, p);
-  else if (p < 2) exposure = lerp(-0.05, 0.95, p-1);
-  else if (p < 3) exposure = lerp(0.95, 0.15, p-2);
-  else exposure = lerp(0.15, -0.55, p-3);
-
-  const twist = (10 + params.pitch*20);
-  const downGain = (8 + params.pitch*14);
-
-  const lead=[], trail=[], guides=[];
-  for(let i=0;i<interp.lead.length;i++){
-    const t=i/(interp.lead.length-1);
-    const lp=sideAdd(root, interp.lead[i]);
-    const tp=sideAdd(root, interp.trail[i]);
-    const dx=lp.x-tp.x, dy=lp.y-tp.y;
-    const local=twist*(0.25+0.75*t)*exposure;
-    const extra=Math.max(0, exposure)*downGain*(0.15+0.85*t);
-    const leadShift=local*0.12;
-    const trailShift=local*0.46 + extra*0.18;
-    lead.push({x:lp.x + dx*(leadShift/100), y:lp.y + dy*(leadShift/100)});
-    trail.push({x:tp.x - dx*(trailShift/100), y:tp.y - dy*(trailShift/100)});
-    guides.push({a:lp,b:tp});
-  }
-
-  const path=new Path2D();
-  path.moveTo(lead[0].x, lead[0].y);
-  path.bezierCurveTo(lead[1].x, lead[1].y, lead[2].x, lead[2].y, lead[3].x, lead[3].y);
-  path.quadraticCurveTo(lead[4].x, lead[4].y, lead[4].x, lead[4].y);
-  path.lineTo(trail[4].x, trail[4].y);
-  path.bezierCurveTo(trail[3].x, trail[3].y, trail[2].x, trail[2].y, trail[1].x, trail[1].y);
-  path.lineTo(trail[0].x, trail[0].y);
-  path.closePath();
-
-  const shoulder = {x: root.x, y: root.y};
-  const elbow = {x:(lead[2].x+trail[2].x)*0.5, y:(lead[2].y+trail[2].y)*0.5};
-  const wrist = {x:(lead[3].x+trail[3].x)*0.5, y:(lead[3].y+trail[3].y)*0.5};
-  const tip = {x:(lead[4].x+trail[4].x)*0.5, y:(lead[4].y+trail[4].y)*0.5};
-
-  return {path, lead, trail, guides, interp, exposure, shoulder, elbow, wrist, tip};
-}
-function makeSideBirdPaths(state, K){
-  const sc=state.scale, p=P();
-  const wing = buildSideWingIntegrated(K.root, K.phase, {sc, pitch:p.pitch, down:state.down, up:state.up});
-
-  K.shoulderX = wing.shoulder.x; K.shoulderY = wing.shoulder.y;
-  K.ex = wing.elbow.x; K.ey = wing.elbow.y;
-  K.wx = wing.wrist.x; K.wy = wing.wrist.y;
-  K.tx = wing.tip.x; K.ty = wing.tip.y;
-
-  const wingFill = wing.path;
-  const wingTex = new Path2D();
-  for(const g of wing.guides){ wingTex.moveTo(g.a.x,g.a.y); wingTex.lineTo(g.b.x,g.b.y); }
-
-  const rearLead = wing.lead.map(pt => ({x: K.bodyCx + (pt.x-K.bodyCx)*0.88 - 4.8*sc, y: K.bodyCy + (pt.y-K.bodyCy)*0.88 - 6.8*sc}));
-  const rearTrail = wing.trail.map(pt => ({x: K.bodyCx + (pt.x-K.bodyCx)*0.88 - 4.8*sc, y: K.bodyCy + (pt.y-K.bodyCy)*0.88 - 6.8*sc}));
-  const rearWingFill = new Path2D();
-  rearWingFill.moveTo(rearLead[0].x, rearLead[0].y);
-  rearWingFill.bezierCurveTo(rearLead[1].x,rearLead[1].y,rearLead[2].x,rearLead[2].y,rearLead[3].x,rearLead[3].y);
-  rearWingFill.quadraticCurveTo(rearLead[4].x,rearLead[4].y,rearLead[4].x,rearLead[4].y);
-  rearWingFill.lineTo(rearTrail[4].x,rearTrail[4].y);
-  rearWingFill.bezierCurveTo(rearTrail[3].x,rearTrail[3].y,rearTrail[2].x,rearTrail[2].y,rearTrail[1].x,rearTrail[1].y);
-  rearWingFill.lineTo(rearTrail[0].x,rearTrail[0].y);
-  rearWingFill.closePath();
-
-  const rearWingTex = new Path2D();
-  for(let i=0;i<rearLead.length;i++){ rearWingTex.moveTo(rearLead[i].x,rearLead[i].y); rearWingTex.lineTo(rearTrail[i].x,rearTrail[i].y); }
-
-  const skeleton = new Path2D();
-  skeleton.moveTo(K.shoulderX,K.shoulderY); skeleton.lineTo(K.ex,K.ey); skeleton.lineTo(K.wx,K.wy); skeleton.lineTo(K.tx,K.ty);
-
-  const body = new Path2D();
-  body.ellipse(K.bodyCx+1.5*sc, K.bodyCy+3*sc, 17.5*sc, 10.5*sc, 0, 0, Math.PI*2);
-  body.ellipse(K.bodyCx-10.5*sc, K.bodyCy-8.1*sc, 5.8*sc, 4.5*sc, 0, 0, Math.PI*2);
-
-  return {
-    wing, wingFill,
-    rearWing:{upper:rearLead, lower:rearTrail, poly:rearLead.concat(rearTrail.slice().reverse())},
-    rearWingFill,
-    wingTex, rearWingTex, skeleton, body
-  };
-}
-function forceFieldSide(field,s,K,R,dt){
-  const p=P(), c=field.cell;
-  if(p.wind > 0){
-    for(let j=0;j<field.NY;j++) for(let i=0;i<3;i++){
-      const id=idx(field,i,j);
-      if(!field.solid[id]){ field.u[id]=p.wind/c; field.v[id]=0; }
-    }
-  }
-  const samples = [];
-  for(const t of [0.16,0.32,0.50,0.72]){
-    samples.push({x:lerp(K.shoulderX,K.ex,t), y:lerp(K.shoulderY,K.ey,t), q:0.58+0.24*t});
-  }
-  for(const t of [0.18,0.38,0.58,0.78]){
-    samples.push({x:lerp(K.ex,K.wx,t), y:lerp(K.ey,K.wy,t), q:0.72+0.28*t});
-  }
-  for(const t of [0.16,0.36,0.58,0.82]){
-    samples.push({x:lerp(K.wx,K.tx,t), y:lerp(K.wy,K.ty,t), q:0.92+0.30*t});
-  }
-  for(const pt of samples){
-    const cx=(pt.x-R.x)/c, cy=(pt.y-R.y)/c;
-    const rad = 2.3 + 1.0*p.pitch + 0.9*pt.q;
-    for(let j=Math.max(0,Math.floor(cy-rad)); j<=Math.min(field.NY-1,Math.ceil(cy+rad)); j++){
-      for(let i=Math.max(0,Math.floor(cx-rad)); i<=Math.min(field.NX-1,Math.ceil(cx+rad)); i++){
-        const dx=i+.5-cx, dy=j+.5-cy, d2=dx*dx+dy*dy+1e-6;
-        if(d2 < rad*rad){
-          const id=idx(field,i,j);
-          if(field.solid[id]) continue;
-          const k = (1-d2/(rad*rad))*pt.q;
-          field.u[id] += 0.08*k*dt;
-          field.v[id] += (0.22*s.down - 0.08*s.up) * (0.78 + 0.24*p.pitch) * k * dt;
-        }
-      }
-    }
-  }
-}
-function updateForces(field,K,R){
-  let lf=0,th=0,n=0;
-  for(const pt of [
-    {x:lerp(K.shoulderX,K.wx,.40), y:lerp(K.shoulderY,K.wy,.40)},
-    {x:lerp(K.ex,K.tx,.52), y:lerp(K.ey,K.ty,.52)}
-  ]){
-    const gx=(pt.x-R.x)/field.cell, gy=(pt.y-R.y)/field.cell;
-    lf += samp(field,field.v,gx,gy+3)-samp(field,field.v,gx,gy-3);
-    th += samp(field,field.u,gx+4,gy)-samp(field,field.u,gx-4,gy);
-    n++;
-  }
-  if(n>0){ lift=.86*lift+.14*Math.max(0,lf/n); thrust=.86*thrust+.14*Math.max(0,th/n+.15); }
-}
-function estimateSideForce(field, K, R){
-  const sp = smoothPressure(field);
-  const samples = [];
-  for(const t of [0.18,0.38,0.58,0.78]){
-    samples.push({x:lerp(K.ex,K.wx,t), y:lerp(K.ey,K.wy,t), q:0.82+0.22*t});
-  }
-  for(const t of [0.16,0.36,0.58,0.82]){
-    samples.push({x:lerp(K.wx,K.tx,t), y:lerp(K.wy,K.ty,t), q:0.92+0.30*t});
-  }
-  let fx=0, fy=0, n=0;
-  for(const pt of samples){
-    const gx=(pt.x-R.x)/field.cell, gy=(pt.y-R.y)/field.cell;
-    const i=clamp(Math.round(gx),1,field.NX-2), j=clamp(Math.round(gy),1,field.NY-2);
-    const dpdx=(sp[idx(field,i+1,j)]-sp[idx(field,i-1,j)])*0.5;
-    const dpdy=(sp[idx(field,i,j+1)]-sp[idx(field,i,j-1)])*0.5;
-    fx += -dpdx * pt.q;
-    fy += -dpdy * pt.q;
-    n++;
-  }
-  if(n===0) return {lift:0, thrust:0};
-  return {lift: fy/n, thrust: fx/n};
-}
-// ===== end integrated side wing override ===================================
 function renderFrontView(rect,state,Lw,Rw,flags){
   const sr=simRect(frontField,rect), paths=makeFrontBirdPaths(state,Lw,Rw);
   if(flags.pressure) drawPressureMap(frontField,sr,1);
