@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>前面・側面 独立流体場版 羽ばたきシミュレーション（Poisson圧力寄せ・中央配置版）</title>
+<title>前面・側面 独立流体場版 羽ばたきシミュレーション（CFD最終寄せ・中央配置版）</title>
 <style>
   :root{--safe-top:max(env(safe-area-inset-top),0px);--safe-bottom:max(env(safe-area-inset-bottom),0px)}
   html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(180deg,#eef5fb,#dbe8f3 45%,#c6dceb)}
@@ -59,10 +59,11 @@
         <label><input id="showPressure" type="checkbox" checked> 圧力</label>
         <label><input id="showContours" type="checkbox" checked> 等圧線</label>
         <label><input id="showFlow" type="checkbox" checked> 流線</label>
+        <label><input id="showVorticity" type="checkbox" checked> 渦</label>
         <button id="reset">リセット</button>
       </div>
     </div>
-    <div id="msg">鳥の描画に使っているPath2Dを、そのままオフスクリーンに塗ってsolidマスクを作る版です。速度場から圧力をより強く解く方向に寄せた版です。project反復を増やし、強制は控えめな速度注入にして、圧力の孤立塊を減らしています。</div>
+    <div id="msg">鳥の描画に使っているPath2Dを、そのままオフスクリーンに塗ってsolidマスクを作る版です。速度場から圧力をより強く解く方向に寄せ、軽い粘性拡散と壁まわりの抑制を追加した版です。渦も可視化して、流れの回り込みを見やすくしています。</div>
   </div>
   <div id="stage"><canvas id="cv"></canvas></div>
   <div id="fabBar">
@@ -84,6 +85,7 @@ const dom = {
   showPressure: document.getElementById('showPressure'),
   showContours: document.getElementById('showContours'),
   showFlow: document.getElementById('showFlow'),
+  showVorticity: document.getElementById('showVorticity'),
   reset: document.getElementById('reset'),
   toggleUi: document.getElementById('toggleUi'),
   fullscreen: document.getElementById('fullscreen'),
@@ -360,10 +362,51 @@ function advect(field,dt){
     const id=idx(field,i,j);
     if(field.solid[id]){field.u2[id]=field.svx[id]/c; field.v2[id]=field.svy[id]/c; continue;}
     const x=i+.5,y=j+.5,bx=x-field.u[id]*dt,by=y-field.v[id]*dt;
-    field.u2[id]=samp(field,field.u,bx,by); field.v2[id]=samp(field,field.v,bx,by); field.u2[id]=.992*field.u2[id]+.008*(p.wind/c);
+    field.u2[id]=samp(field,field.u,bx,by); field.v2[id]=samp(field,field.v,bx,by); field.u2[id]=.996*field.u2[id]+.004*(p.wind/c);
   }
   [field.u,field.u2]=[field.u2,field.u]; [field.v,field.v2]=[field.v2,field.v];
 }
+
+function diffuse(field, amount=0.06){
+  const nu = new Float32Array(field.u.length);
+  const nv = new Float32Array(field.v.length);
+  for(let j=1;j<field.NY-1;j++){
+    for(let i=1;i<field.NX-1;i++){
+      const id=idx(field,i,j);
+      if(field.solid[id]){ nu[id]=field.u[id]; nv[id]=field.v[id]; continue; }
+      const uavg = (field.u[idx(field,i+1,j)] + field.u[idx(field,i-1,j)] + field.u[idx(field,i,j+1)] + field.u[idx(field,i,j-1)]) * 0.25;
+      const vavg = (field.v[idx(field,i+1,j)] + field.v[idx(field,i-1,j)] + field.v[idx(field,i,j+1)] + field.v[idx(field,i,j-1)]) * 0.25;
+      nu[id] = field.u[id]*(1-amount) + uavg*amount;
+      nv[id] = field.v[id]*(1-amount) + vavg*amount;
+    }
+  }
+  for(let j=1;j<field.NY-1;j++){
+    for(let i=1;i<field.NX-1;i++){
+      const id=idx(field,i,j);
+      field.u[id]=nu[id];
+      field.v[id]=nv[id];
+    }
+  }
+}
+
+function applySolidWall(field){
+  for(let j=1;j<field.NY-1;j++){
+    for(let i=1;i<field.NX-1;i++){
+      const id=idx(field,i,j);
+      if(!field.solid[id]) continue;
+      field.u[id]=0;
+      field.v[id]=0;
+      // mild no-slip influence to neighbors
+      for(const [ni,nj] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const nid = idx(field,i+ni,j+nj);
+        if(field.solid[nid]) continue;
+        field.u[nid] *= 0.72;
+        field.v[nid] *= 0.72;
+      }
+    }
+  }
+}
+
 function repel(field){
   for(let j=1;j<field.NY-1;j++) for(let i=1;i<field.NX-1;i++){
     const id=idx(field,i,j); if(field.solid[id]) continue;
@@ -664,17 +707,39 @@ function drawSideBird(state, K, paths){
   ctx.restore();
 }
 
+
+function drawVorticity(field,R,alpha=0.28){
+  const sx=R.w/(field.NX*field.cell), sy=R.h/(field.NY*field.cell);
+  ctx.save();
+  ctx.beginPath(); rr(R.x,R.y,R.w,R.h,16); ctx.clip();
+  ctx.globalAlpha = alpha;
+  for(let j=2;j<field.NY-2;j+=2){
+    for(let i=2;i<field.NX-2;i+=2){
+      const id=idx(field,i,j);
+      if(field.solid[id]) continue;
+      const curl = 0.5*(field.v[idx(field,i+1,j)]-field.v[idx(field,i-1,j)]-field.u[idx(field,i,j-1)]+field.u[idx(field,i,j+1)]);
+      const a = Math.min(0.22, Math.abs(curl)*0.12);
+      if(a < 0.02) continue;
+      ctx.fillStyle = curl > 0 ? `rgba(74,132,224,${a})` : `rgba(208,106,120,${a})`;
+      ctx.beginPath();
+      ctx.arc(R.x+(i+0.5)*field.cell*sx, R.y+(j+0.5)*field.cell*sy, 1.1, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
 function drawLegend(x,y){ const h=156,w=18, grad=ctx.createLinearGradient(0,y,0,y+h); grad.addColorStop(0,'rgba(118,16,28,0.98)'); grad.addColorStop(.22,'rgba(205,88,88,0.82)'); grad.addColorStop(.50,'rgba(252,252,252,0.18)'); grad.addColorStop(.78,'rgba(88,132,230,0.82)'); grad.addColorStop(1,'rgba(8,52,150,0.98)'); ctx.fillStyle='rgba(255,255,255,0.72)'; ctx.fillRect(x-34,y-8,64,h+16); ctx.fillStyle=grad; ctx.fillRect(x,y,w,h); ctx.strokeStyle='rgba(0,0,0,0.22)'; ctx.strokeRect(x,y,w,h); ctx.font='11px system-ui'; ctx.fillStyle='rgba(20,30,40,0.92)'; const ticks=[{label:'+1.0',yy:y+4},{label:'+0.5',yy:y+h*.25},{label:'0',yy:y+h*.50},{label:'-0.5',yy:y+h*.75},{label:'-1.0',yy:y+h-2}]; for(const t of ticks){ctx.beginPath();ctx.moveTo(x+w+2,t.yy);ctx.lineTo(x+w+8,t.yy);ctx.strokeStyle='rgba(20,30,40,0.55)';ctx.stroke();ctx.fillStyle='rgba(20,30,40,0.92)';ctx.fillText(t.label,x-30,t.yy+4);} ctx.fillText('高圧',x-30,y-12); ctx.fillText('低圧',x-30,y+h+14); }
 
 function renderFrontView(rect,state,Lw,Rw,flags){
   const sr=simRect(frontField,rect), paths=makeFrontBirdPaths(state,Lw,Rw);
-  if(flags.pressure) drawPressureMap(frontField,sr,1); if(flags.contours) drawContours(frontField,sr); if(flags.flow) drawFlowLines(frontField,sr,1);
+  if(flags.pressure) drawPressureMap(frontField,sr,1); if(flags.contours) drawContours(frontField,sr); if(flags.flow) drawFlowLines(frontField,sr,1); if(flags.vorticity) drawVorticity(frontField,sr,0.30);
   ctx.save(); ctx.beginPath(); rr(sr.x,sr.y,sr.w,sr.h,16); ctx.clip(); drawFrontBird(state,paths); arrow(sr.x+12,sr.y+sr.h-18,sr.x+88,sr.y+sr.h-18,'#5b84c8','前から来る空気'); ctx.restore();
   drawLegend(sr.x+sr.w-64,sr.y+18);
 }
 function renderSideView(rect,state,flags){
   const sr=simRect(sideField,rect), K=sideKinematics(state,sr), paths=makeSideBirdPaths(state,K);
-  if(flags.pressure) drawPressureMap(sideField,sr,.92); if(flags.contours) drawContours(sideField,sr); if(flags.flow) drawFlowLines(sideField,sr,.72);
+  if(flags.pressure) drawPressureMap(sideField,sr,.92); if(flags.contours) drawContours(sideField,sr); if(flags.flow) drawFlowLines(sideField,sr,.72); if(flags.vorticity) drawVorticity(sideField,sr,0.28);
   ctx.save(); ctx.beginPath(); rr(sr.x,sr.y,sr.w,sr.h,16); ctx.clip(); drawSideBird(state,K,paths); arrow(sr.x+sr.w-76,sr.y+28,sr.x+sr.w-76,sr.y+28-Math.min(38,8+lift*15),'#5b84c8','揚力'); arrow(sr.x+sr.w-76,sr.y+54,sr.x+sr.w-76+Math.min(40,8+thrust*16),sr.y+54,'#d48ab0','推力'); arrow(sr.x+12,sr.y+sr.h-18,sr.x+88,sr.y+sr.h-18,'#5b84c8','前から来る空気'); ctx.restore();
   drawLegend(sr.x+sr.w-64,sr.y+18);
 }
@@ -698,8 +763,8 @@ function rebuildMasks(state, frontSimR, sideSimR){
 }
 
 function draw(dt){
-  const R=rects(), flags={pressure:dom.showPressure.checked,contours:dom.showContours.checked,flow:dom.showFlow.checked};
-  ctx.clearRect(0,0,W,H); card(R.F,'前面ビュー','Poisson圧力寄せ・中央配置'); card(R.S,'側面ビュー','Poisson圧力寄せ・中央配置');
+  const R=rects(), flags={pressure:dom.showPressure.checked,contours:dom.showContours.checked,flow:dom.showFlow.checked,vorticity:dom.showVorticity.checked};
+  ctx.clearRect(0,0,W,H); card(R.F,'前面ビュー','CFD最終寄せ・中央配置'); card(R.S,'側面ビュー','CFD最終寄せ・中央配置');
   const frontSimR=simRect(frontField,R.F), sideSimR=simRect(sideField,R.S);
   const state=birdState(simT,frontSimR);
   const kin = rebuildMasks(state, frontSimR, sideSimR);
@@ -719,7 +784,7 @@ function draw(dt){
 function loop(now){ if(!t0){t0=now; last=now;} simT=(now-t0)/1000; const dt=Math.min(.025,(now-last)/1000); last=now; draw(dt); requestAnimationFrame(loop); }
 function bindUI(){
   dom.reset.addEventListener('click', handleReset); dom.fabReset.addEventListener('click', handleReset); dom.toggleUi.addEventListener('click', ()=>setUiCollapsed(!uiCollapsed)); dom.fabToggleUi.addEventListener('click', ()=>setUiCollapsed(!uiCollapsed)); dom.fullscreen.addEventListener('click', toggleFullscreen);
-  [dom.showPressure,dom.showContours,dom.showFlow,dom.birdScale,dom.wind,dom.amp,dom.freq,dom.pitch].forEach(el=>{ el.addEventListener('input',()=>{ invalidatePressureMap(frontField); invalidatePressureMap(sideField); draw(0); }); el.addEventListener('change',()=>{ invalidatePressureMap(frontField); invalidatePressureMap(sideField); draw(0); }); });
+  [dom.showPressure,dom.showContours,dom.showFlow,dom.showVorticity,dom.birdScale,dom.wind,dom.amp,dom.freq,dom.pitch].forEach(el=>{ el.addEventListener('input',()=>{ invalidatePressureMap(frontField); invalidatePressureMap(sideField); draw(0); }); el.addEventListener('change',()=>{ invalidatePressureMap(frontField); invalidatePressureMap(sideField); draw(0); }); });
   window.addEventListener('resize', resize);
 }
 bindUI(); resize(); draw(0); setTimeout(()=>requestAnimationFrame(loop),80);
