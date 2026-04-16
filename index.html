@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>前面・側面 独立流体場版 羽ばたきシミュレーション（CFD最終寄せ・力ベクトル版）</title>
+<title>前面・側面 独立流体場版 羽ばたきシミュレーション（圧力ベース力ベクトル版）</title>
 <style>
   :root{--safe-top:max(env(safe-area-inset-top),0px);--safe-bottom:max(env(safe-area-inset-bottom),0px)}
   html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(180deg,#eef5fb,#dbe8f3 45%,#c6dceb)}
@@ -64,7 +64,7 @@
         <button id="reset">リセット</button>
       </div>
     </div>
-    <div id="msg">鳥の描画に使っているPath2Dを、そのままオフスクリーンに塗ってsolidマスクを作る版です。軽い粘性拡散と壁まわりの抑制に加え、場から推定した揚力・推力ベクトルを表示する版です。渦も可視化して、流れの回り込みを見やすくしています。</div>
+    <div id="msg">鳥の描画に使っているPath2Dを、そのままオフスクリーンに塗ってsolidマスクを作る版です。速度勾配ではなく、平滑化した圧力場の勾配から揚力・推力ベクトルを推定する版です。ベクトルは少し時間平均して安定表示しています。</div>
   </div>
   <div id="stage"><canvas id="cv"></canvas></div>
   <div id="fabBar">
@@ -733,48 +733,55 @@ function drawVorticity(field,R,alpha=0.28){
 
 
 function estimateFrontForce(field, state, Lw, Rw, R){
+  const sp = smoothPressure(field);
   const samples = [];
   for(const wing of [Lw, Rw]){
     for(const t of [0.18,0.38,0.58,0.78]){
-      samples.push({x:lerp(wing.elbowX,wing.wristX,t), y:lerp(wing.elbowY,wing.wristY,t)});
+      samples.push({x:lerp(wing.elbowX,wing.wristX,t), y:lerp(wing.elbowY,wing.wristY,t), q:0.85+0.25*t});
     }
     for(const t of [0.16,0.36,0.58,0.82]){
-      samples.push({x:lerp(wing.wristX,wing.tipX,t), y:lerp(wing.wristY,wing.tipY,t)});
+      samples.push({x:lerp(wing.wristX,wing.tipX,t), y:lerp(wing.wristY,wing.tipY,t), q:0.95+0.35*t});
     }
   }
-  let up=0, side=0, n=0;
+  let fx=0, fy=0, n=0;
   for(const pt of samples){
     const gx=(pt.x-R.x)/field.cell, gy=(pt.y-R.y)/field.cell;
-    const du = samp(field, field.u, gx+2, gy) - samp(field, field.u, gx-2, gy);
-    const dv = samp(field, field.v, gx, gy+2) - samp(field, field.v, gx, gy-2);
-    side += du;
-    up += -dv;
+    const i=clamp(Math.round(gx),1,field.NX-2), j=clamp(Math.round(gy),1,field.NY-2);
+    const dpdx=(sp[idx(field,i+1,j)]-sp[idx(field,i-1,j)])*0.5;
+    const dpdy=(sp[idx(field,i,j+1)]-sp[idx(field,i,j-1)])*0.5;
+    fx += -dpdx * pt.q;
+    fy += -dpdy * pt.q;
     n++;
   }
   if(n===0) return {lift:0, side:0};
-  return {lift: up/n, side: side/n};
+  return {lift: fy/n, side: fx/n};
 }
 
 function estimateSideForce(field, K, R){
+  const sp = smoothPressure(field);
   const samples = [];
   for(const t of [0.18,0.38,0.58,0.78]){
-    samples.push({x:lerp(K.ex,K.wx,t), y:lerp(K.ey,K.wy,t)});
+    samples.push({x:lerp(K.ex,K.wx,t), y:lerp(K.ey,K.wy,t), q:0.82+0.22*t});
   }
   for(const t of [0.16,0.36,0.58,0.82]){
-    samples.push({x:lerp(K.wx,K.tx,t), y:lerp(K.wy,K.ty,t)});
+    samples.push({x:lerp(K.wx,K.tx,t), y:lerp(K.wy,K.ty,t), q:0.92+0.30*t});
   }
-  let lift=0, thrust=0, n=0;
+  let fx=0, fy=0, n=0;
   for(const pt of samples){
     const gx=(pt.x-R.x)/field.cell, gy=(pt.y-R.y)/field.cell;
-    const du = samp(field, field.u, gx+2, gy) - samp(field, field.u, gx-2, gy);
-    const dv = samp(field, field.v, gx, gy+2) - samp(field, field.v, gx, gy-2);
-    thrust += -du;
-    lift += -dv;
+    const i=clamp(Math.round(gx),1,field.NX-2), j=clamp(Math.round(gy),1,field.NY-2);
+    const dpdx=(sp[idx(field,i+1,j)]-sp[idx(field,i-1,j)])*0.5;
+    const dpdy=(sp[idx(field,i,j+1)]-sp[idx(field,i,j-1)])*0.5;
+    fx += -dpdx * pt.q;
+    fy += -dpdy * pt.q;
     n++;
   }
   if(n===0) return {lift:0, thrust:0};
-  return {lift: lift/n, thrust: thrust/n};
+  return {lift: fy/n, thrust: fx/n};
 }
+
+let frontForceState = {x:0,y:0};
+let sideForceState = {x:0,y:0,tx:0,ly:0};
 
 function drawForceVector(originX, originY, vecX, vecY, color, label){
   const mag = Math.hypot(vecX, vecY);
@@ -819,9 +826,11 @@ function renderFrontView(rect,state,Lw,Rw,flags){
 
   if(flags.forceVec){
     const F = estimateFrontForce(frontField, state, Lw, Rw, sr);
+    frontForceState.x = frontForceState.x*0.86 + F.side*0.14;
+    frontForceState.y = frontForceState.y*0.86 + (-F.lift)*0.14;
     const ox = state.bodyX;
     const oy = state.bodyY - 18*state.scale;
-    drawForceVector(ox, oy, clamp(F.side*0.9,-1.2,1.2), clamp(-F.lift*1.2,-1.2,1.2), '#4f93ff', '揚力ベクトル');
+    drawForceVector(ox, oy, clamp(frontForceState.x*1.1,-1.2,1.2), clamp(frontForceState.y*1.35,-1.2,1.2), '#4f93ff', '揚力ベクトル');
   }
   ctx.restore();
 
@@ -841,11 +850,15 @@ function renderSideView(rect,state,flags){
 
   if(flags.forceVec){
     const F = estimateSideForce(sideField, K, sr);
+    sideForceState.x = sideForceState.x*0.86 + F.thrust*0.14;
+    sideForceState.y = sideForceState.y*0.86 + (-F.lift)*0.14;
+    sideForceState.tx = sideForceState.tx*0.86 + F.thrust*0.14;
+    sideForceState.ly = sideForceState.ly*0.86 + (-F.lift)*0.14;
     const ox = K.bodyCx + 6*state.scale;
     const oy = K.bodyCy - 18*state.scale;
-    drawForceVector(ox, oy, clamp(F.thrust*1.15,-1.2,1.2), clamp(-F.lift*1.15,-1.2,1.2), '#4f93ff', '合力');
-    drawForceVector(ox+8, oy+8, clamp(F.thrust*1.15,-1.2,1.2), 0, '#d48ab0', '推力');
-    drawForceVector(ox-6, oy+6, 0, clamp(-F.lift*1.15,-1.2,1.2), '#5b84c8', '揚力');
+    drawForceVector(ox, oy, clamp(sideForceState.x*1.2,-1.2,1.2), clamp(sideForceState.y*1.2,-1.2,1.2), '#4f93ff', '合力');
+    drawForceVector(ox+8, oy+8, clamp(sideForceState.tx*1.2,-1.2,1.2), 0, '#d48ab0', '推力');
+    drawForceVector(ox-6, oy+6, 0, clamp(sideForceState.ly*1.2,-1.2,1.2), '#5b84c8', '揚力');
   }
   ctx.restore();
 
@@ -860,7 +873,7 @@ function resize(){
   dom.canvas.width=Math.floor(W*DPR); dom.canvas.height=Math.floor(H*DPR); dom.canvas.style.width=W+'px'; dom.canvas.style.height=H+'px'; ctx.setTransform(DPR,0,0,DPR,0,0);
   const R=rects(); initField(frontField,R.F,'front'); initField(sideField,R.S,'side'); lift=0; thrust=0; prevFrontState=null; prevSideState=null; draw(0);
 }
-function handleReset(){ t0=0; simT=0; last=0; resetField(frontField); resetField(sideField); lift=0; thrust=0; prevFrontState=null; prevSideState=null; draw(0); }
+function handleReset(){ t0=0; simT=0; last=0; resetField(frontField); resetField(sideField); lift=0; thrust=0; prevFrontState=null; prevSideState=null; frontForceState={x:0,y:0}; sideForceState={x:0,y:0,tx:0,ly:0}; draw(0); }
 
 function rebuildMasks(state, frontSimR, sideSimR){
   const Lw=wing(state,'left'), Rw=wing(state,'right'), frontPaths=makeFrontBirdPaths(state,Lw,Rw);
@@ -872,7 +885,7 @@ function rebuildMasks(state, frontSimR, sideSimR){
 
 function draw(dt){
   const R=rects(), flags={pressure:dom.showPressure.checked,contours:dom.showContours.checked,flow:dom.showFlow.checked,vorticity:dom.showVorticity.checked,forceVec:dom.showForceVec.checked};
-  ctx.clearRect(0,0,W,H); card(R.F,'前面ビュー','CFD最終寄せ・力ベクトル'); card(R.S,'側面ビュー','CFD最終寄せ・力ベクトル');
+  ctx.clearRect(0,0,W,H); card(R.F,'前面ビュー','圧力ベース力ベクトル'); card(R.S,'側面ビュー','圧力ベース力ベクトル');
   const frontSimR=simRect(frontField,R.F), sideSimR=simRect(sideField,R.S);
   const state=birdState(simT,frontSimR);
   const kin = rebuildMasks(state, frontSimR, sideSimR);
