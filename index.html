@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>前面・側面 独立流体場版 羽ばたきシミュレーション（圧力ベース力ベクトル版）</title>
+<title>前面・側面 独立流体場版 羽ばたきシミュレーション（圧力ベース力ベクトル・真横側面版）</title>
 <style>
   :root{--safe-top:max(env(safe-area-inset-top),0px);--safe-bottom:max(env(safe-area-inset-bottom),0px)}
   html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(180deg,#eef5fb,#dbe8f3 45%,#c6dceb)}
@@ -64,7 +64,7 @@
         <button id="reset">リセット</button>
       </div>
     </div>
-    <div id="msg">鳥の描画に使っているPath2Dを、そのままオフスクリーンに塗ってsolidマスクを作る版です。速度勾配ではなく、平滑化した圧力場の勾配から揚力・推力ベクトルを推定する版です。ベクトルは少し時間平均して安定表示しています。</div>
+    <div id="msg">鳥の描画に使っているPath2Dを、そのままオフスクリーンに塗ってsolidマスクを作る版です。速度勾配ではなく、平滑化した圧力場の勾配から揚力・推力ベクトルを推定する版です。側面ビューの頭・胴体・くちばしは真横シルエットに寄せ、ベクトルは少し時間平均して安定表示しています。</div>
   </div>
   <div id="stage"><canvas id="cv"></canvas></div>
   <div id="fabBar">
@@ -678,7 +678,7 @@ function drawSideBird(state, K, paths){
   const sc=state.scale;
   ctx.save();
 
-  // rear wing first: make the side view read as a two-wing projection
+  // rear wing first
   ctx.fillStyle='rgba(228,234,241,.62)';
   ctx.fill(paths.rearWingFill);
   const rearGrad=ctx.createLinearGradient(K.shoulderX-6*sc,K.shoulderY-4*sc,K.tx-4*sc,K.ty-4*sc);
@@ -691,14 +691,72 @@ function drawSideBird(state, K, paths){
   ctx.lineWidth=Math.max(.4,0.55*sc);
   ctx.stroke(paths.rearWingTex);
 
-  const bodyShadow=ctx.createRadialGradient(K.bodyCx+4*sc,K.bodyCy+7*sc,1*sc,K.bodyCx+4*sc,K.bodyCy+7*sc,22*sc); bodyShadow.addColorStop(0,'rgba(145,155,168,.16)'); bodyShadow.addColorStop(1,'rgba(145,155,168,0)'); ctx.fillStyle=bodyShadow; ctx.beginPath(); ctx.ellipse(K.bodyCx+2*sc,K.bodyCy+3*sc,17*sc,11*sc,0,0,Math.PI*2); ctx.fill();
-  const g=ctx.createRadialGradient(K.bodyCx-3*sc,K.bodyCy-4*sc,2*sc,K.bodyCx,K.bodyCy,22*sc); g.addColorStop(0,'rgba(255,255,255,.99)'); g.addColorStop(.50,'rgba(246,247,245,.99)'); g.addColorStop(.82,'rgba(228,232,238,.98)'); g.addColorStop(1,'rgba(198,207,218,.92)'); ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(K.bodyCx,K.bodyCy+3*sc,16*sc,10*sc,0,0,Math.PI*2); ctx.fill();
-  ctx.strokeStyle='rgba(228,234,240,.95)'; ctx.lineWidth=3.8*Math.max(0.65,sc); ctx.beginPath(); ctx.moveTo(K.bodyCx-9*sc,K.bodyCy-4*sc); ctx.quadraticCurveTo(K.bodyCx-10*sc,K.bodyCy-8*sc,K.bodyCx-9*sc,K.bodyCy-12*sc); ctx.stroke();
-  const hg=ctx.createRadialGradient(K.bodyCx-9*sc,K.bodyCy-9*sc,1*sc,K.bodyCx-9*sc,K.bodyCy-8*sc,7*sc); hg.addColorStop(0,'rgba(255,255,255,.99)'); hg.addColorStop(1,'rgba(214,220,228,.95)'); ctx.fillStyle=hg; ctx.beginPath(); ctx.ellipse(K.bodyCx-9*sc,K.bodyCy-8*sc,5.3*sc,4.3*sc,0,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#d2a06a'; ctx.beginPath(); ctx.arc(K.bodyCx-7.2*sc,K.bodyCy-8.7*sc,1.8*sc,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(K.bodyCx-7.2*sc,K.bodyCy-8.7*sc,0.75*sc,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='rgba(255,255,255,.8)'; ctx.beginPath(); ctx.arc(K.bodyCx-6.8*sc,K.bodyCy-9.1*sc,0.25*sc,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#7b7e85'; ctx.beginPath(); ctx.moveTo(K.bodyCx-10.0*sc,K.bodyCy-7.7*sc); ctx.lineTo(K.bodyCx-14.8*sc,K.bodyCy-6.9*sc); ctx.lineTo(K.bodyCx-10.0*sc,K.bodyCy-6.0*sc); ctx.closePath(); ctx.fill();
+  // strict side-profile body
+  const bodyShadow=ctx.createRadialGradient(K.bodyCx+5*sc,K.bodyCy+6*sc,1*sc,K.bodyCx+5*sc,K.bodyCy+6*sc,22*sc);
+  bodyShadow.addColorStop(0,'rgba(145,155,168,.16)');
+  bodyShadow.addColorStop(1,'rgba(145,155,168,0)');
+  ctx.fillStyle=bodyShadow;
+  ctx.beginPath();
+  ctx.ellipse(K.bodyCx+2.5*sc,K.bodyCy+3.2*sc,18*sc,10.5*sc,0,0,Math.PI*2);
+  ctx.fill();
+
+  const g=ctx.createRadialGradient(K.bodyCx-5*sc,K.bodyCy-2*sc,2*sc,K.bodyCx+1*sc,K.bodyCy+2*sc,24*sc);
+  g.addColorStop(0,'rgba(255,255,255,.99)');
+  g.addColorStop(.55,'rgba(246,247,245,.99)');
+  g.addColorStop(.85,'rgba(228,232,238,.98)');
+  g.addColorStop(1,'rgba(198,207,218,.92)');
+  ctx.fillStyle=g;
+  ctx.beginPath();
+  ctx.ellipse(K.bodyCx+1.5*sc,K.bodyCy+3*sc,17.5*sc,10.5*sc,0,0,Math.PI*2);
+  ctx.fill();
+
+  // neck to head in pure side view
+  ctx.strokeStyle='rgba(228,234,240,.95)';
+  ctx.lineWidth=3.5*Math.max(0.65,sc);
+  ctx.beginPath();
+  ctx.moveTo(K.bodyCx-6.5*sc,K.bodyCy-1.5*sc);
+  ctx.quadraticCurveTo(K.bodyCx-8.5*sc,K.bodyCy-5.5*sc,K.bodyCx-10.5*sc,K.bodyCy-8.2*sc);
+  ctx.stroke();
+
+  const hg=ctx.createRadialGradient(K.bodyCx-11.2*sc,K.bodyCy-8.6*sc,1*sc,K.bodyCx-10.4*sc,K.bodyCy-8.1*sc,7.5*sc);
+  hg.addColorStop(0,'rgba(255,255,255,.99)');
+  hg.addColorStop(1,'rgba(214,220,228,.95)');
+  ctx.fillStyle=hg;
+  ctx.beginPath();
+  ctx.ellipse(K.bodyCx-10.5*sc,K.bodyCy-8.1*sc,5.8*sc,4.5*sc,0,0,Math.PI*2);
+  ctx.fill();
+
+  // eye moved to exact side position
+  ctx.fillStyle='#d2a06a';
+  ctx.beginPath();
+  ctx.arc(K.bodyCx-8.5*sc,K.bodyCy-8.7*sc,1.7*sc,0,Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle='#111';
+  ctx.beginPath();
+  ctx.arc(K.bodyCx-8.5*sc,K.bodyCy-8.7*sc,0.72*sc,0,Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,.8)';
+  ctx.beginPath();
+  ctx.arc(K.bodyCx-8.15*sc,K.bodyCy-9.0*sc,0.24*sc,0,Math.PI*2);
+  ctx.fill();
+
+  // true side beak, horizontal
+  ctx.fillStyle='#7b7e85';
+  ctx.beginPath();
+  ctx.moveTo(K.bodyCx-13.8*sc,K.bodyCy-8.0*sc);
+  ctx.lineTo(K.bodyCx-19.8*sc,K.bodyCy-7.3*sc);
+  ctx.lineTo(K.bodyCx-13.8*sc,K.bodyCy-6.6*sc);
+  ctx.closePath();
+  ctx.fill();
+
+  // small tail hint to reinforce side profile
+  ctx.fillStyle='rgba(220,226,232,.75)';
+  ctx.beginPath();
+  ctx.moveTo(K.bodyCx+16.5*sc,K.bodyCy+2.2*sc);
+  ctx.lineTo(K.bodyCx+23.0*sc,K.bodyCy+0.2*sc);
+  ctx.lineTo(K.bodyCx+18.0*sc,K.bodyCy+5.5*sc);
+  ctx.closePath();
+  ctx.fill();
 
   ctx.fillStyle='rgba(235,240,245,.96)';
   ctx.fill(paths.wingFill);
@@ -885,7 +943,7 @@ function rebuildMasks(state, frontSimR, sideSimR){
 
 function draw(dt){
   const R=rects(), flags={pressure:dom.showPressure.checked,contours:dom.showContours.checked,flow:dom.showFlow.checked,vorticity:dom.showVorticity.checked,forceVec:dom.showForceVec.checked};
-  ctx.clearRect(0,0,W,H); card(R.F,'前面ビュー','圧力ベース力ベクトル'); card(R.S,'側面ビュー','圧力ベース力ベクトル');
+  ctx.clearRect(0,0,W,H); card(R.F,'前面ビュー','圧力ベース力ベクトル・真横側面'); card(R.S,'側面ビュー','圧力ベース力ベクトル・真横側面');
   const frontSimR=simRect(frontField,R.F), sideSimR=simRect(sideField,R.S);
   const state=birdState(simT,frontSimR);
   const kin = rebuildMasks(state, frontSimR, sideSimR);
