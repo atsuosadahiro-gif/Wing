@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>前面・側面 独立流体場版 羽ばたきシミュレーション（擬似3D真横側面・前後翼補正版）</title>
+<title>前面・側面 独立流体場版 羽ばたきシミュレーション（擬似3D真横側面・回り込み翼版）</title>
 <style>
   :root{--safe-top:max(env(safe-area-inset-top),0px);--safe-bottom:max(env(safe-area-inset-bottom),0px)}
   html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(180deg,#eef5fb,#dbe8f3 45%,#c6dceb)}
@@ -64,7 +64,7 @@
         <button id="reset">リセット</button>
       </div>
     </div>
-    <div id="msg">鳥の描画に使っているPath2Dを、そのままオフスクリーンに塗ってsolidマスクを作る版です。側面ビューだけ擬似3Dの前後関係を強めた版です。奥翼はほとんど胴体の後ろに隠し、手前翼は胴体上に短く太く重なるよう補正しています。</div>
+    <div id="msg">鳥の描画に使っているPath2Dを、そのままオフスクリーンに塗ってsolidマスクを作る版です。側面ビューだけ、手前翼が 後ろ→上→前 に回り込む軌跡へ補正した版です。奥翼は胴体の後ろに隠し、手前翼は体の上を横切って前へ出る見え方に寄せています。</div>
   </div>
   <div id="stage"><canvas id="cv"></canvas></div>
   <div id="fabBar">
@@ -198,26 +198,25 @@ function sideKinematics(s,R){
   const bodyCy=R.y+R.h*.67+Math.sin(s.ph-.2)*p.amp*.02;
   const tilt=0;
 
-  // wing root is on the top-back of torso, not at the side
-  const shoulderX=bodyCx-0.8*sc;
-  const shoulderY=bodyCy-5.6*sc;
+  // root is behind and slightly below the top ridge of torso
+  const shoulderX=bodyCx-4.8*sc;
+  const shoulderY=bodyCy-2.0*sc;
 
   const flap = Math.sin(s.ph);
+  const a1 = -0.20 + 0.10*flap;
+  const a2 =  0.02 + 0.08*flap;
+  const a3 =  0.10 + 0.06*flap;
 
-  // A true side-view projection of a wing coming out from the back toward the viewer
-  // should look compressed in x. Keep it mostly horizontal with slight flap only.
-  const a1 = -0.10 + 0.06*flap;
-  const a2 =  0.00 + 0.05*flap;
-  const a3 =  0.06 + 0.04*flap;
-
-  // shorter projected lengths = foreshortening
-  const hum = 10.5*sc;
-  const fore = 18.0*sc;
-  const hand = 20.0*sc;
+  const hum = 11.0*sc;
+  const fore = 18.5*sc;
+  const hand = 19.0*sc;
 
   const ex=shoulderX+Math.cos(a1)*hum, ey=shoulderY+Math.sin(a1)*hum;
   const wx=ex+Math.cos(a2)*fore, wy=ey+Math.sin(a2)*fore;
-  const tx=wx+Math.cos(a3)*hand, ty=wy+Math.sin(a3)*hand;
+
+  // important: visible/front wing comes forward across the body
+  const tx=wx+Math.cos(a3)*hand + 7.5*sc;
+  const ty=wy+Math.sin(a3)*hand + 0.8*sc;
 
   return {bodyCx,bodyCy,tilt,shoulderX,shoulderY,ex,ey,wx,wy,tx,ty,a1,a2,a3};
 }
@@ -302,20 +301,20 @@ function makeFrontBirdPaths(state, Lw, Rw){
 function makeSideBirdPaths(state, K){
   const sc=state.scale;
 
-  // front wing manually shaped for foreshortened side view
+  // front wing: rear root -> over torso -> forward tip
   const wing = {
     upper: [
-      {x:K.shoulderX-0.8*sc, y:K.shoulderY-1.8*sc},
-      {x:K.ex+0.5*sc,       y:K.ey-2.2*sc},
-      {x:K.wx+1.0*sc,       y:K.wy-2.0*sc},
-      {x:K.tx+0.8*sc,       y:K.ty-1.4*sc},
-      {x:K.tx+3.0*sc,       y:K.ty-0.8*sc},
+      {x:K.shoulderX-1.0*sc, y:K.shoulderY-2.0*sc},
+      {x:K.ex+0.4*sc,        y:K.ey-2.2*sc},
+      {x:K.wx+1.8*sc,        y:K.wy-1.8*sc},
+      {x:K.tx-0.8*sc,        y:K.ty-1.0*sc},
+      {x:K.tx+2.6*sc,        y:K.ty-0.2*sc},
     ],
     lower: [
-      {x:K.tx+1.5*sc,       y:K.ty+2.2*sc},
-      {x:K.wx+0.0*sc,       y:K.wy+2.8*sc},
-      {x:K.ex-0.8*sc,       y:K.ey+2.6*sc},
-      {x:K.shoulderX-1.2*sc,y:K.shoulderY+2.0*sc},
+      {x:K.tx+0.8*sc,        y:K.ty+2.2*sc},
+      {x:K.wx+0.0*sc,        y:K.wy+3.1*sc},
+      {x:K.ex-1.2*sc,        y:K.ey+3.0*sc},
+      {x:K.shoulderX-1.6*sc, y:K.shoulderY+2.6*sc},
     ]
   };
   wing.poly = wing.upper.concat(wing.lower);
@@ -325,10 +324,10 @@ function makeSideBirdPaths(state, K){
   for(let i=1;i<wing.poly.length;i++) wingFill.lineTo(wing.poly[i].x,wing.poly[i].y);
   wingFill.closePath();
 
-  // rear wing: mostly hidden, only a subtle top ridge visible behind torso
+  // rear wing: mostly hidden behind torso and slightly up/back
   const rearWing = {
-    upper: wing.upper.map((p,idx) => ({x:p.x-4.5*sc - idx*0.2*sc, y:p.y-4.4*sc})),
-    lower: wing.lower.map((p,idx) => ({x:p.x-4.0*sc - idx*0.15*sc, y:p.y-4.0*sc}))
+    upper: wing.upper.map((p,idx) => ({x:p.x-6.2*sc-idx*0.25*sc, y:p.y-5.2*sc})),
+    lower: wing.lower.map((p,idx) => ({x:p.x-5.4*sc-idx*0.18*sc, y:p.y-4.8*sc}))
   };
   rearWing.poly = rearWing.upper.concat(rearWing.lower);
 
@@ -971,7 +970,7 @@ function rebuildMasks(state, frontSimR, sideSimR){
 
 function draw(dt){
   const R=rects(), flags={pressure:dom.showPressure.checked,contours:dom.showContours.checked,flow:dom.showFlow.checked,vorticity:dom.showVorticity.checked,forceVec:dom.showForceVec.checked};
-  ctx.clearRect(0,0,W,H); card(R.F,'前面ビュー','擬似3D真横側面・前後翼補正'); card(R.S,'側面ビュー','擬似3D真横側面・前後翼補正');
+  ctx.clearRect(0,0,W,H); card(R.F,'前面ビュー','擬似3D真横側面・回り込み翼'); card(R.S,'側面ビュー','擬似3D真横側面・回り込み翼');
   const frontSimR=simRect(frontField,R.F), sideSimR=simRect(sideField,R.S);
   const state=birdState(simT,frontSimR);
   const kin = rebuildMasks(state, frontSimR, sideSimR);
