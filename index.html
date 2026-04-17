@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>前面・側面 独立流体場版 羽ばたきシミュレーション（擬似3D真横側面版）</title>
+<title>前面・側面 羽ばたきシミュレーション 最小構成版</title>
 <style>
   :root{--safe-top:max(env(safe-area-inset-top),0px);--safe-bottom:max(env(safe-area-inset-bottom),0px)}
   html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(180deg,#eef5fb,#dbe8f3 45%,#c6dceb)}
   *{box-sizing:border-box}
   #wrap{position:fixed;inset:0;display:flex;flex-direction:column;min-height:100dvh}
-  #ui{flex:0 0 auto;background:rgba(255,255,255,.92);backdrop-filter:blur(10px);border-bottom:1px solid rgba(0,0,0,.08);padding:calc(6px + var(--safe-top)) 10px 4px;z-index:10;display:flex;flex-direction:column;gap:4px;transition:max-height .25s ease,padding .25s ease,opacity .2s ease;overflow:hidden;max-height:420px}
+  #ui{flex:0 0 auto;background:rgba(255,255,255,.92);backdrop-filter:blur(10px);border-bottom:1px solid rgba(0,0,0,.08);padding:calc(6px + var(--safe-top)) 10px 4px;z-index:10;display:flex;flex-direction:column;gap:4px;transition:max-height .25s ease,padding .25s ease,opacity .2s ease;overflow-x:hidden;overflow-y:auto;max-height:min(78dvh,760px);scrollbar-width:thin}
   #ui.collapsed{max-height:0;padding-top:0;padding-bottom:0;border-bottom-color:transparent;opacity:0;pointer-events:none}
   .toolbar{display:flex;gap:6px;align-items:center;justify-content:space-between}
   .toolbar-left,.toolbar-right{display:flex;align-items:center;gap:6px;min-width:0}
@@ -47,9 +47,9 @@
       box-shadow: inset 0 1px 2px rgba(255,255,255,.55);
     }
   .row{display:grid;grid-template-columns:minmax(80px,110px) 1fr;align-items:center;gap:4px 8px;margin:0}
-  .row.controls{grid-template-columns:minmax(80px,110px) 1fr auto;align-items:center}
-  .toggles{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-  .toggles label{font-size:12px;display:flex;align-items:center;gap:4px}
+  .row.controls{grid-template-columns:minmax(80px,110px) 1fr;align-items:start}
+  .toggles{display:flex;align-items:center;gap:8px;row-gap:10px;flex-wrap:wrap;padding-top:2px}.toggles::after{content:"";flex-basis:100%;width:0}
+  .toggles label{font-size:12px;display:flex;align-items:center;gap:4px;padding:4px 8px;border-radius:999px;background:rgba(38,67,94,.08);border:1px solid rgba(38,67,94,.12)}
   label{font-size:12px;line-height:1.1}
   input[type="range"]{width:100%;min-width:0;height:18px}
   button{background:#26435e;color:#eef7ff;border:none;border-radius:10px;padding:6px 10px;font-size:13px;white-space:nowrap}
@@ -60,9 +60,10 @@
   #fabBar{position:fixed;right:10px;bottom:calc(12px + var(--safe-bottom));z-index:20;display:flex;flex-direction:column;gap:8px}
   .fab{width:44px;height:44px;border-radius:999px;border:none;background:rgba(38,67,94,.92);color:#fff;font-size:18px;box-shadow:0 6px 20px rgba(0,0,0,.18)}
   @media (max-width:760px){
-    #ui{max-height:360px}
+    #ui{max-height:82dvh;padding-bottom:10px}
     .row,.row.controls{grid-template-columns:1fr}
-    .toggles{gap:6px}
+    .toggles{gap:6px;row-gap:8px}
+    .toggles label{font-size:13px}
     button{width:100%}
   }
 
@@ -116,10 +117,13 @@
     <div class="row"><label>羽ばたき振幅</label><input id="amp" type="range" min="8" max="80" value="36"></div>
     <div class="row"><label>周波数</label><input id="freq" type="range" min="20" max="120" value="46"></div>
     <div class="row"><label>鳥サイズ</label><input id="birdScale" type="range" min="30" max="150" value="100"></div>
-    <div class="row controls"><label>ゴースト切り分け</label><div class="toggles"><label>注入半径 <input id="ghostRadius" type="range" min="30" max="120" value="60"></label><label>圧力ぼかし <input id="ghostSmooth" type="range" min="0" max="100" value="35"></label><label><input id="ghostConfine" type="checkbox"> 渦強調</label></div></div>
-    <div class="row controls">
+<div class="row"><label>軽い粘性</label><input id="viscosity" type="range" min="0" max="80" value="24"></div>
+    <div class="row">
       <label>翼の迎角変化</label>
       <input id="pitch" type="range" min="0" max="100" value="54">
+    </div>
+    <div class="row controls">
+      <label>表示切替</label>
       <div class="toggles">
         <label><input id="showPressure" type="checkbox" checked> 圧力</label>
         <label><input id="showContours" type="checkbox" checked> 等圧線</label>
@@ -129,7 +133,7 @@
         <button id="reset">リセット</button>
       </div>
     </div>
-    <div id="msg">鳥の描画に使っているPath2Dを、そのままオフスクリーンに塗ってsolidマスクを作る版です。save.html を土台に、自動レンジ圧力表示と迎角ベース圧力に加えて、後流が下＋後ろへ流れるようダウンウォッシュと後流輸送を強めた版です。圧力メーターはキャンバス内ではなく折りたたみUIの中へ移しています。正面ビューの顔も少し整え、力ベクトルは小さい場ベクトルを消して主ベクトルだけ太く見やすくしています。さらにUI全体をプロ向け計測ツール寄りのダーク質感に整えて、シミュレーションツールとしての見栄えを上げています。リファクタリング第3段の安全版です。動作を維持したまま、設定取得 / パネル文脈生成 / レイヤ描画 / 見た目描画の責務をさらに整理しています。今回はゴースト切り分け用に、注入半径・圧力ぼかし・渦強調を個別に弱めたり戻したりできるデバッグスイッチを追加しています。</div>
+    <div id="msg">最小構成版です。前面・側面の位相をそろえ、圧力・等圧線・流線・渦・力ベクトルを切り替えられます。</div>
   </div>
   <div id="stage"><canvas id="cv"></canvas></div>
   <div id="fabBar">
@@ -148,9 +152,7 @@ const dom = {
   freq: document.getElementById('freq'),
   birdScale: document.getElementById('birdScale'),
   pitch: document.getElementById('pitch'),
-  ghostRadius: document.getElementById('ghostRadius'),
-  ghostSmooth: document.getElementById('ghostSmooth'),
-  ghostConfine: document.getElementById('ghostConfine'),
+  viscosity: document.getElementById('viscosity'),
   showPressure: document.getElementById('showPressure'),
   showContours: document.getElementById('showContours'),
   showFlow: document.getElementById('showFlow'),
@@ -177,10 +179,10 @@ function getParams(){
     amp: ampBase * scale,
     freq: +dom.freq.value / 60,
     pitch: +dom.pitch.value / 100,
-    scale,
-    ghostRadius: dom.ghostRadius ? (+dom.ghostRadius.value / 100) : 0.60,
-    ghostSmooth: dom.ghostSmooth ? (+dom.ghostSmooth.value / 100) : 0.35,
-    ghostConfine: dom.ghostConfine ? !!dom.ghostConfine.checked : false,
+    scale,    ghostRadius: 0.60,
+    ghostSmooth: 0.35,
+    ghostConfine: false,
+    viscosity: dom.viscosity ? (+dom.viscosity.value / 1000) : 0.024,
   };
 }
 const P = getParams;
@@ -280,7 +282,7 @@ function phaseLerp(phases, t){
 
 function sideKinematics(s,R){
   const p=P(), sc=p.scale;
-  const shared = wing(s,'left'); // shared skeleton from front-view left wing
+  const shared = wing(s,'left'); // use the same front-view state as the phase master
 
   const bodyCx=R.x+R.w*.46;
   const bodyCy=R.y+R.h*.67+Math.sin(s.ph-.2)*p.amp*.02;
@@ -294,19 +296,49 @@ function sideKinematics(s,R){
   const shoulderX=bodyCx-2.8*sc;
   const shoulderY=bodyCy-0.8*sc;
 
-  const cyc = (((s.ph % (Math.PI*2)) + Math.PI*2) % (Math.PI*2)) / (Math.PI*2) * 4;
-  const A = phaseLerp([
-    {a1:-1.48, a2:-1.12, a3:-0.72}, // upstroke
-    {a1:-0.82, a2:-0.46, a3:-0.18}, // mid
-    {a1: 0.08, a2: 0.22, a3: 0.10}, // downstroke
-    {a1:-0.34, a2:-0.06, a3:-0.02}, // return
-  ], cyc);
+  // phase-lock side view to the exact same oscillator used by the front view
+  const down = s.down;
+  const up = s.up;
+  const osc = Math.sin(s.ph);
+  const osc2 = Math.sin(s.ph + 0.45);
+  const foldK = clamp((s.fold - 0.14) / 0.78, 0, 1);
+  const openK = clamp((s.open - 0.68) / 0.46, 0, 1);
 
-  const ex=shoulderX+Math.cos(A.a1)*hum, ey=shoulderY+Math.sin(A.a1)*hum;
-  const wx=ex+Math.cos(A.a2)*fore, wy=ey+Math.sin(A.a2)*fore;
-  const tx=wx+Math.cos(A.a3)*hand, ty=wy+Math.sin(A.a3)*hand;
+  const a1 =
+    clamp(
+      -1.46
+      + 1.18 * down
+      + 0.18 * openK
+      + 0.16 * osc2
+      - 0.10 * up,
+      -1.52, 0.10
+    );
 
-  return { bodyCx,bodyCy,tilt,shoulderX,shoulderY,ex,ey,wx,wy,tx,ty,a1:A.a1,a2:A.a2,a3:A.a3,hum,fore,hand,shared };
+  const a2 =
+    clamp(
+      -1.06
+      + 0.92 * down
+      + 0.22 * openK
+      + 0.08 * osc
+      - 0.18 * foldK,
+      -1.18, 0.28
+    );
+
+  const a3 =
+    clamp(
+      -0.68
+      + 0.62 * down
+      + 0.16 * openK
+      + 0.06 * osc2
+      - 0.14 * foldK,
+      -0.82, 0.14
+    );
+
+  const ex=shoulderX+Math.cos(a1)*hum, ey=shoulderY+Math.sin(a1)*hum;
+  const wx=ex+Math.cos(a2)*fore, wy=ey+Math.sin(a2)*fore;
+  const tx=wx+Math.cos(a3)*hand, ty=wy+Math.sin(a3)*hand;
+
+  return { bodyCx,bodyCy,tilt,shoulderX,shoulderY,ex,ey,wx,wy,tx,ty,a1,a2,a3,hum,fore,hand,shared };
 }
 
 function makeFrontWingShape(w, side, sc){
@@ -557,13 +589,26 @@ function distancePointToSegment(px,py,ax,ay,bx,by){
   const dx = px - qx, dy = py - qy;
   return {dist: Math.hypot(dx,dy), t, qx, qy, dx, dy};
 }
-function applySurfaceBandForce(field,R,ax,ay,bx,by,bandWidth,normalBias,flowAlong,aoa,extraDown,extraAft,dt,q=1){
+function depositVelocity(field, x, y, du, dv){
+  const i0 = Math.floor(x), j0 = Math.floor(y);
+  const fx = x - i0, fy = y - j0;
+  const pairs = [
+    [i0,   j0,   (1-fx)*(1-fy)],
+    [i0+1, j0,   fx*(1-fy)],
+    [i0,   j0+1, (1-fx)*fy],
+    [i0+1, j0+1, fx*fy],
+  ];
+  for(const [ii,jj,w] of pairs){
+    if(ii < 0 || jj < 0 || ii >= field.NX || jj >= field.NY || w <= 0) continue;
+    const id = idx(field, ii, jj);
+    if(field.solid[id]) continue;
+    field.u[id] += du * w;
+    field.v[id] += dv * w;
+  }
+}
+function applySurfaceLineIntegralForce(field,R,ax,ay,bx,by,bandWidth,normalBias,flowAlong,aoa,extraDown,extraAft,dt,q=1){
   const c = field.cell;
   const gax=(ax-R.x)/c, gay=(ay-R.y)/c, gbx=(bx-R.x)/c, gby=(by-R.y)/c;
-  const minx=Math.max(0, Math.floor(Math.min(gax,gbx)-bandWidth-2));
-  const maxx=Math.min(field.NX-1, Math.ceil(Math.max(gax,gbx)+bandWidth+2));
-  const miny=Math.max(0, Math.floor(Math.min(gay,gby)-bandWidth-2));
-  const maxy=Math.min(field.NY-1, Math.ceil(Math.max(gay,gby)+bandWidth+2));
 
   const sdx = gbx - gax, sdy = gby - gay;
   const sl = Math.hypot(sdx,sdy) + 1e-6;
@@ -571,42 +616,58 @@ function applySurfaceBandForce(field,R,ax,ay,bx,by,bandWidth,normalBias,flowAlon
   let nx = -ty, ny = tx;
   if(ny > 0){ nx = -nx; ny = -ny; }
 
-  for(let j=miny;j<=maxy;j++){
-    for(let i=minx;i<=maxx;i++){
-      const id=idx(field,i,j);
-      if(field.solid[id]) continue;
+  const lineSamples = Math.max(16, Math.ceil(sl * 5.0));
+  const normalSamples = Math.max(4, Math.ceil(bandWidth * 3.4));
+  const lowerBand = bandWidth * 0.78;
+  const upperBand = bandWidth * 0.92;
+  const baseScale = dt / Math.max(1, lineSamples);
 
-      const px=i+.5, py=j+.5;
-      const info = distancePointToSegment(px,py,gax,gay,gbx,gby);
-      const reln = (px-info.qx)*nx + (py-info.qy)*ny;
-      const absn = Math.abs(reln);
+  for(let si=0; si<lineSamples; si++){
+    const t = (si + 0.5) / lineSamples;
+    const cx = lerp(gax, gbx, t);
+    const cy = lerp(gay, gby, t);
 
-      // keep only a thin surface band, slightly wider on the downwash side
-      const signedBand = reln > 0 ? bandWidth*0.92 : bandWidth*0.72;
-      if(absn > signedBand) continue;
+    // smooth taper at the joints so segment borders do not create islands
+    const endFade = Math.pow(Math.sin(Math.PI * t), 1.15);
+    if(endFade <= 0) continue;
 
-      // taper near segment ends so a separate blob does not appear at joints
-      const endFade = Math.pow(Math.sin(Math.PI*clamp(info.t, 0, 1)), 0.85);
-      if(endFade <= 0) continue;
+    // centerline contribution: weak tangential advection only
+    {
+      const k0 = q * endFade;
+      const du = tx * flowAlong * k0 * baseScale * 0.35;
+      const dv = ty * flowAlong * k0 * baseScale * 0.35;
+      depositVelocity(field, cx, cy, du, dv);
+    }
 
-      const sideSign = reln >= 0 ? 1 : -1;
-      const surfaceFall = Math.pow(Math.max(0, 1 - absn / Math.max(1e-6, signedBand)), 1.7);
-      const k = surfaceFall * endFade * q;
+    // upper / lower surface bands as a continuous line integral
+    for(const sideSign of [-1, 1]){
+      const sideBand = sideSign < 0 ? lowerBand : upperBand;
+      const sideBoost = sideSign < 0 ? 1.0 : 0.56;
 
-      // dipole across upper / lower surface
-      const dip = -aoa * sideSign * normalBias * k;
+      for(let ni=0; ni<normalSamples; ni++){
+        const rn = (ni + 0.5) / normalSamples;
+        const dist = rn * sideBand;
+        const px = cx + nx * dist * sideSign;
+        const py = cy + ny * dist * sideSign;
 
-      field.u[id] += (tx * flowAlong * k - nx * dip) * dt;
-      field.v[id] += (ty * flowAlong * k - ny * dip) * dt;
+        const surfaceFall = Math.pow(Math.max(0, 1 - rn), 1.55);
+        const chordFade = 0.74 + 0.26 * Math.sin(Math.PI * t);
+        const tipBias = sideSign < 0 ? (0.64 + 0.56 * t) : (0.86 + 0.14 * t);
+        const k = q * endFade * surfaceFall * chordFade * tipBias;
 
-      // only the lower side gets the stronger flap-driven downwash / aft wake
-      if(sideSign < 0){
-        const outer = 0.55 + 0.45*info.t;
-        field.v[id] += extraDown * k * dt * (0.50 + 0.70*outer);
-        field.u[id] += extraAft * k * dt * (0.28 + 0.52*outer);
-      }else{
-        field.v[id] += extraDown * k * dt * 0.12;
-        field.u[id] += extraAft * k * dt * 0.06;
+        const dip = -aoa * sideSign * normalBias * k;
+        let du = (tx * flowAlong * k * 0.18 - nx * dip) * baseScale * sideBoost;
+        let dv = (ty * flowAlong * k * 0.18 - ny * dip) * baseScale * sideBoost;
+
+        if(sideSign < 0){
+          du += extraAft * k * baseScale * (0.20 + 0.46*t);
+          dv += extraDown * k * baseScale * (0.42 + 0.92*t);
+        }else{
+          du += extraAft * k * baseScale * 0.025;
+          dv += extraDown * k * baseScale * 0.06;
+        }
+
+        depositVelocity(field, px, py, du, dv);
       }
     }
   }
@@ -645,7 +706,7 @@ function forceFieldFront(field,s,Lw,Rw,R,dt){
       const extraDown = 1.18 * flapPush;
       const extraAft = 0.24 * flapPush;
 
-      applySurfaceBandForce(
+      applySurfaceLineIntegralForce(
         field, R,
         seg.ax, seg.ay, seg.bx, seg.by,
         bandWidth, normalBias, flowAlong, aoa,
@@ -692,7 +753,7 @@ function forceFieldSide(field,s,K,R,dt){
     const extraDown = inducedDownwash * 0.78 + jet * 0.86;
     const extraAft = 0.08 * strokeVel + 0.10 * jet;
 
-    applySurfaceBandForce(
+    applySurfaceLineIntegralForce(
       field, R,
       seg.ax, seg.ay, seg.bx, seg.by,
       bandWidth, normalBias, flowAlong, aoa,
@@ -745,8 +806,8 @@ function boundaries(field){
     }
   }
 }
-function fluidStepFront(field,dt,Lw,Rw,R,s){ const p=P(); boundaries(field); forceFieldFront(field,s,Lw,Rw,R,dt); repel(field); advect(field,dt); boundaries(field); if(p.ghostConfine) confine(field,dt); project(field,28); boundaries(field); invalidatePressureMap(field); }
-function fluidStepSide(field,dt,K,R,s){ const p=P(); boundaries(field); forceFieldSide(field,s,K,R,dt); repel(field); advect(field,dt); boundaries(field); if(p.ghostConfine) confine(field,dt); project(field,28); boundaries(field); invalidatePressureMap(field); }
+function fluidStepFront(field,dt,Lw,Rw,R,s){ const p=P(); boundaries(field); forceFieldFront(field,s,Lw,Rw,R,dt); repel(field); advect(field,dt); if(p.viscosity>0) diffuse(field,p.viscosity); boundaries(field); if(p.ghostConfine) confine(field,dt); project(field,28); boundaries(field); invalidatePressureMap(field); }
+function fluidStepSide(field,dt,K,R,s){ const p=P(); boundaries(field); forceFieldSide(field,s,K,R,dt); repel(field); advect(field,dt); if(p.viscosity>0) diffuse(field,p.viscosity); boundaries(field); if(p.ghostConfine) confine(field,dt); project(field,28); boundaries(field); invalidatePressureMap(field); }
 function updateTracers(field,dt){ for(const tr of field.tracers){ tr.age+=dt*60; tr.px=tr.x; tr.py=tr.y; const uu=samp(field,field.u,tr.x,tr.y), vv=samp(field,field.v,tr.x,tr.y); tr.x+=uu*dt*28; tr.y+=vv*dt*28; if(tr.x<-2||tr.x>field.NX+2||tr.y<-2||tr.y>field.NY+2||tr.age>tr.life){ tr.x=rand(-3,0); tr.y=rand(0,field.NY); tr.px=tr.x; tr.py=tr.y; tr.age=0; tr.life=rand(90,260);} } }
 function updateForces(field,K,R){ let lf=0,th=0,n=0; for(const pt of [{x:lerp(K.shoulderX,K.wx,.35), y:lerp(K.shoulderY,K.wy,.35)},{x:lerp(K.ex,K.tx,.50), y:lerp(K.ey,K.ty,.50)}]){ const gx=(pt.x-R.x)/field.cell, gy=(pt.y-R.y)/field.cell; lf += samp(field,field.v,gx,gy+3)-samp(field,field.v,gx,gy-3); th += samp(field,field.u,gx+4,gy)-samp(field,field.u,gx-4,gy); n++; } if(n>0){ lift=.86*lift+.14*Math.max(0,lf/n); thrust=.86*thrust+.14*Math.max(0,th/n+.15);} }
 
@@ -911,15 +972,43 @@ function drawVectorField(field,R,alpha=1){
 function drawContours(field,R){
   const sx=R.w/(field.NX*field.cell), sy=R.h/(field.NY*field.cell);
   const sp = smoothPressure(field);
-  ctx.save(); ctx.beginPath(); rr(R.x,R.y,R.w,R.h,16); ctx.clip();
-  const levels=[-0.90,-0.72,-0.56,-0.42,-0.30,-0.20,-0.12,-0.06,0.06,0.12,0.20,0.30,0.42,0.56,0.72,0.90];
+  let maxAbs = 0;
+  for(let j=1;j<field.NY-1;j++){
+    for(let i=1;i<field.NX-1;i++){
+      const id = idx(field,i,j);
+      if(field.solid[id]) continue;
+      const a = Math.abs(sp[id]);
+      if(a > maxAbs) maxAbs = a;
+    }
+  }
+  if(maxAbs < 0.03) return;
+
+  const levels = [-0.62,-0.46,-0.32,-0.22,0.22,0.32,0.46,0.62];
+  const minVisible = maxAbs * 0.22;
   const interp=(x1,y1,v1,x2,y2,v2,level)=>{const d=(v2-v1), t=Math.abs(d)<1e-6?.5:(level-v1)/d; return {x:x1+(x2-x1)*t,y:y1+(y2-y1)*t};};
-  for(const level of levels){
-    const strong=Math.abs(level)>.6, mid=Math.abs(level)>.2;
-    ctx.strokeStyle= level>0 ? (strong?'rgba(120,24,24,0.88)':mid?'rgba(156,52,52,0.70)':'rgba(210,120,120,0.38)') : (strong?'rgba(14,42,112,0.88)':mid?'rgba(44,78,165,0.70)':'rgba(120,150,220,0.38)');
-    ctx.lineWidth=strong?1.55:mid?1.10:.75;
+
+  ctx.save();
+  ctx.beginPath(); rr(R.x,R.y,R.w,R.h,16); ctx.clip();
+  ctx.lineJoin='round';
+  ctx.lineCap='round';
+  ctx.shadowBlur = 0;
+
+  for(const rawLevel of levels){
+    const level = rawLevel * maxAbs;
+    if(Math.abs(level) < minVisible) continue;
+
+    const a = Math.abs(rawLevel);
+    const strong = a >= 0.46;
+    const medium = a >= 0.32;
+    ctx.strokeStyle = rawLevel > 0
+      ? (strong ? 'rgba(156,36,42,0.82)' : medium ? 'rgba(190,88,96,0.62)' : 'rgba(210,128,136,0.42)')
+      : (strong ? 'rgba(30,74,170,0.82)' : medium ? 'rgba(96,140,226,0.62)' : 'rgba(138,170,232,0.42)');
+    ctx.lineWidth = strong ? 1.35 : medium ? 1.0 : 0.8;
+
     for(let j=1;j<field.NY-2;j++) for(let i=1;i<field.NX-2;i++){
       const v00=sp[idx(field,i,j)],v10=sp[idx(field,i+1,j)],v11=sp[idx(field,i+1,j+1)],v01=sp[idx(field,i,j+1)];
+      const localPeak = Math.max(Math.abs(v00),Math.abs(v10),Math.abs(v11),Math.abs(v01));
+      if(localPeak < minVisible) continue;
       const s0=v00>=level?1:0,s1=v10>=level?1:0,s2=v11>=level?1:0,s3=v01>=level?1:0, state=s0|(s1<<1)|(s2<<2)|(s3<<3);
       if(state===0||state===15) continue;
       const x=R.x+i*field.cell*sx, y=R.y+j*field.cell*sy;
@@ -1272,7 +1361,6 @@ function drawFrontVisuals(sr, state, paths, flags, Lw, Rw){
   ctx.save();
   ctx.beginPath(); rr(sr.x,sr.y,sr.w,sr.h,16); ctx.clip();
   drawFrontBird(state,paths);
-  arrow(sr.x+12,sr.y+sr.h-18,sr.x+88,sr.y+sr.h-18,'#5b84c8','前から来る空気');
   if(flags.forceVec){
     const F = estimateFrontForce(frontField, state, Lw, Rw, sr);
     frontForceState.x = frontForceState.x*0.86 + F.side*0.14;
@@ -1288,7 +1376,6 @@ function drawSideVisuals(sr, state, K, paths, flags){
   ctx.save();
   ctx.beginPath(); rr(sr.x,sr.y,sr.w,sr.h,16); ctx.clip();
   drawSideBird(state,K,paths);
-  arrow(sr.x+12,sr.y+sr.h-18,sr.x+88,sr.y+sr.h-18,'#5b84c8','前から来る空気');
   if(flags.forceVec){
     const F = estimateSideForce(sideField, K, sr);
     sideForceState.x = sideForceState.x*0.86 + F.thrust*0.14;
@@ -1327,9 +1414,7 @@ function drawCommonPanelLayers(panel, flags, pressureAlpha, flowAlpha, vortAlpha
   if(flags.vorticity) drawVorticity(panel.field, panel.sr, vortAlpha);
 }
 
-function drawCommonWindArrow(panel){
-  arrow(panel.sr.x+12, panel.sr.y+panel.sr.h-18, panel.sr.x+88, panel.sr.y+panel.sr.h-18, '#5b84c8', '前から来る空気');
-}
+function drawCommonWindArrow(panel){}
 
 function drawFrontForceOnly(panel, flags){
   if(!flags.forceVec) return;
@@ -1559,7 +1644,7 @@ function draw(dt){
 function loop(now){ if(!t0){t0=now; last=now;} simT=(now-t0)/1000; const dt=Math.min(.025,(now-last)/1000); last=now; draw(dt); requestAnimationFrame(loop); }
 function bindUI(){
   dom.reset.addEventListener('click', handleReset); dom.fabReset.addEventListener('click', handleReset); dom.toggleUi.addEventListener('click', ()=>setUiCollapsed(!uiCollapsed)); dom.fabToggleUi.addEventListener('click', ()=>setUiCollapsed(!uiCollapsed)); dom.fullscreen.addEventListener('click', toggleFullscreen);
-  [dom.showPressure,dom.showContours,dom.showFlow,dom.showVorticity,dom.showForceVec,dom.birdScale,dom.wind,dom.amp,dom.freq,dom.pitch,dom.ghostRadius,dom.ghostSmooth,dom.ghostConfine].forEach(el=>{ if(!el) return; el.addEventListener('input',()=>{ invalidatePressureMap(frontField); invalidatePressureMap(sideField); requestRender(); }); el.addEventListener('change',()=>{ invalidatePressureMap(frontField); invalidatePressureMap(sideField); requestRender(); }); });
+  [dom.showPressure,dom.showContours,dom.showFlow,dom.showVorticity,dom.showForceVec,dom.birdScale,dom.wind,dom.amp,dom.freq,dom.pitch,dom.ghostRadius,dom.ghostSmooth,dom.ghostConfine,dom.viscosity].forEach(el=>{ if(!el) return; el.addEventListener('input',()=>{ invalidatePressureMap(frontField); invalidatePressureMap(sideField); requestRender(); }); el.addEventListener('change',()=>{ invalidatePressureMap(frontField); invalidatePressureMap(sideField); requestRender(); }); });
   window.addEventListener('resize', resize);
   document.addEventListener('fullscreenchange', resize);
 }
