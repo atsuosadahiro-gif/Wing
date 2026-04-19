@@ -1,1654 +1,488 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>前面・側面 羽ばたきシミュレーション 最小構成版</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Bird Wing Refactor Stable Base</title>
 <style>
-  :root{--safe-top:max(env(safe-area-inset-top),0px);--safe-bottom:max(env(safe-area-inset-bottom),0px)}
-  html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(180deg,#eef5fb,#dbe8f3 45%,#c6dceb)}
-  *{box-sizing:border-box}
-  #wrap{position:fixed;inset:0;display:flex;flex-direction:column;min-height:100dvh}
-  #ui{flex:0 0 auto;background:rgba(255,255,255,.92);backdrop-filter:blur(10px);border-bottom:1px solid rgba(0,0,0,.08);padding:calc(6px + var(--safe-top)) 10px 4px;z-index:10;display:flex;flex-direction:column;gap:4px;transition:max-height .25s ease,padding .25s ease,opacity .2s ease;overflow-x:hidden;overflow-y:auto;max-height:min(78dvh,760px);scrollbar-width:thin}
-  #ui.collapsed{max-height:0;padding-top:0;padding-bottom:0;border-bottom-color:transparent;opacity:0;pointer-events:none}
-  .toolbar{display:flex;gap:6px;align-items:center;justify-content:space-between}
-  .toolbar-left,.toolbar-right{display:flex;align-items:center;gap:6px;min-width:0}
-  .mini-btn{
-      background:linear-gradient(180deg,#1b3b5e 0%, #16314f 100%);
-      color:#f4fbff;
-      border:1px solid rgba(102,160,232,.16);
-      border-radius:12px;
-      padding:8px 12px;
-      font-size:12px;
-      line-height:1;
-      white-space:nowrap;
-      box-shadow:0 8px 18px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.08);
-      font-weight:800;
-    }
-  #legendUi{
-      display:flex;
-      align-items:center;
-      gap:7px;
-      padding:5px 9px;
-      border-radius:14px;
-      background:linear-gradient(180deg,rgba(25,39,57,.92),rgba(18,30,44,.88));
-      border:1px solid rgba(113,151,196,.16);
-      box-shadow:0 10px 20px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.05);
-    }
-  .legend-title{font-size:10px;color:#b8c8d9;line-height:1}
-  .legend-wrap{display:flex;align-items:center;gap:4px}
-  .legend-top,.legend-bottom{font-size:10px;color:rgba(220,231,244,.70);line-height:1}
-  .legend-bar{
-      width:12px;
-      height:60px;
-      border-radius:999px;
-      border:1px solid rgba(0,0,0,.10);
-      background:linear-gradient(180deg,rgba(130,16,28,1) 0%, rgba(255,255,255,1) 50%, rgba(8,52,150,1) 100%);
-      box-shadow: inset 0 1px 2px rgba(255,255,255,.55);
-    }
-  .row{display:grid;grid-template-columns:minmax(80px,110px) 1fr;align-items:center;gap:4px 8px;margin:0}
-  .row.controls{grid-template-columns:minmax(80px,110px) 1fr;align-items:start}
-  .toggles{display:flex;align-items:center;gap:8px;row-gap:10px;flex-wrap:wrap;padding-top:2px}.toggles::after{content:"";flex-basis:100%;width:0}
-  .toggles label{font-size:12px;display:flex;align-items:center;gap:4px;padding:4px 8px;border-radius:999px;background:rgba(38,67,94,.08);border:1px solid rgba(38,67,94,.12)}
-  label{font-size:12px;line-height:1.1}
-  input[type="range"]{width:100%;min-width:0;height:18px}
-  button{background:#26435e;color:#eef7ff;border:none;border-radius:10px;padding:6px 10px;font-size:13px;white-space:nowrap}
-  .pill{display:inline-block;font-size:11px;padding:2px 7px;border-radius:999px;background:rgba(38,67,94,.10);color:#26435e;border:1px solid rgba(38,67,94,.15)}
-  #msg{font-size:11px;line-height:1.25;color:#4a6277;margin-top:0}
-  #stage{flex:1 1 auto;min-height:0;position:relative;overflow:hidden;padding-bottom:var(--safe-bottom)}
-  canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
-  #fabBar{position:fixed;right:10px;bottom:calc(12px + var(--safe-bottom));z-index:20;display:flex;flex-direction:column;gap:8px}
-  .fab{width:44px;height:44px;border-radius:999px;border:none;background:rgba(38,67,94,.92);color:#fff;font-size:18px;box-shadow:0 6px 20px rgba(0,0,0,.18)}
-  @media (max-width:760px){
-    #ui{max-height:82dvh;padding-bottom:10px}
-    .row,.row.controls{grid-template-columns:1fr}
-    .toggles{gap:6px;row-gap:8px}
-    .toggles label{font-size:13px}
-    button{width:100%}
+  :root{
+    --bg:#dfe6ef;
+    --panel:#e9eef5;
+    --panel-stroke:rgba(128,146,173,.25);
+    --bone:#6f7f97;
+    --feather:#f2efe3;
+    --feather-line:#cfc7ac;
+    --flow:rgba(110,160,255,.55);
+    --body:#f3f0e8;
+    --body-shade:#e9e4d8;
+    --text:#7f8794;
+    --muscle-a:rgba(217,98,98,.45);
+    --muscle-b:rgba(79,168,103,.45);
+    --tendon:rgba(143,162,189,.45);
   }
-
-  input[type=range]::-webkit-slider-runnable-track{
-    height:6px;border-radius:999px;background:linear-gradient(180deg,#203449,#172636);
-    border:1px solid rgba(113,151,196,.12);
-  }
-  input[type=range]::-webkit-slider-thumb{
-    -webkit-appearance:none;appearance:none;
-    margin-top:-7px;
-    width:18px;height:18px;border-radius:50%;
-    background:linear-gradient(180deg,#4d9bff,#2f7ae5);
-    border:1px solid rgba(255,255,255,.28);
-    box-shadow:0 4px 12px rgba(18,70,140,.45);
-  }
-  input[type=range]::-moz-range-track{
-    height:6px;border-radius:999px;background:linear-gradient(180deg,#203449,#172636);
-    border:1px solid rgba(113,151,196,.12);
-  }
-  input[type=range]::-moz-range-thumb{
-    width:18px;height:18px;border-radius:50%;
-    background:linear-gradient(180deg,#4d9bff,#2f7ae5);
-    border:1px solid rgba(255,255,255,.28);
-    box-shadow:0 4px 12px rgba(18,70,140,.45);
-  }
-
+  html,body{margin:0;background:var(--bg);font-family:system-ui,sans-serif;}
+  canvas{display:block;width:100vw;height:100vh;}
 </style>
 </head>
 <body>
-<div id="wrap">
-  <div id="ui">
-    <div class="toolbar">
-      <div class="toolbar-left">
-        <span class="pill">Path2D一致版</span>
-        <span style="font-size:11px;color:#4a6277;">描画形状＝マスク形状</span>
-      </div>
-      <div class="toolbar-right">
-        <div id="legendUi" aria-label="圧力メーター">
-          <div class="legend-title">圧力</div>
-          <div class="legend-wrap">
-            <div class="legend-top">+</div>
-            <div class="legend-bar"></div>
-            <div class="legend-bottom">−</div>
-          </div>
-        </div>
-        <button id="toggleUi" class="mini-btn" type="button">折りたたむ</button>
-        <button id="fullscreen" class="mini-btn" type="button">全画面</button>
-      </div>
-    </div>
-    <div class="row"><label>前からの風（0で完全無風）</label><input id="wind" type="range" min="0" max="50" value="0"></div>
-    <div class="row"><label>羽ばたき振幅</label><input id="amp" type="range" min="8" max="80" value="36"></div>
-    <div class="row"><label>周波数</label><input id="freq" type="range" min="20" max="120" value="46"></div>
-    <div class="row"><label>鳥サイズ</label><input id="birdScale" type="range" min="30" max="150" value="100"></div>
-<div class="row"><label>軽い粘性</label><input id="viscosity" type="range" min="0" max="80" value="24"></div>
-    <div class="row">
-      <label>翼の迎角変化</label>
-      <input id="pitch" type="range" min="0" max="100" value="54">
-    </div>
-    <div class="row controls">
-      <label>表示切替</label>
-      <div class="toggles">
-        <label><input id="showPressure" type="checkbox" checked> 圧力</label>
-        <label><input id="showContours" type="checkbox" checked> 等圧線</label>
-        <label><input id="showFlow" type="checkbox" checked> 流線</label>
-        <label><input id="showVorticity" type="checkbox" checked> 渦</label>
-        <label><input id="showForceVec" type="checkbox" checked> 力ベクトル</label>
-        <button id="reset">リセット</button>
-      </div>
-    </div>
-    <div id="msg">最小構成版です。前面・側面の位相をそろえ、圧力・等圧線・流線・渦・力ベクトルを切り替えられます。</div>
-  </div>
-  <div id="stage"><canvas id="cv"></canvas></div>
-  <div id="fabBar">
-    <button id="fabToggleUi" class="fab" type="button">▾</button>
-    <button id="fabReset" class="fab" type="button">↺</button>
-  </div>
-</div>
+<canvas id="c"></canvas>
 <script>
-(()=>{
-const dom = {
-  canvas: document.getElementById('cv'),
-  stage: document.getElementById('stage'),
-  ui: document.getElementById('ui'),
-  wind: document.getElementById('wind'),
-  amp: document.getElementById('amp'),
-  freq: document.getElementById('freq'),
-  birdScale: document.getElementById('birdScale'),
-  pitch: document.getElementById('pitch'),
-  viscosity: document.getElementById('viscosity'),
-  showPressure: document.getElementById('showPressure'),
-  showContours: document.getElementById('showContours'),
-  showFlow: document.getElementById('showFlow'),
-  showVorticity: document.getElementById('showVorticity'),
-  showForceVec: document.getElementById('showForceVec'),
-  reset: document.getElementById('reset'),
-  toggleUi: document.getElementById('toggleUi'),
-  fullscreen: document.getElementById('fullscreen'),
-  fabToggleUi: document.getElementById('fabToggleUi'),
-  fabReset: document.getElementById('fabReset'),
-};
-const ctx = dom.canvas.getContext('2d', { alpha:false });
+(() => {
+  'use strict';
 
-const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
-const lerp=(a,b,t)=>a+(b-a)*t;
-const rand=(a,b)=>a+Math.random()*(b-a);
+  // =========================
+  // Core math
+  // =========================
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const mix = (a, b, t) => a * (1 - t) + b * t;
+  const rad = (deg) => deg * Math.PI / 180;
 
-function getParams(){
-  const scale = +dom.birdScale.value / 100;
-  const ampBase = +dom.amp.value;
-  return {
-    wind: +dom.wind.value * 0.8,
-    ampBase,
-    amp: ampBase * scale,
-    freq: +dom.freq.value / 60,
-    pitch: +dom.pitch.value / 100,
-    scale,    ghostRadius: 0.60,
-    ghostSmooth: 0.35,
-    ghostConfine: false,
-    viscosity: dom.viscosity ? (+dom.viscosity.value / 1000) : 0.024,
-  };
-}
-const P = getParams;
-let W=0,H=0,DPR=Math.min(devicePixelRatio||1,2),t0=0,last=0,simT=0, uiCollapsed=false;
+  const pt = (x, y, z = 0) => ({ x, y, z });
+  const add = (a, b) => ({ x: a.x + b.x, y: a.y + b.y, z: (a.z || 0) + (b.z || 0) });
+  const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: (a.z || 0) - (b.z || 0) });
+  const scale = (a, s) => ({ x: a.x * s, y: a.y * s, z: (a.z || 0) * s });
+  const len = (v) => Math.hypot(v.x, v.y, v.z || 0) || 1;
+  const norm = (v) => scale(v, 1 / len(v));
+  const lerp3 = (a, b, t) => ({ x: mix(a.x, b.x, t), y: mix(a.y, b.y, t), z: mix(a.z || 0, b.z || 0, t) });
+  const lerp2 = (a, b, t) => ({ x: mix(a.x, b.x, t), y: mix(a.y, b.y, t) });
 
-function pad(){return Math.max(10,Math.min(20,W*0.015))}
-function gap(){return Math.max(10,Math.min(18,H*0.02))}
-function topm(){return Math.max(10,Math.min(16,H*0.02))}
-function rects(){
-  const pd=pad(), gp=gap(), tp=topm();
-  const innerW=Math.max(220, W-pd*2);
-  const innerH=Math.max(220, H-tp*2);
-  const ph=Math.max(120, (innerH-gp)/2);
-  return {F:{x:pd,y:tp,w:innerW,h:ph}, S:{x:pd,y:tp+ph+gp,w:innerW,h:ph}};
-}
-function rr(x,y,w,h,r){ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y)}
-function card(r,title,sub){
-  ctx.save();
-  ctx.fillStyle='rgba(255,255,255,.40)'; ctx.beginPath(); rr(r.x+4,r.y+8,r.w,r.h,18); ctx.fill();
-  ctx.fillStyle='rgba(255,255,255,.78)'; ctx.beginPath(); rr(r.x,r.y,r.w,r.h,18); ctx.fill();
-  ctx.strokeStyle='rgba(70,90,110,.10)'; ctx.lineWidth=1; ctx.beginPath(); rr(r.x,r.y,r.w,r.h,18); ctx.stroke();
-  const g=ctx.createLinearGradient(r.x,r.y,r.x,r.y+r.h); g.addColorStop(0,'rgba(244,248,252,.88)'); g.addColorStop(.45,'rgba(220,232,243,.80)'); g.addColorStop(1,'rgba(201,220,235,.76)');
-  ctx.fillStyle=g; ctx.beginPath(); rr(r.x+1,r.y+1,r.w-2,r.h-2,17); ctx.fill();
-  ctx.fillStyle='rgba(23,48,71,.84)'; ctx.font='600 15px system-ui'; ctx.fillText(title,r.x+14,r.y+22);
-  ctx.fillStyle='rgba(74,98,119,.86)'; ctx.font='12px system-ui'; ctx.fillText(sub,r.x+14,r.y+40);
-  ctx.restore();
-}
-
-function createField(){
-  return {
-    NX:120, NY:160, cell:7,
-    u:null, v:null, u2:null, v2:null, pf:null, dv:null, solid:null, svx:null, svy:null,
-    tracers:[], pressureCanvas:null, pressureCtx:null, pressureDirty:true,
-    maskCanvas:null, maskCtx:null, dp:null, dpDirty:true
-  };
-}
-// ===============================
-// Simulation state
-// ===============================
-const frontField=createField(), sideField=createField();
-let lift=0, thrust=0;
-
-function idx(field,i,j){return i + j*field.NX;}
-function simRect(field, cardRect){
-  const insetX=8, insetBottom=8, headerH=52;
-  const availW=Math.max(40, cardRect.w - insetX*2), availH=Math.max(40, cardRect.h - headerH - insetBottom);
-  const rawW = field.NX * field.cell, rawH = field.NY * field.cell;
-  const scale = Math.min(availW/rawW, availH/rawH);
-  const w=Math.floor(rawW*scale), h=Math.floor(rawH*scale);
-  return {x:cardRect.x+Math.floor((cardRect.w-w)/2), y:cardRect.y+headerH, w, h};
-}
-function invalidatePressureMap(field){ field.pressureDirty = true; field.dpDirty=true; }
-
-function initField(field, rect, mode){
-  field.NX=Math.max(72,Math.floor(rect.w/field.cell));
-  field.NY=Math.max(38,Math.floor(rect.h/field.cell));
-  const n=field.NX*field.NY;
-  field.u=new Float32Array(n); field.v=new Float32Array(n); field.u2=new Float32Array(n); field.v2=new Float32Array(n);
-  field.pf=new Float32Array(n); field.dv=new Float32Array(n); field.solid=new Uint8Array(n); field.svx=new Float32Array(n); field.svy=new Float32Array(n);
-  field.dp=new Float32Array(n);
-  field.tracers=[];
-  const count = mode==='front'?1300:900;
-  for(let i=0;i<count;i++) field.tracers.push({x:rand(0,field.NX-1),y:rand(0,field.NY-1),px:0,py:0,age:rand(0,120),life:rand(90,260)});
-  field.pressureCanvas=null; field.pressureCtx=null; field.maskCanvas=null; field.maskCtx=null; field.pressureDirty=true; field.dpDirty=true;
-}
-function resetField(field){
-  field.u.fill(0); field.v.fill(0); field.u2.fill(0); field.v2.fill(0); field.pf.fill(0); field.dv.fill(0); field.solid.fill(0); field.svx.fill(0); field.svy.fill(0);
-  for(const tr of field.tracers){ tr.x=rand(0,field.NX-1); tr.y=rand(0,field.NY-1); tr.px=tr.x; tr.py=tr.y; tr.age=rand(0,120); tr.life=rand(90,260); }
-  invalidatePressureMap(field);
-}
-
-function birdState(t,r){
-  const p=P(), ph=t*p.freq*Math.PI*2, down=Math.max(0,Math.sin(ph)), up=Math.max(0,-Math.sin(ph)), sc=p.scale;
-  const bodyX=r.x+r.w*.46+(2.0*down-0.8*up)*sc, bodyY=r.y+r.h*.66+Math.sin(ph-.2)*p.amp*.03;
-  const fold=.14+.78*up, open=.68+.46*down, shSpread=Math.min(20,r.w*.044)*sc, shoulderY=bodyY-5*sc+Math.sin(ph)*p.amp*.17+2.0*down*sc;
-  const hum=Math.min(22,r.w*.045)*(0.96+0.10*down)*sc, fore=Math.min(54,r.w*.108)*(0.82+0.30*down)*(1-.14*fold)*sc, hand=Math.min(66,r.w*.125)*(0.76+0.42*down)*(1-.10*fold)*sc;
-  const rightA1=clamp(-0.90+0.85*Math.sin(ph),-1.75,-0.02), rightA2=clamp(rightA1+0.30+0.28*p.pitch+0.10*down,-1.20,0.65), rightA3=clamp(rightA2+0.22+0.22*p.pitch+0.05*Math.sin(ph+0.5),-0.90,1.00);
-  return {ph,down,up,bodyX,bodyY,shSpread,shoulderY,hum,fore,hand,leftA1:Math.PI-rightA1,leftA2:Math.PI-rightA2,leftA3:Math.PI-rightA3,rightA1,rightA2,rightA3,vy:p.amp*p.freq*Math.PI*2*Math.cos(ph),fold,open,scale:sc};
-}
-function wing(s,side){
-  const shX=s.bodyX+(side==='left'?-s.shSpread:s.shSpread), shY=s.shoulderY, a1=side==='left'?s.leftA1:s.rightA1, a2=side==='left'?s.leftA2:s.rightA2, a3=side==='left'?s.leftA3:s.rightA3;
-  const ex=shX+Math.cos(a1)*s.hum, ey=shY+Math.sin(a1)*s.hum, wx=ex+Math.cos(a2)*s.fore, wy=ey+Math.sin(a2)*s.fore, tx=wx+Math.cos(a3)*s.hand, ty=wy+Math.sin(a3)*s.hand;
-  return {shX,shY,elbowX:ex,elbowY:ey,wristX:wx,wristY:wy,tipX:tx,tipY:ty,a1,a2,a3};
-}
-
-function dist2(ax,ay,bx,by){ return Math.hypot(bx-ax, by-ay); }
-function phaseLerp(phases, t){
-  const i0 = Math.floor(t) % phases.length;
-  const i1 = (i0 + 1) % phases.length;
-  const k = t - Math.floor(t);
-  return {
-    a1: lerp(phases[i0].a1, phases[i1].a1, k),
-    a2: lerp(phases[i0].a2, phases[i1].a2, k),
-    a3: lerp(phases[i0].a3, phases[i1].a3, k),
-  };
-}
-
-function sideKinematics(s,R){
-  const p=P(), sc=p.scale;
-  const shared = wing(s,'left'); // use the same front-view state as the phase master
-
-  const bodyCx=R.x+R.w*.46;
-  const bodyCy=R.y+R.h*.67+Math.sin(s.ph-.2)*p.amp*.02;
-  const tilt=0;
-
-  // same front-view left-wing bone lengths
-  const hum = dist2(shared.shX, shared.shY, shared.elbowX, shared.elbowY) * 0.96;
-  const fore = dist2(shared.elbowX, shared.elbowY, shared.wristX, shared.wristY) * 0.96;
-  const hand = dist2(shared.wristX, shared.wristY, shared.tipX, shared.tipY) * 0.96;
-
-  const shoulderX=bodyCx-2.8*sc;
-  const shoulderY=bodyCy-0.8*sc;
-
-  // phase-lock side view to the exact same oscillator used by the front view
-  const down = s.down;
-  const up = s.up;
-  const osc = Math.sin(s.ph);
-  const osc2 = Math.sin(s.ph + 0.45);
-  const foldK = clamp((s.fold - 0.14) / 0.78, 0, 1);
-  const openK = clamp((s.open - 0.68) / 0.46, 0, 1);
-
-  const a1 =
-    clamp(
-      -1.46
-      + 1.18 * down
-      + 0.18 * openK
-      + 0.16 * osc2
-      - 0.10 * up,
-      -1.52, 0.10
-    );
-
-  const a2 =
-    clamp(
-      -1.06
-      + 0.92 * down
-      + 0.22 * openK
-      + 0.08 * osc
-      - 0.18 * foldK,
-      -1.18, 0.28
-    );
-
-  const a3 =
-    clamp(
-      -0.68
-      + 0.62 * down
-      + 0.16 * openK
-      + 0.06 * osc2
-      - 0.14 * foldK,
-      -0.82, 0.14
-    );
-
-  const ex=shoulderX+Math.cos(a1)*hum, ey=shoulderY+Math.sin(a1)*hum;
-  const wx=ex+Math.cos(a2)*fore, wy=ey+Math.sin(a2)*fore;
-  const tx=wx+Math.cos(a3)*hand, ty=wy+Math.sin(a3)*hand;
-
-  return { bodyCx,bodyCy,tilt,shoulderX,shoulderY,ex,ey,wx,wy,tx,ty,a1,a2,a3,hum,fore,hand,shared };
-}
-
-function makeFrontWingShape(w, side, sc){
-  const dir=side==='left'?-1:1;
-  const spread = Math.min(1.25, Math.max(0.0, (w.tipX-w.wristX)*dir/18));
-  const upper = [
-    {x:w.shX + dir*(2.0*sc), y:w.shY - 5.2*sc},
-    {x:lerp(w.shX,w.elbowX,0.20) + dir*(2.8*sc), y:lerp(w.shY,w.elbowY,0.20) - 6.6*sc},
-    {x:lerp(w.shX,w.elbowX,0.62) + dir*(3.4*sc), y:lerp(w.shY,w.elbowY,0.62) - 7.0*sc},
-    {x:lerp(w.elbowX,w.wristX,0.14) + dir*(4.2*sc), y:lerp(w.elbowY,w.wristY,0.14) - 8.0*sc},
-    {x:lerp(w.elbowX,w.wristX,0.52) + dir*(5.2*sc), y:lerp(w.elbowY,w.wristY,0.52) - 7.4*sc},
-    {x:lerp(w.elbowX,w.wristX,0.88) + dir*(6.2*sc), y:lerp(w.elbowY,w.wristY,0.88) - 6.3*sc},
-    {x:lerp(w.wristX,w.tipX,0.22) + dir*(7.0+1.5*spread)*sc, y:lerp(w.wristY,w.tipY,0.22) - 5.4*sc},
-    {x:lerp(w.wristX,w.tipX,0.60) + dir*(9.8+2.0*spread)*sc, y:lerp(w.wristY,w.tipY,0.60) - 3.8*sc},
-    {x:w.tipX + dir*(11.5+3.0*spread)*sc, y:w.tipY - 1.4*sc},
-  ];
-  const lower = [
-    {x:w.tipX + dir*(6.6+1.0*spread)*sc, y:w.tipY + 5.4*sc},
-    {x:lerp(w.wristX,w.tipX,0.72) + dir*(4.4+0.8*spread)*sc, y:lerp(w.wristY,w.tipY,0.72) + 6.8*sc},
-    {x:lerp(w.wristX,w.tipX,0.30) + dir*(2.1*sc), y:lerp(w.wristY,w.tipY,0.30) + 7.2*sc},
-    {x:lerp(w.elbowX,w.wristX,0.92) + dir*(1.4*sc), y:lerp(w.elbowY,w.wristY,0.92) + 7.0*sc},
-    {x:lerp(w.elbowX,w.wristX,0.58) + dir*(0.3*sc), y:lerp(w.elbowY,w.wristY,0.58) + 7.0*sc},
-    {x:lerp(w.elbowX,w.wristX,0.18) - dir*(0.6*sc), y:lerp(w.elbowY,w.wristY,0.18) + 6.0*sc},
-    {x:lerp(w.shX,w.elbowX,0.64) - dir*(1.0*sc), y:lerp(w.shY,w.elbowY,0.64) + 4.6*sc},
-    {x:lerp(w.shX,w.elbowX,0.24) - dir*(1.3*sc), y:lerp(w.shY,w.elbowY,0.24) + 3.5*sc},
-    {x:w.shX - dir*(1.0*sc), y:w.shY + 2.6*sc},
-  ];
-  return {upper, lower, poly: upper.concat([...lower].reverse())};
-}
-function makeSideWingShape(K, sc){
-  const p = P();
-
-  const center = [
-    {x:K.shoulderX, y:K.shoulderY},
-    {x:lerp(K.shoulderX,K.ex,0.35), y:lerp(K.shoulderY,K.ey,0.35)},
-    {x:K.ex, y:K.ey},
-    {x:lerp(K.ex,K.wx,0.38), y:lerp(K.ey,K.wy,0.38)},
-    {x:K.wx, y:K.wy},
-    {x:lerp(K.wx,K.tx,0.35), y:lerp(K.wy,K.ty,0.35)},
-    {x:lerp(K.wx,K.tx,0.72), y:lerp(K.wy,K.ty,0.72)},
-    {x:K.tx, y:K.ty},
-  ];
-
-  const upper = [], lower = [];
-  for(let i=0;i<center.length;i++){
-    const t = i/(center.length-1);
-    const p0 = center[Math.max(0,i-1)];
-    const p1 = center[Math.min(center.length-1,i+1)];
-    const dx = p1.x - p0.x, dy = p1.y - p0.y;
-    const nlen = Math.hypot(dx,dy) || 1;
-    const nx = -dy/nlen, ny = dx/nlen;
-
-    const exposure = 0.88 + 0.36*Math.max(0, Math.sin(K.a2));
-    const baseW = (8.4 + 6.5*p.pitch) * (1.0 - 0.52*t) * exposure * sc;
-
-    const upperW = baseW * (0.72 + 0.10*Math.max(0, Math.sin(K.a2))) + (i>=5 ? 2.2*sc : 0);
-    const lowerW = baseW * (0.28 + 0.12*Math.max(0, Math.sin(K.a2)));
-
-    upper.push({x:center[i].x + nx*upperW, y:center[i].y + ny*upperW});
-    lower.push({x:center[i].x - nx*lowerW, y:center[i].y - ny*lowerW});
+  function rotX(p, a) {
+    const c = Math.cos(a), s = Math.sin(a);
+    return { x: p.x, y: p.y * c - p.z * s, z: p.y * s + p.z * c };
+  }
+  function rotY(p, a) {
+    const c = Math.cos(a), s = Math.sin(a);
+    return { x: p.x * c + p.z * s, y: p.y, z: -p.x * s + p.z * c };
+  }
+  function rotZ(p, a) {
+    const c = Math.cos(a), s = Math.sin(a);
+    return { x: p.x * c - p.y * s, y: p.x * s + p.y * c, z: p.z };
+  }
+  function normal2(a, b) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const L = Math.hypot(dx, dy) || 1;
+    return { x: -dy / L, y: dx / L };
   }
 
-  for(let i=5;i<upper.length;i++){
-    const t = (i-5)/(upper.length-1-5 || 1);
-    upper[i].x -= (3.5 + 4.0*p.pitch) * t * sc;
-    upper[i].y -= (2.0 + 3.5*p.pitch) * t * sc;
-    lower[i].x -= (1.8 + 1.8*p.pitch) * t * sc;
-    lower[i].y += (0.8 + 1.2*p.pitch) * t * sc;
+  // =========================
+  // Canvas / layout
+  // =========================
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.floor(window.innerWidth * dpr);
+    canvas.height = Math.floor(window.innerHeight * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  function getLayout() {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const margin = 18;
+    const gap = 16;
+    const panelW = w - margin * 2;
+    const panelH = Math.min(420, (h - margin * 2 - gap) / 2);
+    return {
+      front: { x: margin, y: margin + 36, w: panelW, h: panelH },
+      side:  { x: margin, y: margin + 36 + panelH + gap, w: panelW, h: panelH }
+    };
   }
 
-  return {upper, lower, poly: upper.concat([...lower].reverse())};
-}
+  function drawPanel(box, title) {
+    const r = 22;
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--panel');
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--panel-stroke');
+    ctx.lineWidth = 2;
 
-function makeFrontBirdPaths(state, Lw, Rw){
-  const sc=state.scale;
-  const left = makeFrontWingShape(Lw,'left',sc), right = makeFrontWingShape(Rw,'right',sc);
-
-  const wingFill = new Path2D();
-  const wingTex = new Path2D();
-  const skeleton = new Path2D();
-  for(const shape of [left,right]){
-    const pts=shape.poly;
-    wingFill.moveTo(pts[0].x,pts[0].y);
-    for(let i=1;i<pts.length;i++) wingFill.lineTo(pts[i].x,pts[i].y);
-    wingFill.closePath();
-    for(let i=0;i<shape.upper.length-1;i++){
-      const p=shape.upper[i], q=[...shape.lower].reverse()[Math.min(shape.lower.length-1, i)];
-      wingTex.moveTo(p.x,p.y); wingTex.lineTo(q.x,q.y);
-    }
-  }
-  skeleton.moveTo(Lw.shX,Lw.shY); skeleton.lineTo(Lw.elbowX,Lw.elbowY); skeleton.lineTo(Lw.wristX,Lw.wristY); skeleton.lineTo(Lw.tipX,Lw.tipY);
-  skeleton.moveTo(Rw.shX,Rw.shY); skeleton.lineTo(Rw.elbowX,Rw.elbowY); skeleton.lineTo(Rw.wristX,Rw.wristY); skeleton.lineTo(Rw.tipX,Rw.tipY);
-
-  const body = new Path2D();
-  body.ellipse(state.bodyX, state.bodyY+5*sc, 15*sc, 22*sc, 0, 0, Math.PI*2);
-  body.ellipse(state.bodyX, state.bodyY-10*sc, 6.5*sc, 7.2*sc, 0, 0, Math.PI*2);
-
-  return {left,right,wingFill,wingTex,skeleton,body};
-}
-function makeSideBirdPaths(state, K){
-  const sc=state.scale;
-
-  // front wing (hand-side / visible wing)
-  const wing = makeSideWingShape(K,sc);
-  const wingFill = new Path2D();
-  const pts = wing.poly;
-  wingFill.moveTo(pts[0].x,pts[0].y);
-  for(let i=1;i<pts.length;i++) wingFill.lineTo(pts[i].x,pts[i].y);
-  wingFill.closePath();
-
-  // back wing: shift upward/backward, slightly smaller -> reads as behind torso
-  const rearWing = {
-    upper: wing.upper.map(p => ({x: K.bodyCx + (p.x-K.bodyCx)*0.88 - 4.8*sc, y: K.bodyCy + (p.y-K.bodyCy)*0.88 - 6.8*sc})),
-    lower: wing.lower.map(p => ({x: K.bodyCx + (p.x-K.bodyCx)*0.88 - 4.8*sc, y: K.bodyCy + (p.y-K.bodyCy)*0.88 - 6.8*sc}))
-  };
-  rearWing.poly = rearWing.upper.concat(rearWing.lower);
-
-  const rearWingFill = new Path2D();
-  rearWingFill.moveTo(rearWing.poly[0].x,rearWing.poly[0].y);
-  for(let i=1;i<rearWing.poly.length;i++) rearWingFill.lineTo(rearWing.poly[i].x,rearWing.poly[i].y);
-  rearWingFill.closePath();
-
-  const wingTex = new Path2D();
-  for(let i=0;i<wing.upper.length-1;i++){
-    const p=wing.upper[i], q=wing.lower[Math.min(wing.lower.length-1, wing.lower.length-1-i)];
-    wingTex.moveTo(p.x,p.y); wingTex.lineTo(q.x,q.y);
-  }
-
-  const rearWingTex = new Path2D();
-  for(let i=0;i<rearWing.upper.length-1;i++){
-    const p=rearWing.upper[i], q=rearWing.lower[Math.min(rearWing.lower.length-1, rearWing.lower.length-1-i)];
-    rearWingTex.moveTo(p.x,p.y); rearWingTex.lineTo(q.x,q.y);
-  }
-
-  const skeleton = new Path2D();
-  skeleton.moveTo(K.shoulderX,K.shoulderY); skeleton.lineTo(K.ex,K.ey); skeleton.lineTo(K.wx,K.wy); skeleton.lineTo(K.tx,K.ty);
-
-  const body = new Path2D();
-  body.ellipse(K.bodyCx+1.5*sc, K.bodyCy+3*sc, 17.5*sc, 10.5*sc, 0, 0, Math.PI*2);
-  body.ellipse(K.bodyCx-10.5*sc, K.bodyCy-8.1*sc, 5.8*sc, 4.5*sc, 0, 0, Math.PI*2);
-
-  return {wing,wingFill,rearWing,rearWingFill,wingTex,rearWingTex,skeleton,body};
-}
-
-function rasterizePathToMask(field, simR, paths, vx=0, vy=0){
-  const w=field.NX, h=field.NY;
-  if(!field.maskCanvas || field.maskCanvas.width!==w || field.maskCanvas.height!==h){
-    field.maskCanvas=document.createElement('canvas');
-    field.maskCanvas.width=w; field.maskCanvas.height=h;
-    field.maskCtx=field.maskCanvas.getContext('2d', {willReadFrequently:true});
-  }
-  const mctx=field.maskCtx;
-  mctx.setTransform(1,0,0,1,0,0);
-  mctx.clearRect(0,0,w,h);
-
-  // map world coords -> grid coords
-  const sx = w / simR.w;
-  const sy = h / simR.h;
-  mctx.setTransform(sx,0,0,sy,-simR.x*sx,-simR.y*sy);
-  mctx.fillStyle='black';
-  for(const p of paths) mctx.fill(p);
-
-  const img=mctx.getImageData(0,0,w,h).data;
-  field.solid.fill(0); field.svx.fill(0); field.svy.fill(0);
-  for(let j=0;j<h;j++){
-    for(let i=0;i<w;i++){
-      const a=img[(i+j*w)*4+3];
-      if(a>8){
-        const id=idx(field,i,j);
-        field.solid[id]=1;
-        field.svx[id]=vx;
-        field.svy[id]=vy;
-      }
-    }
-  }
-}
-
-function samp(field,arr,x,y){
-  x=clamp(x,.5,field.NX-1.5); y=clamp(y,.5,field.NY-1.5);
-  const i0=Math.floor(x),j0=Math.floor(y),i1=i0+1,j1=j0+1,sx=x-i0,sy=y-j0;
-  const a=arr[idx(field,i0,j0)],b=arr[idx(field,i1,j0)],c=arr[idx(field,i0,j1)],d=arr[idx(field,i1,j1)];
-  return lerp(lerp(a,b,sx),lerp(c,d,sx),sy);
-}
-function advect(field,dt){
-  const p=P(), c=field.cell;
-  for(let j=0;j<field.NY;j++) for(let i=0;i<field.NX;i++){
-    const id=idx(field,i,j);
-    if(field.solid[id]){field.u2[id]=field.svx[id]/c; field.v2[id]=field.svy[id]/c; continue;}
-    const x=i+.5,y=j+.5,bx=x-field.u[id]*dt,by=y-field.v[id]*dt;
-    field.u2[id]=samp(field,field.u,bx,by); field.v2[id]=samp(field,field.v,bx,by); field.u2[id]=.996*field.u2[id]+.004*(p.wind/c);
-  }
-  [field.u,field.u2]=[field.u2,field.u]; [field.v,field.v2]=[field.v2,field.v];
-}
-
-function diffuse(field, amount=0.04){
-  const nu = new Float32Array(field.u.length);
-  const nv = new Float32Array(field.v.length);
-  for(let j=1;j<field.NY-1;j++){
-    for(let i=1;i<field.NX-1;i++){
-      const id=idx(field,i,j);
-      if(field.solid[id]){ nu[id]=field.u[id]; nv[id]=field.v[id]; continue; }
-      const uavg = (field.u[idx(field,i+1,j)] + field.u[idx(field,i-1,j)] + field.u[idx(field,i,j+1)] + field.u[idx(field,i,j-1)]) * 0.25;
-      const vavg = (field.v[idx(field,i+1,j)] + field.v[idx(field,i-1,j)] + field.v[idx(field,i,j+1)] + field.v[idx(field,i,j-1)]) * 0.25;
-      nu[id] = field.u[id]*(1-amount) + uavg*amount;
-      nv[id] = field.v[id]*(1-amount) + vavg*amount;
-    }
-  }
-  for(let j=1;j<field.NY-1;j++){
-    for(let i=1;i<field.NX-1;i++){
-      const id=idx(field,i,j);
-      field.u[id]=nu[id];
-      field.v[id]=nv[id];
-    }
-  }
-}
-
-function applySolidWall(field){
-  for(let j=1;j<field.NY-1;j++){
-    for(let i=1;i<field.NX-1;i++){
-      const id=idx(field,i,j);
-      if(!field.solid[id]) continue;
-      field.u[id]=0;
-      field.v[id]=0;
-      // mild no-slip influence to neighbors
-      for(const [ni,nj] of [[1,0],[-1,0],[0,1],[0,-1]]){
-        const nid = idx(field,i+ni,j+nj);
-        if(field.solid[nid]) continue;
-        field.u[nid] *= 0.72;
-        field.v[nid] *= 0.72;
-      }
-    }
-  }
-}
-
-function repel(field){
-  for(let j=1;j<field.NY-1;j++) for(let i=1;i<field.NX-1;i++){
-    const id=idx(field,i,j); if(field.solid[id]) continue;
-    let fx=0,fy=0; for(const [ni,nj] of [[1,0],[-1,0],[0,1],[0,-1]]) if(field.solid[idx(field,i+ni,j+nj)]){fx-=ni*.22; fy-=nj*.22;}
-    field.u[id]+=fx; field.v[id]+=fy;
-  }
-}
-
-function distancePointToSegment(px,py,ax,ay,bx,by){
-  const abx = bx - ax, aby = by - ay;
-  const denom = abx*abx + aby*aby + 1e-6;
-  const t = clamp(((px-ax)*abx + (py-ay)*aby) / denom, 0, 1);
-  const qx = ax + abx*t, qy = ay + aby*t;
-  const dx = px - qx, dy = py - qy;
-  return {dist: Math.hypot(dx,dy), t, qx, qy, dx, dy};
-}
-function depositVelocity(field, x, y, du, dv){
-  const i0 = Math.floor(x), j0 = Math.floor(y);
-  const fx = x - i0, fy = y - j0;
-  const pairs = [
-    [i0,   j0,   (1-fx)*(1-fy)],
-    [i0+1, j0,   fx*(1-fy)],
-    [i0,   j0+1, (1-fx)*fy],
-    [i0+1, j0+1, fx*fy],
-  ];
-  for(const [ii,jj,w] of pairs){
-    if(ii < 0 || jj < 0 || ii >= field.NX || jj >= field.NY || w <= 0) continue;
-    const id = idx(field, ii, jj);
-    if(field.solid[id]) continue;
-    field.u[id] += du * w;
-    field.v[id] += dv * w;
-  }
-}
-function applySurfaceLineIntegralForce(field,R,ax,ay,bx,by,bandWidth,normalBias,flowAlong,aoa,extraDown,extraAft,dt,q=1){
-  const c = field.cell;
-  const gax=(ax-R.x)/c, gay=(ay-R.y)/c, gbx=(bx-R.x)/c, gby=(by-R.y)/c;
-
-  const sdx = gbx - gax, sdy = gby - gay;
-  const sl = Math.hypot(sdx,sdy) + 1e-6;
-  const tx = sdx / sl, ty = sdy / sl;
-  let nx = -ty, ny = tx;
-  if(ny > 0){ nx = -nx; ny = -ny; }
-
-  const lineSamples = Math.max(16, Math.ceil(sl * 5.0));
-  const normalSamples = Math.max(4, Math.ceil(bandWidth * 3.4));
-  const lowerBand = bandWidth * 0.78;
-  const upperBand = bandWidth * 0.92;
-  const baseScale = dt / Math.max(1, lineSamples);
-
-  for(let si=0; si<lineSamples; si++){
-    const t = (si + 0.5) / lineSamples;
-    const cx = lerp(gax, gbx, t);
-    const cy = lerp(gay, gby, t);
-
-    // smooth taper at the joints so segment borders do not create islands
-    const endFade = Math.pow(Math.sin(Math.PI * t), 1.15);
-    if(endFade <= 0) continue;
-
-    // centerline contribution: weak tangential advection only
-    {
-      const k0 = q * endFade;
-      const du = tx * flowAlong * k0 * baseScale * 0.35;
-      const dv = ty * flowAlong * k0 * baseScale * 0.35;
-      depositVelocity(field, cx, cy, du, dv);
-    }
-
-    // upper / lower surface bands as a continuous line integral
-    for(const sideSign of [-1, 1]){
-      const sideBand = sideSign < 0 ? lowerBand : upperBand;
-      const sideBoost = sideSign < 0 ? 1.0 : 0.56;
-
-      for(let ni=0; ni<normalSamples; ni++){
-        const rn = (ni + 0.5) / normalSamples;
-        const dist = rn * sideBand;
-        const px = cx + nx * dist * sideSign;
-        const py = cy + ny * dist * sideSign;
-
-        const surfaceFall = Math.pow(Math.max(0, 1 - rn), 1.55);
-        const chordFade = 0.74 + 0.26 * Math.sin(Math.PI * t);
-        const tipBias = sideSign < 0 ? (0.64 + 0.56 * t) : (0.86 + 0.14 * t);
-        const k = q * endFade * surfaceFall * chordFade * tipBias;
-
-        const dip = -aoa * sideSign * normalBias * k;
-        let du = (tx * flowAlong * k * 0.18 - nx * dip) * baseScale * sideBoost;
-        let dv = (ty * flowAlong * k * 0.18 - ny * dip) * baseScale * sideBoost;
-
-        if(sideSign < 0){
-          du += extraAft * k * baseScale * (0.20 + 0.46*t);
-          dv += extraDown * k * baseScale * (0.42 + 0.92*t);
-        }else{
-          du += extraAft * k * baseScale * 0.025;
-          dv += extraDown * k * baseScale * 0.06;
-        }
-
-        depositVelocity(field, px, py, du, dv);
-      }
-    }
-  }
-}
-function forceFieldFront(field,s,Lw,Rw,R,dt){
-  const p=P(), c=field.cell;
-
-  if(p.wind > 0){
-    for(let j=0;j<field.NY;j++) for(let i=0;i<3;i++){
-      const id=idx(field,i,j);
-      if(!field.solid[id]){ field.u[id]=p.wind/c; field.v[id]=0; }
-    }
-  }
-
-  for(const wing of [Lw, Rw]){
-    const flapPush = (0.34*s.down - 0.12*s.up) * (0.78 + 0.28*p.pitch);
-    const Ux = (p.wind/c) + 0.08;
-    const Uy = 0.55 * flapPush;
-
-    const segments = [
-      {ax:wing.shX, ay:wing.shY, bx:wing.elbowX, by:wing.elbowY, q:0.58},
-      {ax:wing.elbowX, ay:wing.elbowY, bx:wing.wristX, by:wing.wristY, q:0.92},
-      {ax:wing.wristX, ay:wing.wristY, bx:wing.tipX, by:wing.tipY, q:1.15},
-    ];
-
-    for(const seg of segments){
-      const dx = seg.bx - seg.ax, dy = seg.by - seg.ay;
-      const L = Math.hypot(dx,dy) + 1e-6;
-      let nx = -dy / L, ny = dx / L;
-      if(ny > 0){ nx = -nx; ny = -ny; }
-
-      const aoa = clamp((Ux*nx + Uy*ny), -1.4, 1.4);
-      const bandWidth = (0.82 + 0.22*p.pitch + 0.16*seg.q) * p.ghostRadius;
-      const flowAlong = 0.07 + 0.03*seg.q;
-      const normalBias = 0.26 + 0.08*seg.q;
-      const extraDown = 1.18 * flapPush;
-      const extraAft = 0.24 * flapPush;
-
-      applySurfaceLineIntegralForce(
-        field, R,
-        seg.ax, seg.ay, seg.bx, seg.by,
-        bandWidth, normalBias, flowAlong, aoa,
-        extraDown, extraAft, dt, seg.q
-      );
-    }
-  }
-}
-function forceFieldSide(field,s,K,R,dt){
-  const p=P(), c=field.cell;
-
-  if(p.wind > 0){
-    for(let j=0;j<field.NY;j++) for(let i=0;i<3;i++){
-      const id=idx(field,i,j);
-      if(!field.solid[id]){ field.u[id]=p.wind/c; field.v[id]=0; }
-    }
-  }
-
-  const segments = [
-    {ax:K.shoulderX, ay:K.shoulderY, bx:K.ex, by:K.ey, q:0.72},
-    {ax:K.ex, ay:K.ey, bx:K.wx, by:K.wy, q:0.96},
-    {ax:K.wx, ay:K.wy, bx:K.tx, by:K.ty, q:1.18},
-  ];
-
-  const vyRef = (Math.abs(s.vy) / c);
-  const strokeVel = (s.down - 0.55*s.up) * (0.55 + 0.45*p.pitch);
-  const inducedDownwash = (0.18 + 0.22*p.pitch) * strokeVel + 0.06*vyRef;
-  const flapVel = (s.down - s.up);
-  const jet = flapVel * (0.42 + 0.58*p.pitch);
-
-  for(const seg of segments){
-    const dx = seg.bx - seg.ax, dy = seg.by - seg.ay;
-    const L = Math.hypot(dx,dy) + 1e-6;
-    let nx = -dy / L, ny = dx / L;
-    if(ny > 0){ nx = -nx; ny = -ny; }
-
-    const Ux = (p.wind/c) + 0.08;
-    const Uy = inducedDownwash;
-    const aoa = clamp((Ux*nx + Uy*ny), -1.4, 1.4);
-
-    const bandWidth = (0.86 + 0.26*p.pitch + 0.18*seg.q) * p.ghostRadius;
-    const flowAlong = 0.08 + 0.03*seg.q;
-    const normalBias = 0.34 + 0.10*seg.q;
-    const extraDown = inducedDownwash * 0.78 + jet * 0.86;
-    const extraAft = 0.08 * strokeVel + 0.10 * jet;
-
-    applySurfaceLineIntegralForce(
-      field, R,
-      seg.ax, seg.ay, seg.bx, seg.by,
-      bandWidth, normalBias, flowAlong, aoa,
-      extraDown, extraAft, dt, seg.q
-    );
-  }
-}
-function divergence(field){
-  for(let j=1;j<field.NY-1;j++) for(let i=1;i<field.NX-1;i++){ const id=idx(field,i,j); if(field.solid[id]){field.dv[id]=0; field.pf[id]=0; continue;} field.dv[id]=-.5*((field.u[idx(field,i+1,j)]-field.u[idx(field,i-1,j)])+(field.v[idx(field,i,j+1)]-field.v[idx(field,i,j-1)])); field.pf[id]=0; }
-}
-function project(field,iter=48){
-  divergence(field);
-  for(let k=0;k<iter;k++) for(let j=1;j<field.NY-1;j++) for(let i=1;i<field.NX-1;i++){ const id=idx(field,i,j); if(field.solid[id]) continue; let sum=0,c=0; for(const n of [idx(field,i+1,j),idx(field,i-1,j),idx(field,i,j+1),idx(field,i,j-1)]) if(!field.solid[n]){sum+=field.pf[n]; c++;} if(c>0) field.pf[id]=(field.dv[id]+sum)/c; }
-  for(let j=1;j<field.NY-1;j++) for(let i=1;i<field.NX-1;i++){ const id=idx(field,i,j); if(field.solid[id]){field.u[id]=field.svx[id]/field.cell; field.v[id]=field.svy[id]/field.cell; continue;} field.u[id]-=.5*(field.pf[idx(field,i+1,j)]-field.pf[idx(field,i-1,j)]); field.v[id]-=.5*(field.pf[idx(field,i,j+1)]-field.pf[idx(field,i,j-1)]); }
-}
-function confine(field,dt){
-  const curl=new Float32Array(field.NX*field.NY);
-  for(let j=1;j<field.NY-1;j++) for(let i=1;i<field.NX-1;i++) curl[idx(field,i,j)]=.5*(field.v[idx(field,i+1,j)]-field.v[idx(field,i-1,j)]-field.u[idx(field,i,j-1)]+field.u[idx(field,i,j+1)]);
-  for(let j=2;j<field.NY-2;j++) for(let i=2;i<field.NX-2;i++){ const id=idx(field,i,j); if(field.solid[id]) continue; const nx=Math.abs(curl[idx(field,i+1,j)])-Math.abs(curl[idx(field,i-1,j)]), ny=Math.abs(curl[idx(field,i,j+1)])-Math.abs(curl[idx(field,i,j-1)]), L=Math.hypot(nx,ny)+1e-6, eps=.22; field.u[id]+=eps*(ny/L)*curl[id]*dt; field.v[id]+=eps*(-nx/L)*curl[id]*dt; }
-}
-function boundaries(field){
-  const c=field.cell;
-
-  // 左右とも同じ種類の自由境界にする
-  for(let j=0;j<field.NY;j++){
-    field.u[idx(field,0,j)] = field.u[idx(field,1,j)];
-    field.v[idx(field,0,j)] = field.v[idx(field,1,j)];
-
-    field.u[idx(field,field.NX-1,j)] = field.u[idx(field,field.NX-2,j)];
-    field.v[idx(field,field.NX-1,j)] = field.v[idx(field,field.NX-2,j)];
-  }
-
-  // 上下も同じ種類の自由境界にする
-  for(let i=0;i<field.NX;i++){
-    field.u[idx(field,i,0)] = field.u[idx(field,i,1)];
-    field.v[idx(field,i,0)] = field.v[idx(field,i,1)];
-
-    field.u[idx(field,i,field.NY-1)] = field.u[idx(field,i,field.NY-2)];
-    field.v[idx(field,i,field.NY-1)] = field.v[idx(field,i,field.NY-2)];
-  }
-
-  // solid は常に固体速度を優先
-  for(let j=0;j<field.NY;j++){
-    for(let i=0;i<field.NX;i++){
-      const id=idx(field,i,j);
-      if(field.solid[id]){
-        field.u[id]=field.svx[id]/c;
-        field.v[id]=field.svy[id]/c;
-      }
-    }
-  }
-}
-function fluidStepFront(field,dt,Lw,Rw,R,s){ const p=P(); boundaries(field); forceFieldFront(field,s,Lw,Rw,R,dt); repel(field); advect(field,dt); if(p.viscosity>0) diffuse(field,p.viscosity); boundaries(field); if(p.ghostConfine) confine(field,dt); project(field,28); boundaries(field); invalidatePressureMap(field); }
-function fluidStepSide(field,dt,K,R,s){ const p=P(); boundaries(field); forceFieldSide(field,s,K,R,dt); repel(field); advect(field,dt); if(p.viscosity>0) diffuse(field,p.viscosity); boundaries(field); if(p.ghostConfine) confine(field,dt); project(field,28); boundaries(field); invalidatePressureMap(field); }
-function updateTracers(field,dt){ for(const tr of field.tracers){ tr.age+=dt*60; tr.px=tr.x; tr.py=tr.y; const uu=samp(field,field.u,tr.x,tr.y), vv=samp(field,field.v,tr.x,tr.y); tr.x+=uu*dt*28; tr.y+=vv*dt*28; if(tr.x<-2||tr.x>field.NX+2||tr.y<-2||tr.y>field.NY+2||tr.age>tr.life){ tr.x=rand(-3,0); tr.y=rand(0,field.NY); tr.px=tr.x; tr.py=tr.y; tr.age=0; tr.life=rand(90,260);} } }
-function updateForces(field,K,R){ let lf=0,th=0,n=0; for(const pt of [{x:lerp(K.shoulderX,K.wx,.35), y:lerp(K.shoulderY,K.wy,.35)},{x:lerp(K.ex,K.tx,.50), y:lerp(K.ey,K.ty,.50)}]){ const gx=(pt.x-R.x)/field.cell, gy=(pt.y-R.y)/field.cell; lf += samp(field,field.v,gx,gy+3)-samp(field,field.v,gx,gy-3); th += samp(field,field.u,gx+4,gy)-samp(field,field.u,gx-4,gy); n++; } if(n>0){ lift=.86*lift+.14*Math.max(0,lf/n); thrust=.86*thrust+.14*Math.max(0,th/n+.15);} }
-
-
-function smoothPressure(field){
-  const p = P();
-  const level = p.ghostSmooth;
-  if(level <= 0.001){
-    return field.pf;
-  }
-
-  let src = field.pf;
-  const n = field.NX * field.NY;
-  const passes = level < 0.34 ? 1 : (level < 0.67 ? 2 : 3);
-
-  for(let pass=0; pass<passes; pass++){
-    const tmp = new Float32Array(n);
-    const out = new Float32Array(n);
-    const sideW = 0.35 + 0.65*level;
-    const centerW = 1.0 + 1.6*level;
-
-    for(let j=0;j<field.NY;j++){
-      for(let i=0;i<field.NX;i++){
-        let s = 0, c = 0;
-        for(let k=-1;k<=1;k++){
-          const ii = i + k;
-          if(ii < 0 || ii >= field.NX) continue;
-          const w = (k===0 ? centerW : sideW);
-          s += src[idx(field,ii,j)] * w;
-          c += w;
-        }
-        tmp[idx(field,i,j)] = s / Math.max(1e-6,c);
-      }
-    }
-
-    for(let j=0;j<field.NY;j++){
-      for(let i=0;i<field.NX;i++){
-        let s = 0, c = 0;
-        for(let k=-1;k<=1;k++){
-          const jj = j + k;
-          if(jj < 0 || jj >= field.NY) continue;
-          const w = (k===0 ? centerW : sideW);
-          s += tmp[idx(field,i,jj)] * w;
-          c += w;
-        }
-        out[idx(field,i,j)] = s / Math.max(1e-6,c);
-      }
-    }
-    src = out;
-  }
-  return src;
-}
-function pressureRGBA(val){ const v=clamp(val,-1,1), mag=Math.pow(Math.abs(v),0.9); const mix=(a,b,k)=>a+(b-a)*k; let r,g,b,a; if(v<0){ if(mag<.5){ const k=mag/.5; r=mix(250,110,k); g=mix(252,176,k); b=mix(255,234,k); a=mix(.25,.70,k);} else { const k=(mag-.5)/.5; r=mix(110,0,k); g=mix(176,42,k); b=mix(234,145,k); a=mix(.70,1.00,k);} } else { if(mag<.5){ const k=mag/.5; r=mix(255,244,k); g=mix(248,156,k); b=mix(242,156,k); a=mix(.25,.70,k);} else { const k=(mag-.5)/.5; r=mix(244,118,k); g=mix(156,16,k); b=mix(156,28,k); a=mix(.70,1.00,k);} } return {r:r|0,g:g|0,b:b|0,a:Math.max(0,Math.min(255,Math.round(a*255)))}; }
-function buildPressureImage(field){
-  const w=Math.max(1,Math.floor(field.NX*field.cell)), h=Math.max(1,Math.floor(field.NY*field.cell));
-  if(!field.pressureCanvas || field.pressureCanvas.width!==w || field.pressureCanvas.height!==h){
-    field.pressureCanvas=document.createElement('canvas');
-    field.pressureCanvas.width=w;
-    field.pressureCanvas.height=h;
-    field.pressureCtx=field.pressureCanvas.getContext('2d');
-    field.pressureDirty=true;
-  }
-  if(!field.pressureDirty) return field.pressureCanvas;
-
-  const sp = smoothPressure(field);
-
-  // dynamic normalization: use the current field's max absolute pressure
-  // with a floor to avoid flicker when the field is weak.
-  let maxAbs = 0;
-  for(let j=1;j<field.NY-1;j++){
-    for(let i=1;i<field.NX-1;i++){
-      const id = idx(field,i,j);
-      if(field.solid[id]) continue;
-      const a = Math.abs(sp[id]);
-      if(a > maxAbs) maxAbs = a;
-    }
-  }
-  const norm = 1 / Math.max(0.10, maxAbs);
-
-  const img=field.pressureCtx.createImageData(w,h), data=img.data;
-  for(let py=0; py<h; py++){
-    for(let px=0; px<w; px++){
-      const gx=px/field.cell, gy=py/field.cell, i=Math.floor(gx), j=Math.floor(gy);
-      if(i<0||j<0||i>=field.NX-1||j>=field.NY-1) continue;
-      const fx=gx-i, fy=gy-j;
-      const p00=sp[idx(field,i,j)], p10=sp[idx(field,i+1,j)], p01=sp[idx(field,i,j+1)], p11=sp[idx(field,i+1,j+1)];
-      const p=p00*(1-fx)*(1-fy)+p10*fx*(1-fy)+p01*(1-fx)*fy+p11*fx*fy;
-      const c=pressureRGBA(p * norm);
-      const k=(py*w+px)*4;
-      data[k]=c.r; data[k+1]=c.g; data[k+2]=c.b; data[k+3]=c.a;
-    }
-  }
-  field.pressureCtx.putImageData(img,0,0);
-  field.pressureDirty=false;
-  return field.pressureCanvas;
-}
-function drawPressureMap(field,R,alpha=1){ const src=buildPressureImage(field); if(!src) return; ctx.save(); ctx.globalAlpha=1; ctx.filter='none'; ctx.globalCompositeOperation='source-over'; ctx.beginPath(); rr(R.x,R.y,R.w,R.h,16); ctx.clip(); ctx.globalAlpha=alpha; ctx.drawImage(src,0,0,src.width,src.height,R.x,R.y,R.w,R.h); ctx.restore(); }
-function drawFlowLines(field,R,alpha=1){
-  const sx=R.w/(field.NX*field.cell), sy=R.h/(field.NY*field.cell);
-  const p=P();
-  if(p.wind===0) alpha*=0.45;
-  ctx.save();
-  ctx.beginPath(); rr(R.x,R.y,R.w,R.h,16); ctx.clip();
-  ctx.globalAlpha=alpha;
-  for(const tr of field.tracers){
-    const k=1-tr.age/tr.life;
-    const px=R.x+tr.px*field.cell*sx, py=R.y+tr.py*field.cell*sy;
-    const x=R.x+tr.x*field.cell*sx, y=R.y+tr.y*field.cell*sy;
-    const uu=samp(field,field.u,tr.x,tr.y), vv=samp(field,field.v,tr.x,tr.y), speed=Math.hypot(uu,vv);
-    let color='rgba(28,38,52,'+(0.10+0.10*k)+')';
-    if(speed>2.2) color='rgba(14,24,36,'+(0.14+0.12*k)+')';
-    ctx.strokeStyle=color;
-    ctx.lineWidth=speed>2.0?1.35:0.95;
     ctx.beginPath();
-    ctx.moveTo(px,py);
-    ctx.lineTo(x,y);
-    ctx.stroke();
-  }
-  ctx.restore();
-}
-
-function drawVectorField(field,R,alpha=1){
-  const sx=R.w/(field.NX*field.cell), sy=R.h/(field.NY*field.cell);
-  ctx.save();
-  ctx.beginPath(); rr(R.x,R.y,R.w,R.h,16); ctx.clip();
-  ctx.globalAlpha=alpha;
-
-  const step=7;
-  for(let j=3;j<field.NY-3;j+=step){
-    for(let i=3;i<field.NX-3;i+=step){
-      const id=idx(field,i,j);
-      if(field.solid[id]) continue;
-      const u=samp(field,field.u,i,j), v=samp(field,field.v,i,j);
-      const mag=Math.hypot(u,v);
-      if(mag<0.08) continue;
-
-      const x=R.x+i*field.cell*sx;
-      const y=R.y+j*field.cell*sy;
-      const nx=u/(mag+1e-6), ny=v/(mag+1e-6);
-      const L=Math.pow(mag,0.72)*10;
-
-      ctx.strokeStyle='rgba(255,255,255,0.84)';
-      ctx.lineWidth=2.5;
-      ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+nx*L,y+ny*L); ctx.stroke();
-
-      ctx.strokeStyle='rgba(12,150,74,0.88)';
-      ctx.lineWidth=1.2;
-      ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+nx*L,y+ny*L); ctx.stroke();
-
-      const head=3.2;
-      ctx.fillStyle='rgba(12,150,74,0.88)';
-      ctx.beginPath();
-      ctx.moveTo(x+nx*L,y+ny*L);
-      ctx.lineTo(x+nx*L-nx*head-ny*head*0.65, y+ny*L-ny*head+nx*head*0.65);
-      ctx.lineTo(x+nx*L-nx*head+ny*head*0.65, y+ny*L-ny*head-nx*head*0.65);
-      ctx.closePath();
-      ctx.fill();
-    }
-  }
-  ctx.restore();
-}
-function drawContours(field,R){
-  const sx=R.w/(field.NX*field.cell), sy=R.h/(field.NY*field.cell);
-  const sp = smoothPressure(field);
-  let maxAbs = 0;
-  for(let j=1;j<field.NY-1;j++){
-    for(let i=1;i<field.NX-1;i++){
-      const id = idx(field,i,j);
-      if(field.solid[id]) continue;
-      const a = Math.abs(sp[id]);
-      if(a > maxAbs) maxAbs = a;
-    }
-  }
-  if(maxAbs < 0.03) return;
-
-  const levels = [-0.62,-0.46,-0.32,-0.22,0.22,0.32,0.46,0.62];
-  const minVisible = maxAbs * 0.22;
-  const interp=(x1,y1,v1,x2,y2,v2,level)=>{const d=(v2-v1), t=Math.abs(d)<1e-6?.5:(level-v1)/d; return {x:x1+(x2-x1)*t,y:y1+(y2-y1)*t};};
-
-  ctx.save();
-  ctx.beginPath(); rr(R.x,R.y,R.w,R.h,16); ctx.clip();
-  ctx.lineJoin='round';
-  ctx.lineCap='round';
-  ctx.shadowBlur = 0;
-
-  for(const rawLevel of levels){
-    const level = rawLevel * maxAbs;
-    if(Math.abs(level) < minVisible) continue;
-
-    const a = Math.abs(rawLevel);
-    const strong = a >= 0.46;
-    const medium = a >= 0.32;
-    ctx.strokeStyle = rawLevel > 0
-      ? (strong ? 'rgba(156,36,42,0.82)' : medium ? 'rgba(190,88,96,0.62)' : 'rgba(210,128,136,0.42)')
-      : (strong ? 'rgba(30,74,170,0.82)' : medium ? 'rgba(96,140,226,0.62)' : 'rgba(138,170,232,0.42)');
-    ctx.lineWidth = strong ? 1.35 : medium ? 1.0 : 0.8;
-
-    for(let j=1;j<field.NY-2;j++) for(let i=1;i<field.NX-2;i++){
-      const v00=sp[idx(field,i,j)],v10=sp[idx(field,i+1,j)],v11=sp[idx(field,i+1,j+1)],v01=sp[idx(field,i,j+1)];
-      const localPeak = Math.max(Math.abs(v00),Math.abs(v10),Math.abs(v11),Math.abs(v01));
-      if(localPeak < minVisible) continue;
-      const s0=v00>=level?1:0,s1=v10>=level?1:0,s2=v11>=level?1:0,s3=v01>=level?1:0, state=s0|(s1<<1)|(s2<<2)|(s3<<3);
-      if(state===0||state===15) continue;
-      const x=R.x+i*field.cell*sx, y=R.y+j*field.cell*sy;
-      const pTop=interp(x,y,v00,x+field.cell*sx,y,v10,level), pRight=interp(x+field.cell*sx,y,v10,x+field.cell*sx,y+field.cell*sy,v11,level), pBottom=interp(x,y+field.cell*sy,v01,x+field.cell*sx,y+field.cell*sy,v11,level), pLeft=interp(x,y,v00,x,y+field.cell*sy,v01,level);
-      const segments={1:[[pLeft,pTop]],2:[[pTop,pRight]],3:[[pLeft,pRight]],4:[[pRight,pBottom]],5:[[pLeft,pBottom],[pTop,pRight]],6:[[pTop,pBottom]],7:[[pLeft,pBottom]],8:[[pBottom,pLeft]],9:[[pTop,pBottom]],10:[[pTop,pLeft],[pRight,pBottom]],11:[[pRight,pBottom]],12:[[pLeft,pRight]],13:[[pTop,pRight]],14:[[pLeft,pTop]]}[state];
-      if(!segments) continue;
-      for(const seg of segments){ ctx.beginPath(); ctx.moveTo(seg[0].x,seg[0].y); ctx.lineTo(seg[1].x,seg[1].y); ctx.stroke(); }
-    }
-  }
-  ctx.restore();
-}
-
-function arrow(x1,y1,x2,y2,color,label){ ctx.save(); ctx.strokeStyle=color; ctx.fillStyle=color; ctx.lineWidth=2.4; ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); const a=Math.atan2(y2-y1,x2-x1),h=6; ctx.beginPath(); ctx.moveTo(x2,y2); ctx.lineTo(x2-h*Math.cos(a-.4),y2-h*Math.sin(a-.4)); ctx.lineTo(x2-h*Math.cos(a+.4),y2-h*Math.sin(a+.4)); ctx.closePath(); ctx.fill(); ctx.font='10px system-ui'; ctx.fillText(label,x2+4,y2-2); ctx.restore(); }
-
-function drawFrontBird(state, paths){
-  const sc=state.scale;
-  ctx.save();
-  ctx.fillStyle='rgba(235,240,245,.96)'; ctx.fill(paths.wingFill);
-  const grad=ctx.createLinearGradient(state.bodyX-40*sc,state.bodyY,state.bodyX+40*sc,state.bodyY);
-  grad.addColorStop(0,'rgba(252,252,250,0.98)'); grad.addColorStop(.7,'rgba(240,242,240,0.96)'); grad.addColorStop(1,'rgba(206,214,224,0.84)');
-  ctx.fillStyle=grad; ctx.fill(paths.wingFill);
-  ctx.strokeStyle='rgba(255,255,255,0.42)'; ctx.lineWidth=Math.max(.5,0.8*sc); ctx.stroke(paths.wingTex);
-  ctx.strokeStyle='rgba(160,166,176,0.24)'; ctx.lineWidth=Math.max(.8,1.0*sc); ctx.stroke(paths.skeleton);
-
-  const sh=ctx.createRadialGradient(state.bodyX+5*sc,state.bodyY+13*sc,2*sc,state.bodyX+5*sc,state.bodyY+13*sc,24*sc); sh.addColorStop(0,'rgba(145,155,168,.18)'); sh.addColorStop(1,'rgba(145,155,168,0)'); ctx.fillStyle=sh; ctx.beginPath(); ctx.ellipse(state.bodyX+3*sc,state.bodyY+12*sc,16*sc,24*sc,0,0,Math.PI*2); ctx.fill();
-  const g=ctx.createRadialGradient(state.bodyX-4*sc,state.bodyY-8*sc,2*sc,state.bodyX,state.bodyY,28*sc); g.addColorStop(0,'rgba(255,255,255,.99)'); g.addColorStop(.42,'rgba(247,248,246,.99)'); g.addColorStop(.78,'rgba(228,232,238,.98)'); g.addColorStop(1,'rgba(198,207,218,.92)'); ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(state.bodyX,state.bodyY+5*sc,15*sc,22*sc,0,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='rgba(186,194,204,.28)'; for(let j=0;j<2;j++) for(let i=0;i<3;i++){ ctx.beginPath(); ctx.ellipse(state.bodyX-4*sc+i*4.2*sc, state.bodyY+2*sc+j*4.5*sc, 1.3*sc, 0.9*sc, 0,0,Math.PI*2); ctx.fill(); }
-  ctx.save(); ctx.translate(state.bodyX-1*sc,state.bodyY-2*sc); ctx.rotate(-0.10+0.04*Math.sin(state.ph-0.2)); ctx.strokeStyle='rgba(228,234,240,.95)'; ctx.lineWidth=4.6*Math.max(0.65,sc); ctx.beginPath(); ctx.moveTo(0,0); ctx.quadraticCurveTo(-1*sc,-7*sc,1*sc,-12*sc); ctx.stroke(); ctx.restore();
-  const hg=ctx.createRadialGradient(state.bodyX-0.8*sc,state.bodyY-12.6*sc,1*sc,state.bodyX,state.bodyY-9.2*sc,11.5*sc); hg.addColorStop(0,'rgba(255,255,255,.99)'); hg.addColorStop(.62,'rgba(246,247,245,.99)'); hg.addColorStop(1,'rgba(214,220,228,.94)'); ctx.fillStyle=hg; ctx.beginPath(); ctx.ellipse(state.bodyX,state.bodyY-10.0*sc,7.2*sc,7.9*sc,0,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='rgba(255,255,255,.26)'; ctx.beginPath(); ctx.ellipse(state.bodyX-1.8*sc,state.bodyY-12.0*sc,2.6*sc,3.7*sc,-0.16,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='rgba(236,238,238,.90)'; ctx.beginPath(); ctx.ellipse(state.bodyX-2.25*sc,state.bodyY-9.25*sc,1.95*sc,1.55*sc,-0.08,0,Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.ellipse(state.bodyX+2.25*sc,state.bodyY-9.25*sc,1.95*sc,1.55*sc,0.08,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#d2a06a'; ctx.beginPath(); ctx.arc(state.bodyX-2.25*sc,state.bodyY-11.1*sc,1.02*sc,0,Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(state.bodyX+2.25*sc,state.bodyY-11.1*sc,1.02*sc,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(state.bodyX-2.25*sc,state.bodyY-11.1*sc,0.46*sc,0,Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(state.bodyX+2.25*sc,state.bodyY-11.1*sc,0.46*sc,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='rgba(255,255,255,.90)'; ctx.beginPath(); ctx.arc(state.bodyX-1.95*sc,state.bodyY-11.4*sc,0.14*sc,0,Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(state.bodyX+2.55*sc,state.bodyY-11.4*sc,0.14*sc,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#777b82'; ctx.beginPath(); ctx.moveTo(state.bodyX,state.bodyY-10.2*sc); ctx.lineTo(state.bodyX-1.45*sc,state.bodyY-8.45*sc); ctx.lineTo(state.bodyX+1.45*sc,state.bodyY-8.45*sc); ctx.closePath(); ctx.fill();
-  ctx.strokeStyle='rgba(60,64,72,.24)'; ctx.lineWidth=0.55*sc; ctx.beginPath(); ctx.moveTo(state.bodyX,state.bodyY-9.9*sc); ctx.lineTo(state.bodyX,state.bodyY-8.75*sc); ctx.stroke();
-  ctx.fillStyle='rgba(160,170,182,.20)'; for(const p of [[-2.0,-0.6],[0,-1.0],[2.0,-0.6],[-1.3,1.6],[1.3,1.6],[-0.7,3.7],[0.7,3.7]]){ ctx.beginPath(); ctx.arc(state.bodyX+p[0]*sc,state.bodyY+p[1]*sc,0.42*sc,0,Math.PI*2); ctx.fill(); }
-  ctx.restore();
-}
-function drawSideBird(state, K, paths){
-  const sc=state.scale;
-  ctx.save();
-
-  // 1) rear wing behind torso
-  ctx.fillStyle='rgba(226,232,239,.24)';
-  ctx.fill(paths.rearWingFill);
-  const rearGrad=ctx.createLinearGradient(K.shoulderX-12*sc,K.shoulderY-10*sc,K.tx-8*sc,K.ty-8*sc);
-  rearGrad.addColorStop(0,'rgba(244,246,248,0.34)');
-  rearGrad.addColorStop(.7,'rgba(226,231,237,0.26)');
-  rearGrad.addColorStop(1,'rgba(184,194,208,0.20)');
-  ctx.fillStyle=rearGrad;
-  ctx.fill(paths.rearWingFill);
-  ctx.strokeStyle='rgba(255,255,255,0.06)';
-  ctx.lineWidth=Math.max(.35,0.5*sc);
-  ctx.stroke(paths.rearWingTex);
-
-  // 2) torso in front of rear wing
-  // reference-image tuned flight pose: slightly more upright body axis, compact head, straighter neck-body-tail line
-  const axisTilt = 0.10;
-
-  const bodyShadow=ctx.createRadialGradient(K.bodyCx+10.5*sc,K.bodyCy+5.8*sc,1*sc,K.bodyCx+10.5*sc,K.bodyCy+5.8*sc,34*sc);
-  bodyShadow.addColorStop(0,'rgba(145,155,168,.16)');
-  bodyShadow.addColorStop(1,'rgba(145,155,168,0)');
-  ctx.fillStyle=bodyShadow;
-  ctx.beginPath();
-  ctx.ellipse(K.bodyCx+10.0*sc,K.bodyCy+5.8*sc,31.5*sc,11.0*sc,axisTilt,0,Math.PI*2);
-  ctx.fill();
-
-  // fuselage: a bit more nose-up and slightly slimmer to match the reference sheet
-  const g=ctx.createRadialGradient(K.bodyCx-10*sc,K.bodyCy-2.0*sc,2*sc,K.bodyCx+9*sc,K.bodyCy+2.1*sc,43*sc);
-  g.addColorStop(0,'rgba(255,255,255,.99)');
-  g.addColorStop(.50,'rgba(246,247,245,.99)');
-  g.addColorStop(.82,'rgba(228,232,238,.98)');
-  g.addColorStop(1,'rgba(198,207,218,.92)');
-  ctx.fillStyle=g;
-  ctx.beginPath();
-  ctx.ellipse(K.bodyCx+8.0*sc,K.bodyCy+2.0*sc,30.5*sc,9.5*sc,axisTilt,0,Math.PI*2);
-  ctx.fill();
-
-  // dorsal highlight and belly shade along the same axis
-  ctx.fillStyle='rgba(255,255,255,.16)';
-  ctx.beginPath();
-  ctx.ellipse(K.bodyCx-0.5*sc,K.bodyCy-0.8*sc,17*sc,2.8*sc,axisTilt,0,Math.PI*2);
-  ctx.fill();
-  ctx.fillStyle='rgba(180,190,204,.11)';
-  ctx.beginPath();
-  ctx.ellipse(K.bodyCx+14.0*sc,K.bodyCy+4.8*sc,21*sc,3.8*sc,axisTilt,0,Math.PI*2);
-  ctx.fill();
-
-  // neck: short, low, and slightly rising toward the head
-  ctx.strokeStyle='rgba(228,234,240,.95)';
-  ctx.lineWidth=2.8*Math.max(0.65,sc);
-  ctx.beginPath();
-  ctx.moveTo(K.bodyCx-11.6*sc,K.bodyCy+0.0*sc);
-  ctx.lineTo(K.bodyCx-18.8*sc,K.bodyCy-3.6*sc);
-  ctx.stroke();
-
-  // head: slightly smaller and pushed forward
-  const hg=ctx.createRadialGradient(K.bodyCx-23.3*sc,K.bodyCy-3.7*sc,1*sc,K.bodyCx-22.2*sc,K.bodyCy-3.4*sc,7.2*sc);
-  hg.addColorStop(0,'rgba(255,255,255,.99)');
-  hg.addColorStop(1,'rgba(214,220,228,.95)');
-  ctx.fillStyle=hg;
-  ctx.beginPath();
-  ctx.ellipse(K.bodyCx-22.2*sc,K.bodyCy-3.9*sc,5.8*sc,3.5*sc,axisTilt,0,Math.PI*2);
-  ctx.fill();
-
-  ctx.fillStyle='#d2a06a';
-  ctx.beginPath();
-  ctx.arc(K.bodyCx-19.8*sc,K.bodyCy-3.5*sc,1.2*sc,0,Math.PI*2);
-  ctx.fill();
-  ctx.fillStyle='#111';
-  ctx.beginPath();
-  ctx.arc(K.bodyCx-19.8*sc,K.bodyCy-3.5*sc,0.52*sc,0,Math.PI*2);
-  ctx.fill();
-  ctx.fillStyle='rgba(255,255,255,.8)';
-  ctx.beginPath();
-  ctx.arc(K.bodyCx-19.5*sc,K.bodyCy-3.7*sc,0.16*sc,0,Math.PI*2);
-  ctx.fill();
-
-  // beak: finer and a touch longer, aligned with the raised body axis
-  ctx.fillStyle='#6f737b';
-  ctx.beginPath();
-  ctx.moveTo(K.bodyCx-28.4*sc,K.bodyCy-4.0*sc);
-  ctx.lineTo(K.bodyCx-41.0*sc,K.bodyCy-2.3*sc);
-  ctx.lineTo(K.bodyCx-28.3*sc,K.bodyCy-1.4*sc);
-  ctx.closePath();
-  ctx.fill();
-
-  // tail: narrower and slightly lower so the body line reads more clearly through to the rear
-  ctx.fillStyle='rgba(220,226,232,.82)';
-  ctx.beginPath();
-  ctx.moveTo(K.bodyCx+36.0*sc,K.bodyCy+2.8*sc);
-  ctx.lineTo(K.bodyCx+48.4*sc,K.bodyCy+2.0*sc);
-  ctx.lineTo(K.bodyCx+39.8*sc,K.bodyCy+5.8*sc);
-  ctx.closePath();
-  ctx.fill();
-
-  // 3) front wing on top of torso, slightly overlapping it
-  ctx.fillStyle='rgba(235,240,245,.96)';
-  ctx.fill(paths.wingFill);
-  const wingGrad=ctx.createLinearGradient(K.shoulderX,K.shoulderY,K.tx,K.ty); wingGrad.addColorStop(0,'rgba(251,251,249,0.98)'); wingGrad.addColorStop(.7,'rgba(240,242,240,0.96)'); wingGrad.addColorStop(1,'rgba(206,214,224,0.84)');
-  ctx.fillStyle=wingGrad; ctx.fill(paths.wingFill);
-  ctx.strokeStyle='rgba(255,255,255,0.42)'; ctx.lineWidth=Math.max(.5,0.8*sc); ctx.stroke(paths.wingTex);
-  ctx.strokeStyle='rgba(160,166,176,0.24)'; ctx.lineWidth=Math.max(.8,1.0*sc); ctx.stroke(paths.skeleton);
-  ctx.restore();
-}
-
-
-function drawVorticity(field,R,alpha=0.28){
-  const sx=R.w/(field.NX*field.cell), sy=R.h/(field.NY*field.cell);
-  ctx.save();
-  ctx.beginPath(); rr(R.x,R.y,R.w,R.h,16); ctx.clip();
-  ctx.globalAlpha = alpha;
-  for(let j=2;j<field.NY-2;j+=2){
-    for(let i=2;i<field.NX-2;i+=2){
-      const id=idx(field,i,j);
-      if(field.solid[id]) continue;
-      const curl = 0.5*(field.v[idx(field,i+1,j)]-field.v[idx(field,i-1,j)]-field.u[idx(field,i,j-1)]+field.u[idx(field,i,j+1)]);
-      const a = Math.min(0.22, Math.abs(curl)*0.12);
-      if(a < 0.02) continue;
-      ctx.fillStyle = curl > 0 ? `rgba(74,132,224,${a})` : `rgba(208,106,120,${a})`;
-      ctx.beginPath();
-      ctx.arc(R.x+(i+0.5)*field.cell*sx, R.y+(j+0.5)*field.cell*sy, 1.1, 0, Math.PI*2);
-      ctx.fill();
-    }
-  }
-  ctx.restore();
-}
-
-
-function estimateFrontForce(field, state, Lw, Rw, R){
-  const sp = smoothPressure(field);
-  const samples = [];
-  for(const wing of [Lw, Rw]){
-    for(const t of [0.18,0.38,0.58,0.78]){
-      samples.push({x:lerp(wing.elbowX,wing.wristX,t), y:lerp(wing.elbowY,wing.wristY,t), q:0.85+0.25*t});
-    }
-    for(const t of [0.16,0.36,0.58,0.82]){
-      samples.push({x:lerp(wing.wristX,wing.tipX,t), y:lerp(wing.wristY,wing.tipY,t), q:0.95+0.35*t});
-    }
-  }
-  let fx=0, fy=0, n=0;
-  for(const pt of samples){
-    const gx=(pt.x-R.x)/field.cell, gy=(pt.y-R.y)/field.cell;
-    const i=clamp(Math.round(gx),1,field.NX-2), j=clamp(Math.round(gy),1,field.NY-2);
-    const dpdx=(sp[idx(field,i+1,j)]-sp[idx(field,i-1,j)])*0.5;
-    const dpdy=(sp[idx(field,i,j+1)]-sp[idx(field,i,j-1)])*0.5;
-    fx += -dpdx * pt.q;
-    fy += -dpdy * pt.q;
-    n++;
-  }
-  if(n===0) return {lift:0, side:0};
-  return {lift: fy/n, side: fx/n};
-}
-
-function estimateSideForce(field, K, R){
-  const sp = smoothPressure(field);
-  const samples = [];
-  for(const t of [0.18,0.38,0.58,0.78]){
-    samples.push({x:lerp(K.ex,K.wx,t), y:lerp(K.ey,K.wy,t), q:0.82+0.22*t});
-  }
-  for(const t of [0.16,0.36,0.58,0.82]){
-    samples.push({x:lerp(K.wx,K.tx,t), y:lerp(K.wy,K.ty,t), q:0.92+0.30*t});
-  }
-  let fx=0, fy=0, n=0;
-  for(const pt of samples){
-    const gx=(pt.x-R.x)/field.cell, gy=(pt.y-R.y)/field.cell;
-    const i=clamp(Math.round(gx),1,field.NX-2), j=clamp(Math.round(gy),1,field.NY-2);
-    const dpdx=(sp[idx(field,i+1,j)]-sp[idx(field,i-1,j)])*0.5;
-    const dpdy=(sp[idx(field,i,j+1)]-sp[idx(field,i,j-1)])*0.5;
-    fx += -dpdx * pt.q;
-    fy += -dpdy * pt.q;
-    n++;
-  }
-  if(n===0) return {lift:0, thrust:0};
-  return {lift: fy/n, thrust: fx/n};
-}
-
-let frontForceState = {x:0,y:0};
-let sideForceState = {x:0,y:0,tx:0,ly:0};
-
-function drawForceVector(originX, originY, vecX, vecY, color, label){
-  const mag = Math.hypot(vecX, vecY);
-  if(mag < 0.001) return;
-
-  const nx = vecX / (mag + 1e-6);
-  const ny = vecY / (mag + 1e-6);
-
-  // stronger nonlinear scaling so moderate forces are still visible
-  const scale = 56 * Math.pow(mag, 0.78);
-  const x2 = originX + nx * scale;
-  const y2 = originY + ny * scale;
-
-  ctx.save();
-
-  // bold dark outline
-  ctx.strokeStyle = 'rgba(12,22,18,0.92)';
-  ctx.lineWidth = 7.0;
-  ctx.beginPath();
-  ctx.moveTo(originX, originY);
-  ctx.lineTo(x2, y2);
-  ctx.stroke();
-
-  // white halo
-  ctx.strokeStyle = 'rgba(255,255,255,0.98)';
-  ctx.lineWidth = 5.0;
-  ctx.beginPath();
-  ctx.moveTo(originX, originY);
-  ctx.lineTo(x2, y2);
-  ctx.stroke();
-
-  // vivid green main vector
-  ctx.strokeStyle = 'rgba(0,176,80,0.98)';
-  ctx.fillStyle = 'rgba(0,176,80,0.98)';
-  ctx.lineWidth = 3.2;
-  ctx.beginPath();
-  ctx.moveTo(originX, originY);
-  ctx.lineTo(x2, y2);
-  ctx.stroke();
-
-  const head = 11;
-  // dark outline head
-  ctx.fillStyle = 'rgba(12,22,18,0.92)';
-  ctx.beginPath();
-  ctx.moveTo(x2, y2);
-  ctx.lineTo(x2 - nx*head - ny*head*0.70, y2 - ny*head + nx*head*0.70);
-  ctx.lineTo(x2 - nx*head + ny*head*0.70, y2 - ny*head - nx*head*0.70);
-  ctx.closePath();
-  ctx.fill();
-
-  // inner green head
-  const head2 = 8.5;
-  ctx.fillStyle = 'rgba(0,176,80,0.98)';
-  ctx.beginPath();
-  ctx.moveTo(x2, y2);
-  ctx.lineTo(x2 - nx*head2 - ny*head2*0.62, y2 - ny*head2 + nx*head2*0.62);
-  ctx.lineTo(x2 - nx*head2 + ny*head2*0.62, y2 - ny*head2 - nx*head2*0.62);
-  ctx.closePath();
-  ctx.fill();
-
-  if(label){
-    ctx.font='bold 12px system-ui';
-    const tx = x2 + 8, ty = y2 - 6;
-
-    // label pill
-    const padX = 6, padY = 4;
-    const tw = ctx.measureText(label).width;
-    ctx.fillStyle='rgba(255,255,255,0.92)';
-    ctx.strokeStyle='rgba(12,22,18,0.18)';
-    ctx.lineWidth=1.0;
-    ctx.beginPath();
-    ctx.roundRect(tx-padX, ty-11, tw+padX*2, 18, 8);
+    ctx.moveTo(box.x + r, box.y);
+    ctx.arcTo(box.x + box.w, box.y, box.x + box.w, box.y + box.h, r);
+    ctx.arcTo(box.x + box.w, box.y + box.h, box.x, box.y + box.h, r);
+    ctx.arcTo(box.x, box.y + box.h, box.x, box.y, r);
+    ctx.arcTo(box.x, box.y, box.x + box.w, box.y, r);
+    ctx.closePath();
     ctx.fill();
     ctx.stroke();
 
-    ctx.fillStyle='rgba(18,90,48,0.98)';
-    ctx.fillText(label, tx, ty+2);
-  }
-  ctx.restore();
-}
-
-function drawLegend(x,y){} // no-op: legend moved to fixed UI panel
-
-
-// ===============================
-// Refactor layer: geometry / simulation / rendering wrappers
-// ===============================
-function buildFrontGeometry(state, rect){
-  const sr = simRect(frontField, rect);
-  const Lw = wing(state, 'left');
-  const Rw = wing(state, 'right');
-  const paths = makeFrontBirdPaths(state, Lw, Rw);
-  return {sr, Lw, Rw, paths};
-}
-
-function buildSideGeometry(state, rect){
-  const sr = simRect(sideField, rect);
-  const K = sideKinematics(state, sr);
-  const paths = makeSideBirdPaths(state, K);
-  return {sr, K, paths};
-}
-
-function updateFrontSimulation(state, rect){
-  const g = buildFrontGeometry(state, rect);
-  forceFieldFront(frontField, state, g.Lw, g.Rw, g.sr);
-  return g;
-}
-
-function updateSideSimulation(state, rect){
-  const g = buildSideGeometry(state, rect);
-  forceFieldSide(sideField, state, g.K, g.sr);
-  return g;
-}
-
-function drawFrontLayers(sr, state, Lw, Rw, flags){
-  if(flags.pressure) drawPressureMap(frontField,sr,0.68);
-  if(flags.contours) drawContours(frontField,sr);
-  if(flags.flow) drawFlowLines(frontField,sr,1);
-  if(flags.vorticity) drawVorticity(frontField,sr,0.30);
-}
-
-function drawSideLayers(sr, state, K, flags){
-  if(flags.pressure) drawPressureMap(sideField,sr,0.68);
-  if(flags.contours) drawContours(sideField,sr);
-  if(flags.flow) drawFlowLines(sideField,sr,.72);
-  if(flags.vorticity) drawVorticity(sideField,sr,0.28);
-}
-
-function drawFrontVisuals(sr, state, paths, flags, Lw, Rw){
-  ctx.save();
-  ctx.beginPath(); rr(sr.x,sr.y,sr.w,sr.h,16); ctx.clip();
-  drawFrontBird(state,paths);
-  if(flags.forceVec){
-    const F = estimateFrontForce(frontField, state, Lw, Rw, sr);
-    frontForceState.x = frontForceState.x*0.86 + F.side*0.14;
-    frontForceState.y = frontForceState.y*0.86 + (-F.lift)*0.14;
-    const ox = state.bodyX;
-    const oy = state.bodyY - 18*state.scale;
-    drawForceVector(ox, oy, clamp(frontForceState.x*1.1,-1.2,1.2), clamp(frontForceState.y*1.35,-1.2,1.2), '#4f93ff', '');
-  }
-  ctx.restore();
-}
-
-function drawSideVisuals(sr, state, K, paths, flags){
-  ctx.save();
-  ctx.beginPath(); rr(sr.x,sr.y,sr.w,sr.h,16); ctx.clip();
-  drawSideBird(state,K,paths);
-  if(flags.forceVec){
-    const F = estimateSideForce(sideField, K, sr);
-    sideForceState.x = sideForceState.x*0.86 + F.thrust*0.14;
-    sideForceState.y = sideForceState.y*0.86 + (-F.lift)*0.14;
-    sideForceState.tx = sideForceState.tx*0.86 + F.thrust*0.14;
-    sideForceState.ly = sideForceState.ly*0.86 + (-F.lift)*0.14;
-    const ox = K.bodyCx - 12*state.scale;
-    const oy = K.bodyCy - 2*state.scale;
-    drawForceVector(ox, oy, clamp(sideForceState.tx*1.25,-1.2,1.2), clamp(sideForceState.ly*1.35,-1.2,1.2), '#4f93ff', '');
-  }
-  ctx.restore();
-}
-
-
-// ===============================
-// Refactor stage 2 (safe): shared panel helpers only
-// These helpers do not replace the existing render flow.
-// ===============================
-function makeFrontPanelCtx(rect, state, Lw, Rw){
-  const sr = simRect(frontField, rect);
-  const paths = makeFrontBirdPaths(state, Lw, Rw);
-  return { kind:'front', rect, sr, state, Lw, Rw, paths, field: frontField };
-}
-
-function makeSidePanelCtx(rect, state){
-  const sr = simRect(sideField, rect);
-  const K = sideKinematics(state, sr);
-  const paths = makeSideBirdPaths(state, K);
-  return { kind:'side', rect, sr, state, K, paths, field: sideField };
-}
-
-function drawCommonPanelLayers(panel, flags, pressureAlpha, flowAlpha, vortAlpha){
-  if(flags.pressure) drawPressureMap(panel.field, panel.sr, pressureAlpha);
-  if(flags.contours) drawContours(panel.field, panel.sr);
-  if(flags.flow) drawFlowLines(panel.field, panel.sr, flowAlpha);
-  if(flags.vorticity) drawVorticity(panel.field, panel.sr, vortAlpha);
-}
-
-function drawCommonWindArrow(panel){}
-
-function drawFrontForceOnly(panel, flags){
-  if(!flags.forceVec) return;
-  const F = estimateFrontForce(frontField, panel.state, panel.Lw, panel.Rw, panel.sr);
-  frontForceState.x = frontForceState.x*0.86 + F.side*0.14;
-  frontForceState.y = frontForceState.y*0.86 + (-F.lift)*0.14;
-  const ox = panel.state.bodyX;
-  const oy = panel.state.bodyY - 18*panel.state.scale;
-  drawForceVector(ox, oy, clamp(frontForceState.x*1.1,-1.2,1.2), clamp(frontForceState.y*1.35,-1.2,1.2), '#4f93ff', '');
-}
-
-function drawSideForceOnly(panel, flags){
-  if(!flags.forceVec) return;
-  const F = estimateSideForce(sideField, panel.K, panel.sr);
-  sideForceState.x = sideForceState.x*0.86 + F.thrust*0.14;
-  sideForceState.y = sideForceState.y*0.86 + (-F.lift)*0.14;
-  sideForceState.tx = sideForceState.tx*0.86 + F.thrust*0.14;
-  sideForceState.ly = sideForceState.ly*0.86 + (-F.lift)*0.14;
-  const ox = panel.K.bodyCx - 12*panel.state.scale;
-  const oy = panel.K.bodyCy - 2*panel.state.scale;
-  drawForceVector(ox, oy, clamp(sideForceState.tx*1.25,-1.2,1.2), clamp(sideForceState.ly*1.35,-1.2,1.2), '#4f93ff', '');
-}
-
-
-// ===============================
-// Refactor stage 3 (safe): state / flags / panel helpers
-// ===============================
-function getViewFlags(){
-  return {
-    pressure: dom.showPressure.checked,
-    contours: dom.showContours.checked,
-    flow: dom.showFlow.checked,
-    vorticity: dom.showVorticity.checked,
-    forceVec: dom.showForceVec.checked
-  };
-}
-
-function buildFrontPanel(rect, state){
-  const sr = simRect(frontField, rect);
-  const Lw = wing(state, 'left');
-  const Rw = wing(state, 'right');
-  const paths = makeFrontBirdPaths(state, Lw, Rw);
-  return {
-    kind: 'front',
-    rect,
-    sr,
-    state,
-    field: frontField,
-    Lw,
-    Rw,
-    wings: {Lw, Rw},
-    paths
-  };
-}
-
-function buildSidePanel(rect, state){
-  const sr = simRect(sideField, rect);
-  const K = sideKinematics(state, sr);
-  const paths = makeSideBirdPaths(state, K);
-  return {
-    kind: 'side',
-    rect,
-    sr,
-    state,
-    field: sideField,
-    K,
-    paths
-  };
-}
-
-function drawPanelLayers(panel, flags){
-  const pressureAlpha = panel.kind === 'front' ? 0.68 : 0.68;
-  const flowAlpha = panel.kind === 'front' ? 1.0 : 0.72;
-  const vortAlpha = panel.kind === 'front' ? 0.30 : 0.28;
-
-  if(flags.pressure) drawPressureMap(panel.field, panel.sr, pressureAlpha);
-  if(flags.contours) drawContours(panel.field, panel.sr);
-  if(flags.flow) drawFlowLines(panel.field, panel.sr, flowAlpha);
-  if(flags.vorticity) drawVorticity(panel.field, panel.sr, vortAlpha);
-}
-
-function drawPanelChrome(panel){
-  drawCommonWindArrow(panel);
-}
-
-function drawFrontPanel(panel, flags){
-  drawPanelLayers(panel, flags);
-
-  ctx.save();
-  ctx.beginPath();
-  rr(panel.sr.x, panel.sr.y, panel.sr.w, panel.sr.h, 16);
-  ctx.clip();
-
-  drawFrontBird(panel.state, panel.paths);
-  drawCommonWindArrow(panel);
-  drawFrontForceOnly(panel, flags);
-
-  ctx.restore();
-}
-
-function drawSidePanel(panel, flags){
-  drawPanelLayers(panel, flags);
-
-  ctx.save();
-  ctx.beginPath();
-  rr(panel.sr.x, panel.sr.y, panel.sr.w, panel.sr.h, 16);
-  ctx.clip();
-
-  drawSideBird(panel.state, panel.K, panel.paths);
-  drawCommonWindArrow(panel);
-  drawSideForceOnly(panel, flags);
-
-  ctx.restore();
-}
-
-function renderPanelsFromState(frontRect, sideRect, state, flags){
-  const frontPanel = buildFrontPanel(frontRect, state);
-  const sidePanel = buildSidePanel(sideRect, state);
-  drawFrontPanel(frontPanel, flags);
-  drawSidePanel(sidePanel, flags);
-}
-
-function renderFrontView(rect,state,Lw,Rw,flags){
-  const panel = {
-    kind: 'front',
-    rect,
-    sr: simRect(frontField, rect),
-    state,
-    field: frontField,
-    Lw,
-    Rw,
-    wings: {Lw, Rw},
-    paths: makeFrontBirdPaths(state, Lw, Rw)
-  };
-  drawFrontPanel(panel, flags);
-}
-function renderSideView(rect,state,flags){
-  const sr = simRect(sideField, rect);
-  const K = sideKinematics(state, sr);
-  const panel = {
-    kind: 'side',
-    rect,
-    sr,
-    state,
-    field: sideField,
-    K,
-    paths: makeSideBirdPaths(state, K)
-  };
-  drawSidePanel(panel, flags);
-}
-
-function setUiCollapsed(next){ uiCollapsed=!!next; dom.ui.classList.toggle('collapsed',uiCollapsed); if(dom.toggleUi) dom.toggleUi.textContent=uiCollapsed?'開く':'折りたたむ'; if(dom.fabToggleUi) dom.fabToggleUi.textContent=uiCollapsed?'▴':'▾'; setTimeout(()=>resize(),260); }
-async function toggleFullscreen(){ const root=document.documentElement; try{ if(!document.fullscreenElement){ if(root.requestFullscreen) await root.requestFullscreen(); } else { if(document.exitFullscreen) await document.exitFullscreen(); } } catch(e){ console.warn(e); } }
-
-let renderQueued=false;
-function requestRender(){
-  if(renderQueued) return;
-  renderQueued=true;
-  requestAnimationFrame(()=>{
-    renderQueued=false;
-    draw(0);
-  });
-}
-function desiredGrid(rect, cell){
-  return {
-    NX: Math.max(72, Math.floor(rect.w / cell)),
-    NY: Math.max(38, Math.floor(rect.h / cell)),
-  };
-}
-function ensureFieldLayout(field, rect, mode){
-  const desired = desiredGrid(rect, field.cell);
-  const needsInit = !field.u || !field.v || !field.solid;
-  const sizeChanged = field.NX !== desired.NX || field.NY !== desired.NY;
-  if(needsInit || sizeChanged){
-    initField(field, rect, mode);
-    return true;
-  }
-  return false;
-}
-function resize(){
-  const r=dom.stage.getBoundingClientRect(); W=Math.max(320,Math.floor(r.width)); H=Math.max(320,Math.floor(r.height));
-  dom.canvas.width=Math.floor(W*DPR); dom.canvas.height=Math.floor(H*DPR); dom.canvas.style.width=W+'px'; dom.canvas.style.height=H+'px'; ctx.setTransform(DPR,0,0,DPR,0,0);
-  const R=rects();
-  const frontRebuilt = ensureFieldLayout(frontField,R.F,'front');
-  const sideRebuilt = ensureFieldLayout(sideField,R.S,'side');
-  if(frontRebuilt || sideRebuilt){
-    frontForceState={x:0,y:0};
-    sideForceState={x:0,y:0,tx:0,ly:0};
-    lift=0; thrust=0;
-  }
-  requestRender();
-}
-function initSimulation(){
-  const R=rects();
-  initField(frontField,R.F,'front');
-  initField(sideField,R.S,'side');
-  lift=0; thrust=0;
-  frontForceState={x:0,y:0};
-  sideForceState={x:0,y:0,tx:0,ly:0};
-}
-function handleReset(){ t0=0; simT=0; last=0; resetField(frontField); resetField(sideField); lift=0; thrust=0; frontForceState={x:0,y:0}; sideForceState={x:0,y:0,tx:0,ly:0}; requestRender(); }
-
-function rebuildMasks(state, frontSimR, sideSimR){
-  const Lw=wing(state,'left'), Rw=wing(state,'right'), frontPaths=makeFrontBirdPaths(state,Lw,Rw);
-  rasterizePathToMask(frontField, frontSimR, [frontPaths.wingFill, frontPaths.body], 0, 0);
-  const K=sideKinematics(state,sideSimR), sidePaths=makeSideBirdPaths(state,K);
-  rasterizePathToMask(sideField, sideSimR, [sidePaths.rearWingFill, sidePaths.wingFill, sidePaths.body], 0, 0);
-  return {Lw,Rw,K};
-}
-
-function draw(dt){
-  const R=rects(), flags=getViewFlags();
-  ctx.clearRect(0,0,W,H); card(R.F,'前面ビュー','擬似3D真横側面'); card(R.S,'側面ビュー','擬似3D真横側面');
-  const frontSimR=simRect(frontField,R.F), sideSimR=simRect(sideField,R.S);
-  const state=birdState(simT,frontSimR);
-  const kin = rebuildMasks(state, frontSimR, sideSimR);
-
-  if(dt>0){
-    fluidStepFront(frontField,dt,kin.Lw,kin.Rw,frontSimR,state);
-    fluidStepSide(sideField,dt,kin.K,sideSimR,state);
-    updateTracers(frontField,dt); updateTracers(sideField,dt);
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--text');
+    ctx.font = '600 16px system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(title, box.x + box.w / 2, box.y + 28);
   }
 
-  renderFrontView(R.F,state,kin.Lw,kin.Rw,flags);
-  renderSideView(R.S,state,flags);
-}
-function loop(now){ if(!t0){t0=now; last=now;} simT=(now-t0)/1000; const dt=Math.min(.025,(now-last)/1000); last=now; draw(dt); requestAnimationFrame(loop); }
-function bindUI(){
-  dom.reset.addEventListener('click', handleReset); dom.fabReset.addEventListener('click', handleReset); dom.toggleUi.addEventListener('click', ()=>setUiCollapsed(!uiCollapsed)); dom.fabToggleUi.addEventListener('click', ()=>setUiCollapsed(!uiCollapsed)); dom.fullscreen.addEventListener('click', toggleFullscreen);
-  [dom.showPressure,dom.showContours,dom.showFlow,dom.showVorticity,dom.showForceVec,dom.birdScale,dom.wind,dom.amp,dom.freq,dom.pitch,dom.ghostRadius,dom.ghostSmooth,dom.ghostConfine,dom.viscosity].forEach(el=>{ if(!el) return; el.addEventListener('input',()=>{ invalidatePressureMap(frontField); invalidatePressureMap(sideField); requestRender(); }); el.addEventListener('change',()=>{ invalidatePressureMap(frontField); invalidatePressureMap(sideField); requestRender(); }); });
-  window.addEventListener('resize', resize);
-  document.addEventListener('fullscreenchange', resize);
-}
-bindUI(); resize(); requestAnimationFrame(loop);
+  // =========================
+  // Motion model
+  // =========================
+  function flap(t) {
+    const s = Math.sin(t);
+    return {
+      s,
+      down: Math.max(0, -s),
+      up: Math.max(0, s),
+    };
+  }
+
+  function bodyMotion(t) {
+    return {
+      bob: Math.sin(t * 2.1) * 1.4 + Math.sin(t) * 0.8,
+      pitch: rad(-2.5 + 1.4 * Math.sin(t * 2.1 - 0.5)),
+    };
+  }
+
+  function muscleActivations(t) {
+    const cyc = t * 2.5;
+    const s = Math.sin(cyc);
+    return {
+      shoulderDown: clamp(-s, 0, 1),
+      shoulderUp: clamp(s, 0, 1) * 0.92,
+      elbowExtend: clamp(-Math.sin(cyc - 0.18), 0, 1),
+      elbowFlex: clamp(Math.sin(cyc - 0.18), 0, 1),
+      wristExtend: clamp(-Math.sin(cyc - 0.30), 0, 1),
+      wristFlex: clamp(Math.sin(cyc - 0.30), 0, 1),
+      spread: clamp(-s, 0, 1),
+      fold: clamp(s, 0, 1),
+    };
+  }
+
+  function integrateJoint(angle, vel, dt, cfg, agonist, antagonist) {
+    const active = cfg.kAg * agonist - cfg.kAnt * antagonist;
+    const passive = -cfg.kSpring * (angle - cfg.rest);
+    const damping = -cfg.kDamp * vel;
+    const acc = active + passive + damping;
+    vel += acc * dt;
+    angle += vel * dt;
+    angle = clamp(angle, cfg.min, cfg.max);
+    return { angle, vel };
+  }
+
+  const wingState = {
+    right: { shPitch: rad(36), shVel: 0, elPitch: rad(10), elVel: 0, wrPitch: rad(4), wrVel: 0 },
+    left:  { shPitch: rad(36), shVel: 0, elPitch: rad(10), elVel: 0, wrPitch: rad(4), wrVel: 0 },
+  };
+
+  function stepWing(sideState, acts, dt) {
+    let r = integrateJoint(
+      sideState.shPitch, sideState.shVel, dt,
+      { min: rad(-78), max: rad(104), rest: rad(18), kAg: 9.2, kAnt: 7.2, kSpring: 12.0, kDamp: 4.6 },
+      acts.shoulderUp, acts.shoulderDown
+    );
+    sideState.shPitch = r.angle;
+    sideState.shVel = r.vel;
+
+    r = integrateJoint(
+      sideState.elPitch, sideState.elVel, dt,
+      { min: rad(-20), max: rad(72), rest: rad(10), kAg: 5.0, kAnt: 4.6, kSpring: 8.4, kDamp: 3.8 },
+      acts.elbowFlex, acts.elbowExtend
+    );
+    sideState.elPitch = r.angle;
+    sideState.elVel = r.vel;
+
+    r = integrateJoint(
+      sideState.wrPitch, sideState.wrVel, dt,
+      { min: rad(-12), max: rad(82), rest: rad(6), kAg: 4.2, kAnt: 3.6, kSpring: 7.4, kDamp: 3.2 },
+      acts.wristFlex, acts.wristExtend
+    );
+    sideState.wrPitch = r.angle;
+    sideState.wrVel = r.vel;
+  }
+
+  // =========================
+  // Unified 3D wing model
+  // =========================
+  function wing3D(side, t, st) {
+    const acts = muscleActivations(t);
+
+    const shoulder = pt(
+      side * (58 + 8 * acts.spread - 6 * acts.fold),
+      -8 + 6 * Math.sin(t * 2.5 - 0.2),
+      0
+    );
+
+    const L1 = 54;
+    const L2 = 78;
+    const L3 = 62;
+
+    const shYaw   = rad(side * (62 + 20 * acts.spread - 28 * acts.fold));
+    const shPitch = st.shPitch;
+    const shFwd   = rad(34 * acts.spread - 20 * acts.fold);
+    const shRoll  = rad(side * (8 * acts.fold - 4 * acts.spread));
+
+    const elYaw   = rad(side * (10 + 10 * acts.spread - 12 * acts.fold));
+    const elPitch = st.elPitch;
+
+    const wrYaw    = rad(side * (2 + 10 * acts.spread - 20 * acts.fold));
+    const wrPitch  = st.wrPitch;
+    const wrFeather = rad(34 * acts.fold - 6 * acts.spread);
+
+    let v1 = pt(L1, 0, 0);
+    v1 = rotZ(v1, shPitch);
+    v1 = rotY(v1, -shYaw * side);
+    v1 = rotX(v1, shFwd);
+    v1 = rotX(v1, shRoll);
+    const elbow = add(shoulder, { x: v1.x * side, y: v1.y, z: v1.z });
+
+    let v2 = pt(L2, 0, 0);
+    v2 = rotZ(v2, elPitch);
+    v2 = rotY(v2, -elYaw * side);
+    v2 = scale(v2, 0.98 + 0.02 * acts.spread);
+    const wrist = add(elbow, { x: v2.x * side, y: v2.y, z: v2.z });
+
+    let v3 = pt(L3, 0, 0);
+    v3 = rotZ(v3, wrPitch + wrFeather);
+    v3 = rotY(v3, -wrYaw * side);
+    v3 = rotX(v3, rad(10 * acts.fold - 3 * acts.spread));
+    const tip = add(wrist, { x: v3.x * side, y: v3.y, z: v3.z });
+
+    return { shoulder, elbow, wrist, tip, acts };
+  }
+
+  function makeWingSurface3D(wing) {
+    const chain = [wing.shoulder, wing.elbow, wing.wrist, wing.tip];
+    const lead = [];
+    const trail = [];
+    for (let i = 0; i < chain.length; i++) {
+      const p = chain[i];
+      const prev = chain[Math.max(0, i - 1)];
+      const next = chain[Math.min(chain.length - 1, i + 1)];
+      const tan = norm(sub(next, prev));
+      let n = { x: 0, y: -tan.z, z: tan.y };
+      n = norm(n);
+
+      const tt = i / (chain.length - 1);
+      const thick = mix(20, 7, tt) * (1 + 0.16 * wing.acts.spread - 0.10 * wing.acts.fold);
+      lead.push(add(p, scale(n, 0.24 * thick)));
+      trail.unshift(add(p, scale(n, -0.56 * thick)));
+    }
+    return { lead, trail };
+  }
+
+  function projectFront(p, cx, cy) {
+    return { x: cx + p.x, y: cy + p.y };
+  }
+  function projectSide(p, cx, cy) {
+    return { x: cx + p.z, y: cy + p.y };
+  }
+
+  // =========================
+  // Drawing helpers
+  // =========================
+  function drawMuscle(a, b, baseWidth, color, alpha, side) {
+    const n = normal2(a, b);
+    const off = 4 * side;
+    const w = baseWidth * alpha;
+
+    const a1 = { x: a.x + n.x * off, y: a.y + n.y * off };
+    const b1 = { x: b.x + n.x * off, y: b.y + n.y * off };
+
+    const poly = [
+      { x: a1.x + n.x * w * 0.18, y: a1.y + n.y * w * 0.18 },
+      { x: mix(a1.x, b1.x, 0.55) + n.x * w * 0.50, y: mix(a1.y, b1.y, 0.55) + n.y * w * 0.50 },
+      { x: b1.x + n.x * w * 0.14, y: b1.y + n.y * w * 0.14 },
+      { x: b1.x - n.x * w * 0.14, y: b1.y - n.y * w * 0.14 },
+      { x: mix(a1.x, b1.x, 0.55) - n.x * w * 0.50, y: mix(a1.y, b1.y, 0.55) - n.y * w * 0.50 },
+      { x: a1.x - n.x * w * 0.18, y: a1.y - n.y * w * 0.18 },
+    ];
+
+    ctx.fillStyle = color === 'A'
+      ? `rgba(217,98,98,${alpha * 0.55})`
+      : `rgba(79,168,103,${alpha * 0.55})`;
+
+    ctx.beginPath();
+    ctx.moveTo(poly[0].x, poly[0].y);
+    poly.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--tendon');
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(a1.x, a1.y);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(b.x, b.y);
+    ctx.lineTo(b1.x, b1.y);
+    ctx.stroke();
+  }
+
+  function drawWingProjected(wing, cx, cy, projector, mode, sideSign) {
+    const surf = makeWingSurface3D(wing);
+    const lead = surf.lead.map(p => projector(p, cx, cy));
+    const trail = surf.trail.map(p => projector(p, cx, cy));
+    const shoulder = projector(wing.shoulder, cx, cy);
+    const elbow = projector(wing.elbow, cx, cy);
+    const wrist = projector(wing.wrist, cx, cy);
+    const tip = projector(wing.tip, cx, cy);
+
+    ctx.fillStyle = 'rgba(242,239,227,.90)';
+    ctx.beginPath();
+    ctx.moveTo(lead[0].x, lead[0].y);
+    [...lead.slice(1), ...trail].forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.closePath();
+    ctx.fill();
+
+    const featherN = 10;
+    for (let i = 0; i < featherN; i++) {
+      const tt = i / (featherN - 1);
+      const p3 = lerpPt3(wing.wrist, wing.tip, tt * 0.98);
+      const p = projector(p3, cx, cy);
+      let dx, dy;
+      if (mode === 'front') {
+        dx = sideSign * (18 + 18 * tt + wing.acts.spread * 18 - wing.acts.fold * 10);
+        dy = 14 + 8 * tt + wing.acts.spread * 10 - wing.acts.fold * 8;
+      } else {
+        dx = 28 + 20 * tt + wing.acts.spread * 14 - wing.acts.fold * 8;
+        dy = -10 - 8 * tt + wing.acts.spread * 4 - wing.acts.fold * 4;
+      }
+      ctx.strokeStyle = 'rgba(207,199,172,.9)';
+      ctx.lineWidth = mix(1.7, 1.0, tt);
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x + dx, p.y + dy);
+      ctx.stroke();
+    }
+
+    if (mode === 'side') {
+      drawMuscle(shoulder, elbow, 14, 'A', 0.35 + wing.acts.shoulderUp * 0.55, -1);
+      drawMuscle(shoulder, elbow, 16, 'B', 0.35 + wing.acts.shoulderDown * 0.55, +1);
+      drawMuscle(elbow, wrist, 10, 'A', 0.25 + wing.acts.elbowFlex * 0.55, -1);
+      drawMuscle(elbow, wrist, 10, 'B', 0.25 + wing.acts.elbowExtend * 0.55, +1);
+      drawMuscle(wrist, tip, 7, 'A', 0.25 + wing.acts.wristFlex * 0.55, -1);
+      drawMuscle(wrist, tip, 7, 'B', 0.25 + wing.acts.wristExtend * 0.55, +1);
+    }
+
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--bone');
+    ctx.lineWidth = 3.2;
+    ctx.beginPath();
+    ctx.moveTo(shoulder.x, shoulder.y);
+    ctx.lineTo(elbow.x, elbow.y);
+    ctx.lineTo(wrist.x, wrist.y);
+    ctx.lineTo(tip.x, tip.y);
+    ctx.stroke();
+  }
+
+  function drawFrontBird(box, t) {
+    const cx = box.x + box.w / 2;
+    const cy = box.y + box.h * 0.66;
+    const body = bodyMotion(t);
+
+    const left = wing3D(-1, t, wingState.left);
+    const right = wing3D(+1, t, wingState.right);
+
+    drawWingProjected(left, cx, cy + body.bob, projectFront, 'front', -1);
+    drawWingProjected(right, cx, cy + body.bob, projectFront, 'front', +1);
+
+    ctx.save();
+    ctx.translate(cx, cy + body.bob - 8);
+    ctx.rotate(body.pitch * 0.15);
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--body');
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 64, 42, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--body-shade');
+    ctx.beginPath(); ctx.ellipse(0, 14, 18, 13, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(-22, -8, 14, 10, 0.2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(22, -8, 14, 10, -0.2, 0, Math.PI * 2); ctx.fill();
+
+    ctx.fillStyle = '#262626';
+    ctx.beginPath(); ctx.arc(-8, -8, 3.2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(8, -8, 3.2, 0, Math.PI * 2); ctx.fill();
+
+    ctx.strokeStyle = '#262626';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.arc(0, -10, 10, 0.25 * Math.PI, 0.75 * Math.PI);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--flow');
+    ctx.lineWidth = 1.4;
+    for (let i = 0; i < 140; i++) {
+      const x = box.x + ((i * 73 + state.t * 160) % box.w);
+      const y = box.y + 18 + ((i * 41 + 130) % (box.h - 30));
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + 5, y + 1);
+      ctx.stroke();
+    }
+  }
+
+  function drawSideBird(box, t) {
+    const bodyCx = box.x + box.w * 0.30;
+    const bodyCy = box.y + box.h * 0.70;
+    const body = bodyMotion(t);
+
+    ctx.save();
+    ctx.translate(bodyCx, bodyCy + body.bob);
+    ctx.rotate(body.pitch);
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--body');
+    ctx.beginPath(); ctx.ellipse(0, 0, 66, 38, 0, 0, Math.PI * 2); ctx.fill();
+
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--body-shade');
+    ctx.beginPath(); ctx.ellipse(-18, -12, 18, 12, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, 10, 18, 14, 0, 0, Math.PI * 2); ctx.fill();
+
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--body');
+    ctx.beginPath(); ctx.ellipse(-44, -2, 18, 16, 0, 0, Math.PI * 2); ctx.fill();
+
+    ctx.fillStyle = '#262626';
+    ctx.beginPath(); ctx.moveTo(-75, 0); ctx.lineTo(-55, -4); ctx.lineTo(-55, 4); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.arc(-48, -6, 3.2, 0, Math.PI * 2); ctx.fill();
+
+    ctx.fillStyle = '#e5dfd3';
+    ctx.beginPath(); ctx.moveTo(48, 2); ctx.lineTo(68, 8); ctx.lineTo(48, -6); ctx.closePath(); ctx.fill();
+    ctx.restore();
+
+    const wing = wing3D(+1, t, wingState.right);
+    drawWingProjected(wing, bodyCx, bodyCy + body.bob, projectSide, 'side', +1);
+
+    ctx.strokeStyle = 'rgba(110,160,255,.45)';
+    ctx.setLineDash([4, 8]);
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    for (let i = 0; i <= 52; i++) {
+      const tt = t - i * 0.10;
+      const qWing = wing3D(+1, tt, wingState.right);
+      const q = projectSide(qWing.tip, bodyCx, bodyCy + bodyMotion(tt).bob);
+      if (i === 0) ctx.moveTo(q.x, q.y);
+      else ctx.lineTo(q.x, q.y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // =========================
+  // Main loop
+  // =========================
+  const state = { t: 0 };
+  let last = performance.now();
+
+  function frame(ts) {
+    const dt = clamp((ts - last) / 1000, 1 / 240, 1 / 30);
+    last = ts;
+    state.t = ts * 0.001;
+
+    const acts = muscleActivations(state.t);
+    stepWing(wingState.right, acts, dt);
+    stepWing(wingState.left, acts, dt);
+
+    ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+    const boxes = getLayout();
+    drawPanel(boxes.front, 'Front view');
+    drawPanel(boxes.side, 'Left view');
+    drawFrontBird(boxes.front, state.t);
+    drawSideBird(boxes.side, state.t);
+
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
 })();
 </script>
 </body>
