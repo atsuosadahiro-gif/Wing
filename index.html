@@ -1,489 +1,1706 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Bird Wing Refactor Stable Base</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+<title>Hummingbird Rounded Feather Bundle Wing</title>
 <style>
-  :root{
-    --bg:#dfe6ef;
-    --panel:#e9eef5;
-    --panel-stroke:rgba(128,146,173,.25);
-    --bone:#6f7f97;
-    --feather:#f2efe3;
-    --feather-line:#cfc7ac;
-    --flow:rgba(110,160,255,.55);
-    --body:#f3f0e8;
-    --body-shade:#e9e4d8;
-    --text:#7f8794;
-    --muscle-a:rgba(217,98,98,.45);
-    --muscle-b:rgba(79,168,103,.45);
-    --tendon:rgba(143,162,189,.45);
-  }
-  html,body{margin:0;background:var(--bg);font-family:system-ui,sans-serif;}
-  canvas{display:block;width:100vw;height:100vh;}
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #dceeff;
+  touch-action: none;
+  font-family: sans-serif;
+}
+#info {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  color: #17324a;
+  background: rgba(255,255,255,0.72);
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.55;
+  z-index: 10;
+}
+#errorPanel {
+  position: fixed;
+  left: 10px;
+  right: 10px;
+  bottom: 86px;
+  z-index: 20;
+  display: none;
+  color: #ffd7d7;
+  background: rgba(80,0,0,0.82);
+  border: 1px solid rgba(255,120,120,0.55);
+  border-radius: 12px;
+  padding: 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+#modeButton {
+  position: fixed;
+  right: 12px;
+  bottom: 18px;
+  z-index: 20;
+  color: white;
+  background: rgba(30,80,130,0.85);
+  border: 1px solid rgba(255,255,255,0.35);
+  border-radius: 999px;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: bold;
+}
 </style>
 </head>
 <body>
-<canvas id="c"></canvas>
+<div id="info">
+ハチドリ：丸みのある羽毛束翼アップデート版<br>
+軽量空気流＋動き強化版（重い圧力場は未使用）<br>
+ドラッグ：回転 / ピンチ：ズーム<br>右下ボタン：表示切り替え<br>胴体：胸筋厚め・短頸・小頭・細い尾筒 / 尾羽：扇状個別羽＋遅れ位相制御 / 羽毛翼：丸み・厚み・羽軸を追加 / 胴体：胸・腹・頭を分離制御
+</div>
+<div id="errorPanel"></div>
+<button id="modeButton">観察モード</button>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 <script>
-(() => {
-  'use strict';
+// Refactored stable baseline
+// - Geometry/phase/length/symmetry are intentionally preserved.
+// - Shoulder-girdle visuals are separated from the wing kinematic chain.
+// - Runtime errors are shown on screen so the model does not fail silently on mobile browsers.
+const errorPanel = document.getElementById("errorPanel");
+window.addEventListener("error", (ev) => {
+  if (!errorPanel) return;
+  errorPanel.style.display = "block";
+  errorPanel.textContent = "表示エラー: " + ev.message + "\n" + (ev.filename || "") + ":" + (ev.lineno || "?");
+});
+window.addEventListener("unhandledrejection", (ev) => {
+  if (!errorPanel) return;
+  errorPanel.style.display = "block";
+  errorPanel.textContent = "非同期エラー: " + (ev.reason && ev.reason.message ? ev.reason.message : String(ev.reason));
+});
 
-  // =========================
-  // Core math
-  // =========================
-  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  const mix = (a, b, t) => a * (1 - t) + b * t;
-  const rad = (deg) => deg * Math.PI / 180;
+const scene = new THREE.Scene();
+function makeSkyGradientTexture() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 16;
+  canvas.height = 512;
+  const ctx = canvas.getContext("2d");
+  const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  grad.addColorStop(0.00, "#b7d8ff");
+  grad.addColorStop(0.55, "#e7f4ff");
+  grad.addColorStop(1.00, "#f8fcff");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+scene.background = makeSkyGradientTexture();
 
-  const pt = (x, y, z = 0) => ({ x, y, z });
-  const add = (a, b) => ({ x: a.x + b.x, y: a.y + b.y, z: (a.z || 0) + (b.z || 0) });
-  const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: (a.z || 0) - (b.z || 0) });
-  const scale = (a, s) => ({ x: a.x * s, y: a.y * s, z: (a.z || 0) * s });
-  const len = (v) => Math.hypot(v.x, v.y, v.z || 0) || 1;
-  const norm = (v) => scale(v, 1 / len(v));
-  const lerp3 = (a, b, t) => ({ x: mix(a.x, b.x, t), y: mix(a.y, b.y, t), z: mix(a.z || 0, b.z || 0, t) });
-  const lerp2 = (a, b, t) => ({ x: mix(a.x, b.x, t), y: mix(a.y, b.y, t) });
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
 
-  function rotX(p, a) {
-    const c = Math.cos(a), s = Math.sin(a);
-    return { x: p.x, y: p.y * c - p.z * s, z: p.y * s + p.z * c };
+scene.add(new THREE.AmbientLight(0xffffff, 0.65));
+const light = new THREE.DirectionalLight(0xffffff, 1.5);
+light.position.set(3, 5, 4);
+scene.add(light);
+
+const grid = new THREE.GridHelper(8, 8, 0xc7d5df, 0xdde8ef);
+grid.position.y = -1.6;
+scene.add(grid);
+
+let camRadius = 6.8;
+let camTheta = 0;
+let camPhi = 1.2;
+const target = new THREE.Vector3(0, 0.1, 0);
+
+function updateCamera() {
+  camPhi = Math.max(0.45, Math.min(2.25, camPhi));
+  camRadius = Math.max(3.2, Math.min(12, camRadius));
+  camera.position.x = camRadius * Math.sin(camPhi) * Math.sin(camTheta);
+  camera.position.y = camRadius * Math.cos(camPhi);
+  camera.position.z = camRadius * Math.sin(camPhi) * Math.cos(camTheta);
+  camera.lookAt(target);
+}
+updateCamera();
+
+const bird = new THREE.Group();
+scene.add(bird);
+
+const bodyMat = new THREE.MeshStandardMaterial({ color: 0x324039, roughness: 0.82 });
+const wingMat = new THREE.MeshStandardMaterial({ color: 0x1b211d, roughness: 0.72, metalness: 0.02, transparent: false, opacity: 1.0, side: THREE.DoubleSide });
+const featherMat = new THREE.MeshStandardMaterial({ color: 0x22261f, roughness: 0.78, metalness: 0.01, transparent: false, opacity: 1.0, side: THREE.DoubleSide });
+const wingMaterials = [];
+let wingTransparent = true;
+
+function updateWingTransparency() {
+  for (const m of wingMaterials) {
+    m.transparent = false;
+    m.opacity = 1.0;
+    m.depthWrite = true;
+    m.needsUpdate = true;
   }
-  function rotY(p, a) {
-    const c = Math.cos(a), s = Math.sin(a);
-    return { x: p.x * c + p.z * s, y: p.y, z: -p.x * s + p.z * c };
-  }
-  function rotZ(p, a) {
-    const c = Math.cos(a), s = Math.sin(a);
-    return { x: p.x * c - p.y * s, y: p.x * s + p.y * c, z: p.z };
-  }
-  function normal2(a, b) {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const L = Math.hypot(dx, dy) || 1;
-    return { x: -dy / L, y: dx / L };
-  }
-
-  // =========================
-  // Canvas / layout
-  // =========================
-  const canvas = document.getElementById('c');
-  const ctx = canvas.getContext('2d');
-
-  function resize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = Math.floor(window.innerWidth * dpr);
-    canvas.height = Math.floor(window.innerHeight * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  }
-  window.addEventListener('resize', resize);
-  resize();
-
-  function getLayout() {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    const margin = 18;
-    const gap = 16;
-    const panelW = w - margin * 2;
-    const panelH = Math.min(420, (h - margin * 2 - gap) / 2);
-    return {
-      front: { x: margin, y: margin + 36, w: panelW, h: panelH },
-      side:  { x: margin, y: margin + 36 + panelH + gap, w: panelW, h: panelH }
-    };
-  }
-
-  function drawPanel(box, title) {
-    const r = 22;
-    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--panel');
-    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--panel-stroke');
-    ctx.lineWidth = 2;
-
-    ctx.beginPath();
-    ctx.moveTo(box.x + r, box.y);
-    ctx.arcTo(box.x + box.w, box.y, box.x + box.w, box.y + box.h, r);
-    ctx.arcTo(box.x + box.w, box.y + box.h, box.x, box.y + box.h, r);
-    ctx.arcTo(box.x, box.y + box.h, box.x, box.y, r);
-    ctx.arcTo(box.x, box.y, box.x + box.w, box.y, r);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--text');
-    ctx.font = '600 16px system-ui,sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(title, box.x + box.w / 2, box.y + 28);
-  }
-
-  // =========================
-  // Motion model
-  // =========================
-  function flap(t) {
-    const s = Math.sin(t);
-    return {
-      s,
-      down: Math.max(0, -s),
-      up: Math.max(0, s),
-    };
-  }
-
-  function bodyMotion(t) {
-    return {
-      bob: Math.sin(t * 2.1) * 1.4 + Math.sin(t) * 0.8,
-      pitch: rad(-2.5 + 1.4 * Math.sin(t * 2.1 - 0.5)),
-    };
-  }
-
-  function muscleActivations(t) {
-    const cyc = t * 2.5;
-    const s = Math.sin(cyc);
-    return {
-      shoulderDown: clamp(-s, 0, 1),
-      shoulderUp: clamp(s, 0, 1) * 0.92,
-      elbowExtend: clamp(-Math.sin(cyc - 0.18), 0, 1),
-      elbowFlex: clamp(Math.sin(cyc - 0.18), 0, 1),
-      wristExtend: clamp(-Math.sin(cyc - 0.30), 0, 1),
-      wristFlex: clamp(Math.sin(cyc - 0.30), 0, 1),
-      spread: clamp(-s, 0, 1),
-      fold: clamp(s, 0, 1),
-    };
-  }
-
-  function integrateJoint(angle, vel, dt, cfg, agonist, antagonist) {
-    const active = cfg.kAg * agonist - cfg.kAnt * antagonist;
-    const passive = -cfg.kSpring * (angle - cfg.rest);
-    const damping = -cfg.kDamp * vel;
-    const acc = active + passive + damping;
-    vel += acc * dt;
-    angle += vel * dt;
-    angle = clamp(angle, cfg.min, cfg.max);
-    return { angle, vel };
-  }
-
-  const wingState = {
-    right: { shPitch: rad(36), shVel: 0, elPitch: rad(10), elVel: 0, wrPitch: rad(4), wrVel: 0 },
-    left:  { shPitch: rad(36), shVel: 0, elPitch: rad(10), elVel: 0, wrPitch: rad(4), wrVel: 0 },
-  };
-
-  function stepWing(sideState, acts, dt) {
-    let r = integrateJoint(
-      sideState.shPitch, sideState.shVel, dt,
-      { min: rad(-78), max: rad(104), rest: rad(18), kAg: 9.2, kAnt: 7.2, kSpring: 12.0, kDamp: 4.6 },
-      acts.shoulderUp, acts.shoulderDown
-    );
-    sideState.shPitch = r.angle;
-    sideState.shVel = r.vel;
-
-    r = integrateJoint(
-      sideState.elPitch, sideState.elVel, dt,
-      { min: rad(-20), max: rad(72), rest: rad(10), kAg: 5.0, kAnt: 4.6, kSpring: 8.4, kDamp: 3.8 },
-      acts.elbowFlex, acts.elbowExtend
-    );
-    sideState.elPitch = r.angle;
-    sideState.elVel = r.vel;
-
-    r = integrateJoint(
-      sideState.wrPitch, sideState.wrVel, dt,
-      { min: rad(-12), max: rad(82), rest: rad(6), kAg: 4.2, kAnt: 3.6, kSpring: 7.4, kDamp: 3.2 },
-      acts.wristFlex, acts.wristExtend
-    );
-    sideState.wrPitch = r.angle;
-    sideState.wrVel = r.vel;
-  }
-
-  // =========================
-  // Unified 3D wing model
-  // =========================
-  function wing3D(side, t, st) {
-    const acts = muscleActivations(t);
-
-    const shoulder = pt(
-      side * (58 + 8 * acts.spread - 6 * acts.fold),
-      -8 + 6 * Math.sin(t * 2.5 - 0.2),
-      0
-    );
-
-    const L1 = 54;
-    const L2 = 78;
-    const L3 = 62;
-
-    const shYaw   = rad(side * (62 + 20 * acts.spread - 28 * acts.fold));
-    const shPitch = st.shPitch;
-    const shFwd   = rad(34 * acts.spread - 20 * acts.fold);
-    const shRoll  = rad(side * (8 * acts.fold - 4 * acts.spread));
-
-    const elYaw   = rad(side * (10 + 10 * acts.spread - 12 * acts.fold));
-    const elPitch = st.elPitch;
-
-    const wrYaw    = rad(side * (2 + 10 * acts.spread - 20 * acts.fold));
-    const wrPitch  = st.wrPitch;
-    const wrFeather = rad(34 * acts.fold - 6 * acts.spread);
-
-    let v1 = pt(L1, 0, 0);
-    v1 = rotZ(v1, shPitch);
-    v1 = rotY(v1, -shYaw * side);
-    v1 = rotX(v1, shFwd);
-    v1 = rotX(v1, shRoll);
-    const elbow = add(shoulder, { x: v1.x * side, y: v1.y, z: v1.z });
-
-    let v2 = pt(L2, 0, 0);
-    v2 = rotZ(v2, elPitch);
-    v2 = rotY(v2, -elYaw * side);
-    v2 = scale(v2, 0.98 + 0.02 * acts.spread);
-    const wrist = add(elbow, { x: v2.x * side, y: v2.y, z: v2.z });
-
-    let v3 = pt(L3, 0, 0);
-    v3 = rotZ(v3, wrPitch + wrFeather);
-    v3 = rotY(v3, -wrYaw * side);
-    v3 = rotX(v3, rad(10 * acts.fold - 3 * acts.spread));
-    const tip = add(wrist, { x: v3.x * side, y: v3.y, z: v3.z });
-
-    return { shoulder, elbow, wrist, tip, acts };
-  }
-
-  function makeWingSurface3D(wing) {
-    const chain = [wing.shoulder, wing.elbow, wing.wrist, wing.tip];
-    const lead = [];
-    const trail = [];
-    for (let i = 0; i < chain.length; i++) {
-      const p = chain[i];
-      const prev = chain[Math.max(0, i - 1)];
-      const next = chain[Math.min(chain.length - 1, i + 1)];
-      const tan = norm(sub(next, prev));
-      let n = { x: 0, y: -tan.z, z: tan.y };
-      n = norm(n);
-
-      const tt = i / (chain.length - 1);
-      const thick = mix(20, 7, tt) * (1 + 0.16 * wing.acts.spread - 0.10 * wing.acts.fold);
-      lead.push(add(p, scale(n, 0.24 * thick)));
-      trail.unshift(add(p, scale(n, -0.56 * thick)));
-    }
-    return { lead, trail };
-  }
-
-  function projectFront(p, cx, cy) {
-    return { x: cx + p.x, y: cy + p.y };
-  }
-  function projectSide(p, cx, cy) {
-    return { x: cx + p.z, y: cy + p.y };
-  }
-
-  // =========================
-  // Drawing helpers
-  // =========================
-  function drawMuscle(a, b, baseWidth, color, alpha, side) {
-    const n = normal2(a, b);
-    const off = 4 * side;
-    const w = baseWidth * alpha;
-
-    const a1 = { x: a.x + n.x * off, y: a.y + n.y * off };
-    const b1 = { x: b.x + n.x * off, y: b.y + n.y * off };
-
-    const poly = [
-      { x: a1.x + n.x * w * 0.18, y: a1.y + n.y * w * 0.18 },
-      { x: mix(a1.x, b1.x, 0.55) + n.x * w * 0.50, y: mix(a1.y, b1.y, 0.55) + n.y * w * 0.50 },
-      { x: b1.x + n.x * w * 0.14, y: b1.y + n.y * w * 0.14 },
-      { x: b1.x - n.x * w * 0.14, y: b1.y - n.y * w * 0.14 },
-      { x: mix(a1.x, b1.x, 0.55) - n.x * w * 0.50, y: mix(a1.y, b1.y, 0.55) - n.y * w * 0.50 },
-      { x: a1.x - n.x * w * 0.18, y: a1.y - n.y * w * 0.18 },
-    ];
-
-    ctx.fillStyle = color === 'A'
-      ? `rgba(217,98,98,${alpha * 0.55})`
-      : `rgba(79,168,103,${alpha * 0.55})`;
-
-    ctx.beginPath();
-    ctx.moveTo(poly[0].x, poly[0].y);
-    poly.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--tendon');
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(a1.x, a1.y);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(b.x, b.y);
-    ctx.lineTo(b1.x, b1.y);
-    ctx.stroke();
-  }
-
-  function drawWingProjected(wing, cx, cy, projector, mode, sideSign) {
-    const surf = makeWingSurface3D(wing);
-    const lead = surf.lead.map(p => projector(p, cx, cy));
-    const trail = surf.trail.map(p => projector(p, cx, cy));
-    const shoulder = projector(wing.shoulder, cx, cy);
-    const elbow = projector(wing.elbow, cx, cy);
-    const wrist = projector(wing.wrist, cx, cy);
-    const tip = projector(wing.tip, cx, cy);
-
-    ctx.fillStyle = 'rgba(242,239,227,.90)';
-    ctx.beginPath();
-    ctx.moveTo(lead[0].x, lead[0].y);
-    [...lead.slice(1), ...trail].forEach(p => ctx.lineTo(p.x, p.y));
-    ctx.closePath();
-    ctx.fill();
-
-    const featherN = 10;
-    for (let i = 0; i < featherN; i++) {
-      const tt = i / (featherN - 1);
-      const p3 = lerpPt3(wing.wrist, wing.tip, tt * 0.98);
-      const p = projector(p3, cx, cy);
-      let dx, dy;
-      if (mode === 'front') {
-        dx = sideSign * (18 + 18 * tt + wing.acts.spread * 18 - wing.acts.fold * 10);
-        dy = 14 + 8 * tt + wing.acts.spread * 10 - wing.acts.fold * 8;
-      } else {
-        dx = 28 + 20 * tt + wing.acts.spread * 14 - wing.acts.fold * 8;
-        dy = -10 - 8 * tt + wing.acts.spread * 4 - wing.acts.fold * 4;
+  for (const w of [leftWing, rightWing]) {
+    if (w && w.surface && w.surface.userData.featherStrips) {
+      for (const strip of w.surface.userData.featherStrips) {
+        strip.material.transparent = false;
+        strip.material.opacity = 1.0;
+        strip.material.depthWrite = true;
+        strip.material.needsUpdate = true;
       }
-      ctx.strokeStyle = 'rgba(207,199,172,.9)';
-      ctx.lineWidth = mix(1.7, 1.0, tt);
-      ctx.beginPath();
-      ctx.moveTo(p.x, p.y);
-      ctx.lineTo(p.x + dx, p.y + dy);
-      ctx.stroke();
-    }
-
-    if (mode === 'side') {
-      drawMuscle(shoulder, elbow, 14, 'A', 0.35 + wing.acts.shoulderUp * 0.55, -1);
-      drawMuscle(shoulder, elbow, 16, 'B', 0.35 + wing.acts.shoulderDown * 0.55, +1);
-      drawMuscle(elbow, wrist, 10, 'A', 0.25 + wing.acts.elbowFlex * 0.55, -1);
-      drawMuscle(elbow, wrist, 10, 'B', 0.25 + wing.acts.elbowExtend * 0.55, +1);
-      drawMuscle(wrist, tip, 7, 'A', 0.25 + wing.acts.wristFlex * 0.55, -1);
-      drawMuscle(wrist, tip, 7, 'B', 0.25 + wing.acts.wristExtend * 0.55, +1);
-    }
-
-    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--bone');
-    ctx.lineWidth = 3.2;
-    ctx.beginPath();
-    ctx.moveTo(shoulder.x, shoulder.y);
-    ctx.lineTo(elbow.x, elbow.y);
-    ctx.lineTo(wrist.x, wrist.y);
-    ctx.lineTo(tip.x, tip.y);
-    ctx.stroke();
-  }
-
-  function drawFrontBird(box, t) {
-    const cx = box.x + box.w / 2;
-    const cy = box.y + box.h * 0.66;
-    const body = bodyMotion(t);
-
-    const left = wing3D(-1, t, wingState.left);
-    const right = wing3D(+1, t, wingState.right);
-
-    drawWingProjected(left, cx, cy + body.bob, projectFront, 'front', -1);
-    drawWingProjected(right, cx, cy + body.bob, projectFront, 'front', +1);
-
-    ctx.save();
-    ctx.translate(cx, cy + body.bob - 8);
-    ctx.rotate(body.pitch * 0.15);
-    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--body');
-    ctx.beginPath();
-    ctx.ellipse(0, 0, 64, 42, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--body-shade');
-    ctx.beginPath(); ctx.ellipse(0, 14, 18, 13, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(-22, -8, 14, 10, 0.2, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(22, -8, 14, 10, -0.2, 0, Math.PI * 2); ctx.fill();
-
-    ctx.fillStyle = '#262626';
-    ctx.beginPath(); ctx.arc(-8, -8, 3.2, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(8, -8, 3.2, 0, Math.PI * 2); ctx.fill();
-
-    ctx.strokeStyle = '#262626';
-    ctx.lineWidth = 1.8;
-    ctx.beginPath();
-    ctx.arc(0, -10, 10, 0.25 * Math.PI, 0.75 * Math.PI);
-    ctx.stroke();
-    ctx.restore();
-
-    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--flow');
-    ctx.lineWidth = 1.4;
-    for (let i = 0; i < 140; i++) {
-      const x = box.x + ((i * 73 + state.t * 160) % box.w);
-      const y = box.y + 18 + ((i * 41 + 130) % (box.h - 30));
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(x + 5, y + 1);
-      ctx.stroke();
     }
   }
+}
 
-  function drawSideBird(box, t) {
-    const bodyCx = box.x + box.w * 0.30;
-    const bodyCy = box.y + box.h * 0.70;
-    const body = bodyMotion(t);
+// 表示切り替え（圧力・流線・渦・粒子・履歴はコードとして削除済み）
+const mapModes = ["観察モード", "本物色・不透明", "骨格確認"];
+let mapModeIndex = 0;
+function applyMapMode() {
+  wingTransparent = false;
+  updateWingTransparency();
+  if (typeof skeletonGroup !== "undefined" && skeletonGroup) skeletonGroup.visible = true;
+  const btn = document.getElementById("modeButton");
+  if (btn) btn.textContent = mapModes[mapModeIndex];
+}
+function nextMapMode() {
+  mapModeIndex = (mapModeIndex + 1) % mapModes.length;
+  applyMapMode();
+}
 
-    ctx.save();
-    ctx.translate(bodyCx, bodyCy + body.bob);
-    ctx.rotate(body.pitch);
-    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--body');
-    ctx.beginPath(); ctx.ellipse(0, 0, 66, 38, 0, 0, Math.PI * 2); ctx.fill();
+// 実物寄り胴体：ハチドリは「丸い胴」ではなく、
+// 胸筋が厚い前胴・細い尾筒・短い首・小さい頭の組み合わせで見せる。
+const bodyGroup = new THREE.Group();
+bird.add(bodyGroup);
 
-    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--body-shade');
-    ctx.beginPath(); ctx.ellipse(-18, -12, 18, 12, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(0, 10, 18, 14, 0, 0, Math.PI * 2); ctx.fill();
+// 胴体側の可動パーツ。翼骨格は変えず、胸郭・肩帯だけ微小に連動させる。
+const shoulderGirdleVisuals = [];
 
-    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--body');
-    ctx.beginPath(); ctx.ellipse(-44, -2, 18, 16, 0, 0, Math.PI * 2); ctx.fill();
+// 実物寄りカラー：二色を閾値で切り替えず、全身を連続的に混色する。
+// 喉（ゴルジェ）だけは別レイヤーとして、角度・羽ばたき位相で鋭く光る構造色にする。
+const chestMat = new THREE.MeshStandardMaterial({ color: 0x356f55, roughness: 0.62, metalness: 0.12 });
+const bellyMat = new THREE.MeshStandardMaterial({ color: 0x8a8674, roughness: 0.92, metalness: 0.00 });
+const transitionMat = new THREE.MeshStandardMaterial({ color: 0x66715d, roughness: 0.86, metalness: 0.01 });
+const throatMat = new THREE.MeshStandardMaterial({ color: 0x25332f, roughness: 0.44, metalness: 0.28 });
+const gorgetMat = new THREE.MeshStandardMaterial({ color: 0x0b4f45, roughness: 0.18, metalness: 0.82 });
+const eyeMat = new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 0.25, metalness: 0.15 });
+// 自然な目：白目は作らず、頭部に半分埋めた黒い眼球＋極小キャッチライト＋薄い眼縁で表現する。
+const eyeBlackMat = new THREE.MeshStandardMaterial({
+  color: 0x020202,
+  roughness: 0.18,
+  metalness: 0.25
+});
+const eyeHighlightMat = new THREE.MeshBasicMaterial({
+  color: 0xffffff,
+  transparent: true,
+  opacity: 0.62
+});
+const eyeRimMat = new THREE.MeshStandardMaterial({
+  color: 0x10110d,
+  roughness: 0.76,
+  metalness: 0.03,
+  transparent: true,
+  opacity: 0.72
+});
+const eyelidMat = new THREE.MeshStandardMaterial({
+  color: 0x172018,
+  roughness: 0.84,
+  metalness: 0.02,
+  transparent: true,
+  opacity: 0.66,
+  side: THREE.DoubleSide
+});
+const eyes = [];
+const tailMat = new THREE.MeshStandardMaterial({ color: 0x1b211b, roughness: 0.78, metalness: 0.05, side: THREE.DoubleSide });
 
-    ctx.fillStyle = '#262626';
-    ctx.beginPath(); ctx.moveTo(-75, 0); ctx.lineTo(-55, -4); ctx.lineTo(-55, 4); ctx.closePath(); ctx.fill();
-    ctx.beginPath(); ctx.arc(-48, -6, 3.2, 0, Math.PI * 2); ctx.fill();
 
-    ctx.fillStyle = '#e5dfd3';
-    ctx.beginPath(); ctx.moveTo(48, 2); ctx.lineTo(68, 8); ctx.lineTo(48, -6); ctx.closePath(); ctx.fill();
-    ctx.restore();
+const colDeep = new THREE.Color(0x111713);
+const colBackGreen = new THREE.Color(0x2f7656);
+const colBackEmerald = new THREE.Color(0x32a36f);
+const colBlueGreen = new THREE.Color(0x1f6f68);
+const colWarmGray = new THREE.Color(0x8b8675);
+const colPaleThroat = new THREE.Color(0xb8b1a0);
+// 胸部羽毛密度マップ用。軽量化せず、未定義参照だけ補完する。
+const colChest = new THREE.Color(0x356f55);
+const colBelly = new THREE.Color(0x8a8674);
+const colTransition = new THREE.Color(0x63745f);
+const colWingRoot = new THREE.Color(0x171811);
+const colWingTip = new THREE.Color(0x4a3f37);
+const colTailBlack = new THREE.Color(0x14120f);
+const colGorgetDark = new THREE.Color(0x090b0a);
+const colGorgetEmerald = new THREE.Color(0x00b98e);
+const colGorgetBlue = new THREE.Color(0x166dff);
+const colGorgetMagenta = new THREE.Color(0xff2aa5);
+const tmpColorB = new THREE.Color();
 
-    const wing = wing3D(+1, t, wingState.right);
-    drawWingProjected(wing, bodyCx, bodyCy + body.bob, projectSide, 'side', +1);
+function clamp01(v) { return Math.max(0, Math.min(1, v)); }
+function smooth01(v) { v = clamp01(v); return v * v * (3 - 2 * v); }
+function pseudoRand(n) { return Math.abs(Math.sin(n * 12.9898 + 78.233) * 43758.5453) % 1; }
+function varyColor(base, warm, noise, strength=0.10) {
+  const c = base.clone();
+  c.lerp(warm, (noise - 0.5) * strength + strength * 0.5);
+  return c;
+}
 
-    ctx.strokeStyle = 'rgba(110,160,255,.45)';
-    ctx.setLineDash([4, 8]);
-    ctx.lineWidth = 1.6;
-    ctx.beginPath();
-    for (let i = 0; i <= 52; i++) {
-      const tt = t - i * 0.10;
-      const qWing = wing3D(+1, tt, wingState.right);
-      const q = projectSide(qWing.tip, bodyCx, bodyCy + bodyMotion(tt).bob);
-      if (i === 0) ctx.moveTo(q.x, q.y);
-      else ctx.lineTo(q.x, q.y);
+function updateLivingColors(t) {
+  const wingPhase = Math.sin(t - 0.22);
+  const bodyLight = smooth01(0.50 + 0.16 * Math.sin(t * 0.48 + 0.8) + 0.09 * wingPhase);
+  const sideLight = smooth01(0.46 + 0.24 * Math.cos(camTheta - 0.55) + 0.08 * Math.sin(t * 0.31));
+  const dorsalFlash = Math.pow(sideLight, 2.2);
+
+  tmpColorB.copy(colBackGreen).lerp(colBackEmerald, 0.18 + 0.46 * dorsalFlash);
+  chestMat.color.copy(colDeep).lerp(tmpColorB, 0.52 + 0.30 * bodyLight);
+  chestMat.emissive.copy(tmpColorB).multiplyScalar(0.020 + 0.035 * dorsalFlash);
+
+  tmpColorB.copy(colWarmGray).lerp(colPaleThroat, 0.18 + 0.18 * bodyLight);
+  bellyMat.color.copy(tmpColorB).lerp(colBackGreen, 0.08 + 0.06 * sideLight);
+  bellyMat.emissive.setHex(0x000000);
+
+  transitionMat.color.copy(chestMat.color).lerp(bellyMat.color, 0.55 + 0.10 * Math.sin(t * 0.43));
+  transitionMat.emissive.copy(chestMat.emissive).multiplyScalar(0.35);
+
+  throatMat.color.copy(colDeep).lerp(colBlueGreen, 0.18 + 0.18 * sideLight);
+  throatMat.emissive.copy(colBlueGreen).multiplyScalar(0.018 * sideLight);
+
+  const angleFlash = Math.pow(clamp01(0.57 + 0.43 * Math.cos(camTheta * 1.18 - 0.72 + 0.18 * Math.sin(t))), 8.0);
+  const flapFlash = Math.pow(clamp01(0.55 + 0.45 * Math.sin(t * 1.30 - 0.4)), 5.5);
+  const flash = clamp01(angleFlash * 0.82 + flapFlash * 0.18);
+  tmpColorB.copy(colGorgetEmerald).lerp(colGorgetBlue, 0.36 + 0.22 * Math.sin(t * 0.63));
+  tmpColorB.lerp(colGorgetMagenta, 0.10 + 0.18 * Math.pow(flash, 1.4));
+  gorgetMat.color.copy(colGorgetDark).lerp(tmpColorB, 0.10 + 0.90 * flash);
+  gorgetMat.emissive.copy(tmpColorB).multiplyScalar(0.04 + 0.20 * flash);
+
+  const wingShine = 0.18 + 0.20 * bodyLight + 0.16 * sideLight;
+  wingMat.color.copy(colWingRoot).lerp(colWingTip, wingShine);
+  featherMat.color.copy(colWingRoot).lerp(colWingTip, wingShine + 0.08);
+  tailMat.color.copy(colTailBlack).lerp(colWingTip, 0.18 + 0.18 * sideLight);
+
+  for (const m of wingMaterials) {
+    if (!m || !m.color) continue;
+    const q = m.userData && typeof m.userData.spanShade === "number" ? m.userData.spanShade : 0.5;
+    const noise = m.userData && typeof m.userData.noise === "number" ? m.userData.noise : 0.5;
+    const localFlash = dorsalFlash * (0.55 + 0.45 * noise);
+    m.color.copy(colWingRoot).lerp(colWingTip, 0.10 + 0.32 * q + 0.10 * bodyLight + 0.08 * noise);
+    m.color.lerp(colBlueGreen, 0.025 * localFlash * (1.0 - q));
+    m.roughness = 0.70 + 0.18 * noise;
+    m.metalness = 0.02 + 0.05 * (1.0 - noise);
+  }
+
+  for (const m of covertMaterials) {
+    const q = m.userData && typeof m.userData.q === "number" ? m.userData.q : 0.5;
+    const row = m.userData && typeof m.userData.row === "number" ? m.userData.row : 0.5;
+    const noise = m.userData && typeof m.userData.noise === "number" ? m.userData.noise : 0.5;
+    const micro = 0.5 + 0.5 * Math.sin(t * (0.42 + 0.05 * noise) + noise * 6.283);
+    const greenAmount = 0.56 - 0.24 * row + 0.20 * q + 0.20 * dorsalFlash + 0.07 * (noise - 0.5);
+    const iridescent = clamp01(0.06 + 0.20 * dorsalFlash * (1.0 - 0.50 * row) + 0.035 * micro);
+    m.color.copy(colWarmGray)
+      .lerp(colBackGreen, clamp01(greenAmount))
+      .lerp(colBackEmerald, iridescent)
+      .lerp(colDeep, 0.04 + 0.06 * (1.0 - noise));
+    m.emissive.copy(colBackEmerald).multiplyScalar((0.010 + 0.025 * iridescent) * (1.0 - 0.45 * row));
+    m.roughness = 0.66 + 0.24 * noise + 0.08 * row;
+    m.metalness = 0.05 + 0.13 * iridescent;
+  }
+
+  // 胴体表面の短い羽毛レイヤー。大きな単色胴体の上で、羽1枚ごとの色差と構造色を出す。
+  if (typeof bodyPlumageMaterials !== "undefined") {
+    for (const m of bodyPlumageMaterials) {
+      const zone = m.userData.zone || "chest";
+      const q = m.userData.q || 0.5;
+      const dorsal = m.userData.dorsal || 0.0;
+      const ventral = m.userData.ventral || 0.0;
+      const noise = m.userData.noise || 0.5;
+      const micro = 0.5 + 0.5 * Math.sin(t * (0.35 + noise * 0.16) + noise * 9.1);
+      const localFlash = clamp01(dorsalFlash * (0.40 + 0.75 * dorsal) + 0.06 * micro);
+      if (zone === "belly") {
+        m.color.copy(colWarmGray)
+          .lerp(colPaleThroat, 0.18 + 0.12 * micro)
+          .lerp(colBackGreen, 0.05 + 0.08 * sideLight * (1.0 - ventral))
+          .lerp(colDeep, 0.025 + 0.050 * (1.0 - noise));
+        m.emissive.copy(colBackEmerald).multiplyScalar(0.004 * localFlash);
+        m.metalness = 0.015 + 0.030 * localFlash;
+        m.roughness = 0.82 + 0.12 * noise;
+      } else if (zone === "throat") {
+        const throatFlash = clamp01(flash * (0.35 + 0.55 * q) + 0.12 * micro);
+        tmpColorB.copy(colGorgetEmerald).lerp(colGorgetBlue, 0.35 + 0.25 * noise).lerp(colGorgetMagenta, 0.08 * throatFlash);
+        m.color.copy(colGorgetDark).lerp(tmpColorB, 0.22 + 0.58 * throatFlash);
+        m.emissive.copy(tmpColorB).multiplyScalar(0.030 + 0.085 * throatFlash);
+        m.metalness = 0.20 + 0.32 * throatFlash;
+        m.roughness = 0.36 + 0.24 * noise;
+      } else {
+        const green = clamp01(0.46 + 0.26 * dorsal + 0.18 * localFlash + 0.10 * q + 0.06 * (noise - 0.5));
+        m.color.copy(colDeep)
+          .lerp(colBackGreen, green)
+          .lerp(colBackEmerald, 0.12 + 0.30 * localFlash)
+          .lerp(colBlueGreen, 0.06 * sideLight * dorsal);
+        m.emissive.copy(colBackEmerald).multiplyScalar(0.010 + 0.045 * localFlash);
+        m.metalness = 0.06 + 0.16 * localFlash;
+        m.roughness = 0.62 + 0.18 * noise;
+      }
     }
-    ctx.stroke();
-    ctx.setLineDash([]);
+  }
+}
+function ellipsoid(rx, ry, rz, mat, seg=32) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(1, seg, Math.max(12, Math.floor(seg*0.55))), mat);
+  m.scale.set(rx, ry, rz);
+  return m;
+}
+
+const chest = ellipsoid(0.43, 0.50, 0.62, chestMat, 40);
+chest.position.set(0, 0.02, 0.18);
+chest.rotation.x = -0.10;
+bodyGroup.add(chest);
+
+const abdomen = ellipsoid(0.34, 0.36, 0.56, bellyMat, 36);
+abdomen.position.set(0, -0.03, -0.36);
+abdomen.rotation.x = 0.08;
+bodyGroup.add(abdomen);
+
+// 胸と腹の境界をパキッと分けず、重なった中間色の帯で連続化する。
+const chestBellyBlend = ellipsoid(0.38, 0.30, 0.42, transitionMat, 36);
+chestBellyBlend.position.set(0, -0.01, -0.10);
+chestBellyBlend.rotation.x = -0.02;
+bodyGroup.add(chestBellyBlend);
+
+const neck = ellipsoid(0.19, 0.20, 0.25, throatMat, 28);
+neck.position.set(0, 0.30, 0.62);
+neck.rotation.x = -0.16;
+bodyGroup.add(neck);
+
+const head = ellipsoid(0.22, 0.20, 0.27, chestMat, 32);
+head.position.set(0, 0.43, 0.83);
+head.rotation.x = -0.05;
+bodyGroup.add(head);
+
+const throatPatch = ellipsoid(0.16, 0.13, 0.22, gorgetMat, 24);
+throatPatch.position.set(0, 0.27, 0.77);
+throatPatch.rotation.x = -0.40;
+bodyGroup.add(throatPatch);
+
+// 腹〜胸の細かい羽色ムラ。均一なベタ色に見えるのを防ぐ。
+const bodySpeckles = [];
+const speckleMat = new THREE.MeshStandardMaterial({ color: 0x2f6f55, roughness: 0.85, metalness: 0.03, transparent: true, opacity: 0.42, side: THREE.DoubleSide });
+for (let i = 0; i < 42; i++) {
+  const sx = (Math.random() - 0.5) * 0.54;
+  const yy = -0.20 + Math.random() * 0.54;
+  const zz = 0.26 + Math.random() * 0.42;
+  const patch = new THREE.Mesh(new THREE.CircleGeometry(0.010 + Math.random() * 0.016, 8), speckleMat.clone());
+  patch.position.set(sx, yy, zz);
+  patch.rotation.x = -0.62 + (Math.random() - 0.5) * 0.16;
+  patch.rotation.y = sx * 0.55;
+  patch.scale.x = 0.6 + Math.random() * 0.9;
+  patch.scale.y = 0.35 + Math.random() * 0.55;
+  patch.material.opacity = 0.18 + Math.random() * 0.22;
+  patch.userData.phase = Math.random() * Math.PI * 2;
+  patch.userData.baseOpacity = patch.material.opacity;
+  bodyGroup.add(patch);
+  bodySpeckles.push(patch);
+}
+
+function makeEyelidGeometry(width=0.060, height=0.015, depth=0.018) {
+  const geo = new THREE.BufferGeometry();
+  const verts = new Float32Array([
+    -width*0.50, 0.000, -depth*0.20,
+     width*0.50, 0.000, -depth*0.20,
+     width*0.34, height, depth*0.15,
+     0.000, height*1.25, depth*0.24,
+    -width*0.34, height, depth*0.15
+  ]);
+  geo.setAttribute("position", new THREE.BufferAttribute(verts, 3));
+  geo.setIndex([0,1,2, 0,2,4, 4,2,3]);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function addNaturalEyesRefined() {
+  for (const sx of [-1, 1]) {
+    const eyeGroup = new THREE.Group();
+    eyeGroup.userData.side = sx;
+    eyeGroup.userData.baseX = sx * 0.122;
+    eyeGroup.userData.baseY = 0.478;
+    // 目が頭部内側に入りすぎないよう、前方へ出す。
+    eyeGroup.userData.baseZ = 1.045;
+    eyeGroup.position.set(eyeGroup.userData.baseX, eyeGroup.userData.baseY, eyeGroup.userData.baseZ);
+    eyeGroup.rotation.y = sx * 0.28;
+    eyeGroup.rotation.x = 0.04;
+
+    // 黒目：小さめ、横長、頭部に半分埋める。
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.034, 20, 14), eyeBlackMat);
+    eye.scale.set(1.00, 0.84, 0.66);
+    eye.position.set(0, 0, 0);
+    eyeGroup.add(eye);
+
+    // 極小キャッチライト。大きいと白いゴミに見えるため控えめにする。
+    const hi = new THREE.Mesh(new THREE.SphereGeometry(0.0045, 8, 6), eyeHighlightMat);
+    hi.position.set(sx * 0.010, 0.010, 0.028);
+    eyeGroup.add(hi);
+
+    // 薄い眼縁。黒い球が貼り付いた感じを消す。
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.034, 0.0025, 8, 24), eyeRimMat);
+    rim.scale.set(1.00, 0.74, 0.42);
+    rim.rotation.y = sx * 0.18;
+    rim.rotation.x = 0.10;
+    eyeGroup.add(rim);
+
+    // 上まぶた風の短い暗色カバー。羽毛の中に目が沈む印象を作る。
+    const lid = new THREE.Mesh(makeEyelidGeometry(0.060, 0.014, 0.018), eyelidMat);
+    lid.position.set(0, 0.022, 0.004);
+    lid.rotation.x = -0.22;
+    lid.rotation.z = sx * 0.06;
+    eyeGroup.add(lid);
+
+    bodyGroup.add(eyeGroup);
+    eyes.push(eyeGroup);
+  }
+}
+addNaturalEyesRefined();
+
+const upperBeak = new THREE.Mesh(
+  new THREE.ConeGeometry(0.030, 0.72, 18),
+  new THREE.MeshStandardMaterial({ color: 0x1a1712, roughness: 0.6 })
+);
+upperBeak.rotation.x = Math.PI / 2;
+upperBeak.position.set(0, 0.445, 1.31);
+upperBeak.scale.set(0.75, 1.0, 1.0);
+bodyGroup.add(upperBeak);
+
+const lowerBeak = new THREE.Mesh(
+  new THREE.ConeGeometry(0.018, 0.62, 14),
+  new THREE.MeshStandardMaterial({ color: 0x2a251d, roughness: 0.65 })
+);
+lowerBeak.rotation.x = Math.PI / 2;
+lowerBeak.position.set(0, 0.418, 1.26);
+lowerBeak.scale.set(0.55, 1.0, 1.0);
+bodyGroup.add(lowerBeak);
+
+const rump = ellipsoid(0.20, 0.18, 0.34, bellyMat, 28);
+rump.position.set(0, -0.07, -0.86);
+rump.rotation.x = 0.12;
+bodyGroup.add(rump);
+
+// 尾筒完全再構築：胴体後端を急に切らず、腰羽から尾羽根元へ
+// しずく形に細く収束させる。翼骨格・尾羽枚数・位相は変更しない。
+const tailConeMat = bellyMat.clone();
+tailConeMat.transparent = true;
+tailConeMat.opacity = 0.92;
+const tailCone = ellipsoid(0.155, 0.135, 0.315, tailConeMat, 28);
+tailCone.position.set(0, -0.082, -1.035);
+tailCone.rotation.x = 0.16;
+bodyGroup.add(tailCone);
+
+const tailTipMat = tailMat.clone();
+tailTipMat.transparent = true;
+tailTipMat.opacity = 0.78;
+const tailTipSleeve = ellipsoid(0.095, 0.080, 0.165, tailTipMat, 22);
+tailTipSleeve.position.set(0, -0.092, -1.145);
+tailTipSleeve.rotation.x = 0.12;
+bodyGroup.add(tailTipSleeve);
+
+// 腰羽の流れを作る短い重なり羽。尾羽根元の上に貼るのではなく、
+// 胴体表面から後ろへ流して、尾羽が内部から出てくる見え方にする。
+const tailConeFeathers = [];
+const tailConeFeatherMat = tailMat.clone();
+tailConeFeatherMat.transparent = true;
+tailConeFeatherMat.opacity = 0.76;
+function makeTailConeFeatherGeometry(len=0.16, rootW=0.016, tipW=0.020) {
+  const geo = new THREE.BufferGeometry();
+  const verts = new Float32Array([
+    -rootW, 0.000, 0.000,
+     rootW, 0.000, 0.000,
+     tipW,  0.008, -len * 0.72,
+     0.000, 0.004, -len,
+    -tipW,  0.008, -len * 0.72
+  ]);
+  geo.setAttribute("position", new THREE.BufferAttribute(verts, 3));
+  geo.setIndex([0,1,2, 0,2,4, 4,2,3]);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+for (let row = 0; row < 3; row++) {
+  const count = row === 0 ? 9 : (row === 1 ? 11 : 13);
+  for (let k = 0; k < count; k++) {
+    const q = count === 1 ? 0.5 : k / (count - 1);
+    const side = (q - 0.5) * 2.0;
+    const absSide = Math.abs(side);
+    const g = new THREE.Group();
+    g.userData.side = side;
+    g.userData.absSide = absSide;
+    g.userData.row = row;
+    g.userData.phase = k * 0.37 + row * 0.71;
+    const len = (0.118 + 0.025 * row + 0.020 * (1.0 - absSide)) * (0.95 + 0.08 * Math.sin(k * 1.9));
+    const rootW = 0.012 + 0.003 * (1.0 - absSide);
+    const tipW = 0.016 + 0.010 * absSide + 0.003 * row;
+    const m = new THREE.Mesh(makeTailConeFeatherGeometry(len, rootW, tipW), tailConeFeatherMat.clone());
+    m.material.color.copy(colBelly).lerp(colWingRoot, 0.42 + 0.18 * row + 0.16 * absSide);
+    g.add(m);
+    g.userData.baseX = side * (0.040 + 0.018 * row);
+    g.userData.baseY = -0.055 - 0.018 * row - 0.010 * absSide;
+    g.userData.baseZ = -0.910 - 0.055 * row - 0.010 * absSide;
+    g.userData.baseRotX = -0.18 - 0.085 * row - 0.025 * absSide;
+    g.userData.baseRotY = side * (0.10 + 0.11 * row + 0.07 * absSide);
+    g.userData.baseRotZ = side * (0.018 + 0.035 * row + 0.030 * absSide);
+    g.position.set(g.userData.baseX, g.userData.baseY, g.userData.baseZ);
+    g.rotation.set(g.userData.baseRotX, g.userData.baseRotY, g.userData.baseRotZ);
+    bodyGroup.add(g);
+    tailConeFeathers.push(g);
+  }
+}
+
+// 実物寄り尾羽：尾筒の先を支点に、個別羽が扇状に開閉する。
+// 主翼と完全同期させず、少し遅れて姿勢を補正する「制御翼」として動かす。
+const tailRoot = new THREE.Group();
+tailRoot.position.set(0, -0.098, -1.030);
+tailRoot.rotation.x = -0.06;
+bodyGroup.add(tailRoot);
+
+const tailFeathers = [];
+const tailShaftMat = new THREE.MeshStandardMaterial({ color: 0x131511, roughness: 0.78 });
+
+function makeTailFeatherGeometry(len, rootW, tipW, notch=0.018) {
+  const geo = new THREE.BufferGeometry();
+  // local: base at z=0, feather points backward to -z. y gives a slight camber.
+  const verts = new Float32Array([
+    -rootW,  0.000,  0.000,
+     rootW,  0.000,  0.000,
+     tipW,   0.012, -len * 0.72,
+     tipW*0.48, 0.004, -len + notch,
+     0.000, -0.006, -len,
+    -tipW*0.48, 0.004, -len + notch,
+    -tipW,   0.012, -len * 0.72
+  ]);
+  geo.setAttribute("position", new THREE.BufferAttribute(verts, 3));
+  geo.setIndex([0,1,2, 0,2,6, 6,2,3, 6,3,5, 5,3,4]);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+for (let i = -4; i <= 4; i++) {
+  const side = i / 4;
+  const absSide = Math.abs(side);
+  const featherGroup = new THREE.Group();
+  featherGroup.userData.side = side;
+  featherGroup.userData.absSide = absSide;
+  featherGroup.userData.baseFan = side * 0.18;
+  featherGroup.userData.microPhase = i * 0.43;
+  featherGroup.userData.asym = Math.sin((i + 9.17) * 12.9898) * 0.012;
+  // 尾羽は平面ではなく、浅い円錐面＋羽同士の段差で保持する。
+  featherGroup.userData.baseIndex = i;
+  featherGroup.userData.layerRank = i + 4;
+  featherGroup.userData.basePosX = 0;
+  featherGroup.userData.basePosY = 0;
+  featherGroup.userData.basePosZ = 0;
+
+  // 尾羽は長く大きくするのではなく、根元は細く胴体に埋め、先端だけ扇状に広げる。
+  const len = (0.44 - 0.055 * absSide + 0.018 * Math.cos(i * 1.7)) * 0.90;
+  const rootW = (0.014 + 0.002 * (1.0 - absSide)) * 0.72;
+  const tipW = (0.035 - 0.004 * absSide) * 1.55;
+
+  const vane = new THREE.Mesh(makeTailFeatherGeometry(len, rootW, tipW, 0.010 + 0.010 * (1.0 - absSide)), tailMat);
+  vane.material.transparent = true;
+  vane.material.opacity = 0.86;
+  featherGroup.add(vane);
+
+  const shaft = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.004, 0.003, len * 0.96, 8),
+    tailShaftMat
+  );
+  shaft.rotation.x = Math.PI / 2;
+  shaft.position.set(0, 0.004, -len * 0.48);
+  featherGroup.add(shaft);
+
+  tailRoot.add(featherGroup);
+  tailFeathers.push(featherGroup);
+}
+
+
+// 尾筒〜尾羽の接続カバー羽。
+// 尾羽の根元を胴体から急に生やさず、短い重なり羽で尾筒に埋める。
+const tailRootCoverts = new THREE.Group();
+tailRootCoverts.position.set(0, -0.074, -0.975);
+tailRootCoverts.rotation.x = -0.04;
+bodyGroup.add(tailRootCoverts);
+const tailRootCovertFeathers = [];
+const tailCovertMat = tailMat.clone();
+tailCovertMat.transparent = true;
+tailCovertMat.opacity = 0.96;
+
+function makeTailRootCovertGeometry(len=0.18, rootW=0.018, tipW=0.030) {
+  const geo = new THREE.BufferGeometry();
+  const verts = new Float32Array([
+    -rootW, 0.000, 0.000,
+     rootW, 0.000, 0.000,
+     tipW,  0.010, -len * 0.72,
+     0.000, 0.006, -len,
+    -tipW,  0.010, -len * 0.72
+  ]);
+  geo.setAttribute("position", new THREE.BufferAttribute(verts, 3));
+  geo.setIndex([0,1,2, 0,2,4, 4,2,3]);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+for (let i = -5; i <= 5; i++) {
+  const side = i / 5;
+  const absSide = Math.abs(side);
+  const g = new THREE.Group();
+  g.userData.side = side;
+  g.userData.absSide = absSide;
+  g.userData.phase = i * 0.37;
+  const len = 0.145 + 0.040 * (1.0 - absSide) + 0.010 * Math.cos(i * 1.4);
+  const mesh = new THREE.Mesh(
+    makeTailRootCovertGeometry(len, 0.014, 0.030 + 0.014 * absSide),
+    tailCovertMat.clone()
+  );
+  mesh.material.color.copy(colWingRoot).lerp(colWingTip, 0.28 + 0.24 * (1.0 - absSide));
+  g.add(mesh);
+  g.position.set(side * 0.026, -0.010 - 0.018 * absSide, -0.020 - 0.012 * absSide);
+  g.rotation.y = side * (0.10 + 0.22 * absSide);
+  g.rotation.x = -0.10 - 0.09 * absSide;
+  g.rotation.z = side * (0.020 + 0.055 * absSide);
+  tailRootCoverts.add(g);
+  tailRootCovertFeathers.push(g);
+}
+
+// 尾羽の根元を「部品の継ぎ目」に見せないための逆向き・短毛レイヤー。
+// 胴体側の羽が尾羽根元に少しかぶさることで、尾筒から自然に生えて見える。
+const tailBridgeFeathers = [];
+const tailBridgeMat = tailMat.clone();
+tailBridgeMat.transparent = true;
+tailBridgeMat.opacity = 0.82;
+for (let i = -6; i <= 6; i++) {
+  const side = i / 6;
+  const absSide = Math.abs(side);
+  const g = new THREE.Group();
+  g.userData.side = side;
+  g.userData.absSide = absSide;
+  g.userData.phase = i * 0.51;
+  const len = 0.110 + 0.020 * (1.0 - absSide);
+  const mesh = new THREE.Mesh(
+    makeTailRootCovertGeometry(len, 0.012, 0.020 + 0.006 * absSide),
+    tailBridgeMat.clone()
+  );
+  mesh.material.color.copy(colBelly).lerp(colWingRoot, 0.54 + 0.22 * absSide);
+  g.add(mesh);
+  g.position.set(side * 0.030, -0.030 - 0.014 * absSide, 0.045 - 0.010 * absSide);
+  g.rotation.x = 0.34 + 0.05 * absSide;
+  g.rotation.y = side * (0.12 + 0.18 * absSide);
+  g.rotation.z = side * (0.025 + 0.045 * absSide);
+  tailRootCoverts.add(g);
+  tailBridgeFeathers.push(g);
+}
+
+
+const shoulderCovers = [];
+for (const sx of [-1, 1]) {
+  const shoulderCover = ellipsoid(0.105, 0.135, 0.30, chestMat, 24);
+  shoulderCover.position.set(sx * 0.40, 0.12, 0.18);
+  shoulderCover.rotation.z = sx * 0.18;
+  shoulderCover.rotation.y = sx * 0.25;
+  bodyGroup.add(shoulderCover);
+  shoulderCovers.push({ side: sx, mesh: shoulderCover });
+}
+
+// 胴体羽毛レイヤー：大きな楕円体の上に短い羽を重ね、単色塗装感を消す。
+// 骨格・翼運動には接続しない見た目専用レイヤー。
+const bodyPlumageGroups = [];
+const bodyPlumageMaterials = [];
+function makeBodyPlumeGeometry(len=0.105, rootW=0.020, tipW=0.010) {
+  const geo = new THREE.BufferGeometry();
+  const verts = new Float32Array([0.000,0.014,0.000, -rootW,0.003,-len*0.18, -tipW,-0.002,-len, 0.000,0.006,-len*1.08, tipW,-0.002,-len, rootW,0.003,-len*0.18]);
+  geo.setAttribute("position", new THREE.BufferAttribute(verts, 3));
+  geo.setIndex([0,1,5, 1,2,5, 5,2,4, 2,3,4]);
+  geo.computeVertexNormals();
+  return geo;
+}
+function makeBodyPlumeMaterial(zone, q, dorsal, ventral, seed) {
+  const noise = pseudoRand(seed);
+  const m = new THREE.MeshStandardMaterial({ color: zone === "belly" ? 0x8b8675 : (zone === "throat" ? 0x0b4f45 : 0x2f7656), roughness: 0.72 + 0.18 * noise, metalness: zone === "throat" ? 0.28 : 0.08, side: THREE.DoubleSide, transparent: true, opacity: zone === "belly" ? 0.78 : 0.84, depthWrite: true });
+  m.userData.zone = zone; m.userData.q = q; m.userData.dorsal = dorsal; m.userData.ventral = ventral; m.userData.noise = noise;
+  bodyPlumageMaterials.push(m);
+  return m;
+}
+function addBodyPlumageLayer() {
+  const g = new THREE.Group();
+  g.name = "body_plumage_layer";
+  bodyGroup.add(g);
+  bodyPlumageGroups.push(g);
+  const rings = [
+    { z: 0.42, y: 0.08, rx: 0.34, ry: 0.36, count: 18, zone: "chest", len: 0.082 },
+    { z: 0.20, y: 0.03, rx: 0.42, ry: 0.44, count: 22, zone: "chest", len: 0.105 },
+    { z: -0.05, y: -0.01, rx: 0.40, ry: 0.39, count: 22, zone: "chest", len: 0.112 },
+    { z: -0.30, y: -0.04, rx: 0.34, ry: 0.32, count: 18, zone: "belly", len: 0.100 },
+    { z: -0.55, y: -0.06, rx: 0.27, ry: 0.25, count: 14, zone: "belly", len: 0.085 }
+  ];
+  for (let r = 0; r < rings.length; r++) {
+    const ring = rings[r];
+    for (let i = 0; i < ring.count; i++) {
+      const a = -Math.PI * 0.88 + (i / Math.max(1, ring.count - 1)) * Math.PI * 1.76;
+      const sx = Math.sin(a), cy = Math.cos(a);
+      const dorsal = clamp01((cy + 0.10) * 0.85);
+      const ventral = clamp01((-cy + 0.20) * 0.70);
+      const sideAbs = Math.abs(sx);
+      const zone = ventral > 0.48 && r >= 2 ? "belly" : ring.zone;
+      const seed = 41.7 + r * 13.9 + i * 3.31;
+      const noise = pseudoRand(seed);
+      const q = i / Math.max(1, ring.count - 1);
+      const len = ring.len * (0.82 + 0.24 * dorsal + 0.10 * noise - 0.08 * ventral);
+      const rootW = 0.014 + 0.008 * (1.0 - sideAbs) + 0.004 * noise;
+      const tipW = rootW * (0.38 + 0.12 * noise);
+      const mesh = new THREE.Mesh(makeBodyPlumeGeometry(len, rootW, tipW), makeBodyPlumeMaterial(zone, q, dorsal, ventral, seed));
+      mesh.position.set(ring.rx * sx, ring.y + ring.ry * cy, ring.z + 0.014 * Math.sin(i * 1.9 + r));
+      mesh.rotation.y = sx * 0.70;
+      mesh.rotation.x = -0.42 - 0.30 * dorsal + 0.24 * ventral + 0.08 * Math.sin(i + r);
+      mesh.rotation.z = -sx * (0.46 + 0.30 * dorsal) + 0.06 * Math.cos(i * 1.3);
+      mesh.scale.setScalar(0.86 + 0.20 * noise);
+      mesh.userData.baseX = mesh.position.x; mesh.userData.baseY = mesh.position.y; mesh.userData.baseZ = mesh.position.z;
+      mesh.userData.baseRotX = mesh.rotation.x; mesh.userData.baseRotY = mesh.rotation.y; mesh.userData.baseRotZ = mesh.rotation.z;
+      mesh.userData.phase = seed; mesh.userData.dorsal = dorsal; mesh.userData.ventral = ventral;
+      g.add(mesh);
+    }
+  }
+  for (let row = 0; row < 3; row++) {
+    const count = 9 - row * 2;
+    for (let i = 0; i < count; i++) {
+      const q = count === 1 ? 0.5 : i / (count - 1);
+      const x = (q - 0.5) * (0.22 - row * 0.035);
+      const y = 0.325 - row * 0.040 + 0.006 * Math.sin(i);
+      const z = 0.755 + row * 0.020;
+      const seed = 203.0 + row * 17.1 + i * 5.7;
+      const mesh = new THREE.Mesh(makeBodyPlumeGeometry(0.060 - row * 0.006, 0.013, 0.006), makeBodyPlumeMaterial("throat", q, 0.4, 0.0, seed));
+      mesh.position.set(x, y, z);
+      mesh.rotation.x = -0.76 + row * 0.12; mesh.rotation.y = x * 1.8; mesh.rotation.z = -(q - 0.5) * 0.55;
+      mesh.userData.baseX = mesh.position.x; mesh.userData.baseY = mesh.position.y; mesh.userData.baseZ = mesh.position.z;
+      mesh.userData.baseRotX = mesh.rotation.x; mesh.userData.baseRotY = mesh.rotation.y; mesh.userData.baseRotZ = mesh.rotation.z;
+      mesh.userData.phase = seed; mesh.userData.dorsal = 0.4; mesh.userData.ventral = 0.0;
+      g.add(mesh);
+    }
+  }
+}
+addBodyPlumageLayer();
+
+// 羽毛密度分布＋翼先端位相遅れ＋ねじれ強化：肩〜胸〜翼根元に短いカバー羽を高密度に配置する。
+// 実物では関節や肩帯は羽毛と胸筋に埋もれて見えないため、
+// 根元ほど密、外側ほど疎になるように重ねる。
+const covertFeatherGroups = [];
+const covertMaterials = [];
+
+function makeCovertFeatherGeometry(len=0.18, rootW=0.026, tipW=0.010) {
+  const geo = new THREE.BufferGeometry();
+  const verts = new Float32Array([
+     0.000, 0.018, 0.000,
+    -rootW, 0.004, -len * 0.18,
+    -tipW,  0.000, -len,
+     0.000, 0.010, -len * 1.08,
+     tipW,  0.000, -len,
+     rootW, 0.004, -len * 0.18
+  ]);
+  geo.setAttribute("position", new THREE.BufferAttribute(verts, 3));
+  geo.setIndex([0,1,5, 1,2,5, 5,2,4, 2,3,4]);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function makeCovertMaterial(q, row) {
+  const noise = pseudoRand(11.3 + q * 37.1 + row * 19.7 + covertMaterials.length * 0.83);
+  const m = new THREE.MeshStandardMaterial({
+    color: 0x315f49,
+    roughness: 0.66 + 0.24 * noise + 0.08 * row,
+    metalness: 0.06 + 0.05 * (1.0 - row),
+    side: THREE.DoubleSide,
+    transparent: false,
+    opacity: 1.0
+  });
+  m.color.copy(colBelly)
+    .lerp(colChest, 0.34 + 0.42 * q + 0.08 * (noise - 0.5))
+    .lerp(colWingRoot, 0.12 + 0.12 * row);
+  m.userData.q = q;
+  m.userData.row = row;
+  m.userData.noise = noise;
+  covertMaterials.push(m);
+  return m;
+}
+
+function addFeatherDensityCover(side) {
+  const g = new THREE.Group();
+  g.userData.side = side;
+  g.userData.baseX = side * 0.365;
+  g.userData.baseY = 0.135;
+  g.userData.baseZ = 0.215;
+  g.position.set(g.userData.baseX, g.userData.baseY, g.userData.baseZ);
+
+  const rows = [
+    { count: 13, y: 0.035, z: 0.020, len: 0.115, spread: 0.155, scale: 1.00, row: 0 },
+    { count: 11, y: 0.005, z: -0.020, len: 0.155, spread: 0.185, scale: 0.92, row: 1 },
+    { count: 9,  y: -0.030, z: -0.050, len: 0.205, spread: 0.205, scale: 0.78, row: 2 }
+  ];
+
+  for (const r of rows) {
+    for (let i = 0; i < r.count; i++) {
+      const q = r.count === 1 ? 0 : i / (r.count - 1);
+      const center = q - 0.5;
+      const len = r.len * (0.82 + 0.26 * (1.0 - Math.abs(center)) + 0.05 * Math.sin(i * 2.17 + r.row));
+      const rootW = 0.018 * r.scale * (1.10 - 0.20 * q);
+      const tipW = 0.0065 * r.scale;
+      const mesh = new THREE.Mesh(makeCovertFeatherGeometry(len, rootW, tipW), makeCovertMaterial(q, r.row / 2));
+      mesh.position.set(
+        side * (0.010 + q * r.spread),
+        r.y + 0.012 * Math.sin(i * 1.63 + r.row),
+        r.z - 0.040 * q + 0.010 * Math.cos(i * 1.91)
+      );
+      mesh.rotation.y = side * (0.72 + 0.34 * q + 0.08 * Math.sin(i));
+      mesh.rotation.z = side * (-0.70 + center * 0.42 + 0.08 * Math.cos(i * 0.7));
+      mesh.rotation.x = -0.35 + 0.18 * q + 0.04 * Math.sin(i * 1.2);
+      mesh.scale.setScalar(0.88 + 0.18 * Math.sin(i * 1.37 + r.row));
+      mesh.userData.baseRotX = mesh.rotation.x;
+      mesh.userData.baseRotY = mesh.rotation.y;
+      mesh.userData.baseRotZ = mesh.rotation.z;
+      mesh.userData.phase = i * 0.41 + r.row * 0.83;
+      mesh.userData.q = q;
+      mesh.userData.row = r.row;
+      g.add(mesh);
+    }
   }
 
-  // =========================
-  // Main loop
-  // =========================
-  const state = { t: 0 };
-  let last = performance.now();
+  covertFeatherGroups.push(g);
+  bodyGroup.add(g);
+}
+addFeatherDensityCover(-1);
+addFeatherDensityCover(1);
+ 
+// 肩帯の見た目専用パーツ：翼骨格には接続せず、
+// 胸郭の表面に短い肩甲骨・烏口骨・叉骨だけを置く。
+// これにより「翼の付け根から尾へ伸びる直方体」に見える長い箱を避ける。
+const girdleMat = new THREE.MeshStandardMaterial({ color: 0xd6b66a, roughness: 0.72 });
+const sternumMat = new THREE.MeshStandardMaterial({ color: 0x3d423f, roughness: 0.88 });
 
-  function frame(ts) {
-    const dt = clamp((ts - last) / 1000, 1 / 240, 1 / 30);
-    last = ts;
-    state.t = ts * 0.001;
+function makeCapsuleBone(radius, length, mat, radial=12) {
+  return new THREE.Mesh(new THREE.CylinderGeometry(radius, radius * 0.82, length, radial), mat);
+}
 
-    const acts = muscleActivations(state.t);
-    stepWing(wingState.right, acts, dt);
-    stepWing(wingState.left, acts, dt);
+// 任意の2点を短い骨で結ぶ。長い直線ロッドに見えないよう、肩帯専用は短く分割する。
+function capsuleBetween(a, b, radius, mat, radial=12) {
+  const dir = new THREE.Vector3().subVectors(b, a);
+  const len = dir.length();
+  const m = makeCapsuleBone(radius, len, mat, radial);
+  m.position.copy(a).add(b).multiplyScalar(0.5);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+  return m;
+}
 
-    ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-    const boxes = getLayout();
-    drawPanel(boxes.front, 'Front view');
-    drawPanel(boxes.side, 'Left view');
-    drawFrontBird(boxes.front, state.t);
-    drawSideBird(boxes.side, state.t);
+function addShoulderGirdleVisual(side) {
+  const g = new THREE.Group();
+  g.position.set(side * 0.405, 0.145, 0.205);
 
-    requestAnimationFrame(frame);
+  // 翼関節を頂点にした「三角肩帯」。
+  // 1本の長い棒をやめ、肩甲骨・烏口骨・叉骨の短い3方向に分解する。
+  const joint = new THREE.Vector3(0.000, 0.000, 0.000);
+  const scapBack = new THREE.Vector3(-side * 0.055, 0.075, -0.215);   // 背中側へ短く後退
+  const coracoidDown = new THREE.Vector3(-side * 0.075, -0.145, -0.015); // 胸骨側へ落ちる
+  const furculaFront = new THREE.Vector3(-side * 0.145, -0.010, 0.125);  // 前胸側へ向かう
+
+  const jointBall = new THREE.Mesh(
+    new THREE.SphereGeometry(0.032, 14, 10),
+    girdleMat
+  );
+  jointBall.position.copy(joint);
+  g.add(jointBall);
+
+  const scapula = capsuleBetween(joint, scapBack, 0.015, girdleMat, 10);
+  scapula.name = "short_scapula";
+  g.add(scapula);
+
+  const coracoid = capsuleBetween(joint, coracoidDown, 0.018, girdleMat, 10);
+  coracoid.name = "short_coracoid";
+  g.add(coracoid);
+
+  const furculaArm = capsuleBetween(joint, furculaFront, 0.012, girdleMat, 10);
+  furculaArm.name = "short_furcula_arm";
+  g.add(furculaArm);
+
+  // 筋肉に埋もれる肩の丸み。骨をむき出しの棒に見せないための薄い被覆。
+  const musclePad = ellipsoid(0.070, 0.050, 0.095, chestMat, 16);
+  musclePad.position.set(-side * 0.018, -0.020, 0.010);
+  musclePad.rotation.y = side * 0.35;
+  musclePad.material = musclePad.material.clone();
+  musclePad.material.transparent = true;
+  musclePad.material.opacity = 0.55;
+  g.add(musclePad);
+
+  g.userData.side = side;
+  g.userData.baseX = g.position.x;
+  g.userData.baseY = g.position.y;
+  g.userData.baseZ = g.position.z;
+  shoulderGirdleVisuals.push(g);
+  bodyGroup.add(g);
+}
+
+// 叉骨の中央バネ：左右の肩を硬く一本で結ばず、胸前で浅いV字にしなる表示だけを持たせる。
+const furculaSpring = new THREE.Group();
+bodyGroup.add(furculaSpring);
+function rebuildFurculaSpring(breathe=0) {
+  furculaSpring.clear();
+  const left = new THREE.Vector3(-0.255 - breathe, 0.120, 0.330);
+  const right = new THREE.Vector3(0.255 + breathe, 0.120, 0.330);
+  const notch = new THREE.Vector3(0, 0.050 - breathe * 0.35, 0.380 + breathe * 0.20);
+  furculaSpring.add(capsuleBetween(left, notch, 0.010, girdleMat, 10));
+  furculaSpring.add(capsuleBetween(right, notch, 0.010, girdleMat, 10));
+}
+rebuildFurculaSpring(0);
+
+// 竜骨突起の見た目。胸筋の下に短く置き、尾筒とは連結させない。
+const keel = ellipsoid(0.075, 0.22, 0.34, sternumMat, 24);
+keel.position.set(0, -0.300, 0.050);
+keel.rotation.x = -0.06;
+bodyGroup.add(keel);
+addShoulderGirdleVisual(-1);
+addShoulderGirdleVisual(1);
+
+function makeBone(len, color, side) {
+  const m = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.03, 0.03, len, 10),
+    new THREE.MeshStandardMaterial({ color })
+  );
+  m.rotation.z = Math.PI / 2;
+  m.position.x = side * len / 2;
+  return m;
+}
+
+function makeJoint(size, color) {
+  // 研究用の関節ボールは本物の見た目では目立ちすぎるため、
+  // 骨格計算用の位置保持だけにし、描画は羽毛カバーで隠す。
+  const m = new THREE.Mesh(
+    new THREE.SphereGeometry(size * 0.16, 10, 8),
+    new THREE.MeshStandardMaterial({ color: 0x314f3f, roughness: 0.95, transparent: true, opacity: 0.10 })
+  );
+  m.visible = false;
+  return m;
+}
+
+function makeWingSurface() {
+  // 連続翼面：span方向9分割 × chord方向3分割
+  // 羽毛翼のベースとなる薄い翼膜。実際の見た目は featherStrips が主役。
+  const spanN = 9;
+  const chordN = 3;
+  const verts = [];
+  const indices = [];
+
+  for (let c = 0; c < chordN; c++) {
+    for (let s = 0; s < spanN; s++) {
+      verts.push(0, 0, 0);
+    }
   }
 
-  requestAnimationFrame(frame);
-})();
+  for (let c = 0; c < chordN - 1; c++) {
+    for (let s = 0; s < spanN - 1; s++) {
+      const a = c * spanN + s;
+      const b = a + 1;
+      const d = (c + 1) * spanN + s;
+      const e = d + 1;
+      indices.push(a, d, b, b, d, e);
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(verts), 3));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+
+  const mat = wingMat.clone();
+  mat.userData.spanShade = 0.55;
+  mat.userData.noise = pseudoRand(41.7);
+  wingMaterials.push(mat);
+
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.userData.spanN = spanN;
+  mesh.userData.chordN = chordN;
+  mesh.userData.featherStrips = [];
+
+  // 羽毛スリット：外翼に短冊状の羽を並べる
+  const stripCount = 10;
+  for (let i = 0; i < stripCount; i++) {
+    const fg = new THREE.BufferGeometry();
+    fg.setAttribute("position", new THREE.BufferAttribute(new Float32Array([
+      0,0,0, 0,0,0, 0,0,0, 0,0,0
+    ]), 3));
+    fg.setIndex([0,2,1, 1,2,3]);
+    fg.computeVertexNormals();
+
+    const fm = featherMat.clone();
+    const q = i / Math.max(1, stripCount - 1);
+    fm.userData.spanShade = q;
+    fm.userData.noise = pseudoRand(100 + i * 9.17 + q * 3.1);
+    fm.color.copy(colWingRoot).lerp(colWingTip, 0.20 + 0.32 * q + 0.06 * (fm.userData.noise - 0.5));
+    fm.transparent = false;
+    fm.opacity = 1.0;
+    const strip = new THREE.Mesh(fg, fm);
+    strip.userData.index = i;
+    strip.userData.count = stripCount;
+
+    const shaftMat = featherMat.clone();
+    shaftMat.color.copy(colWingRoot).lerp(colWingTip, 0.30 + 0.38 * q);
+    shaftMat.roughness = 0.84;
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.0065, 0.0035, 1, 8), shaftMat);
+    shaft.userData.spanShade = q;
+    shaft.visible = false;
+    scene.add(shaft);
+    strip.userData.shaft = shaft;
+    wingMaterials.push(shaftMat);
+
+    scene.add(strip);
+    mesh.userData.featherStrips.push(strip);
+  }
+
+  return mesh;
+}
+
+
+function makeWing(side) {
+  const root = new THREE.Group();
+  root.position.set(side * 0.42, 0.15, 0.18);
+  bird.add(root);
+
+  // 旧版の長い直方体肩甲骨は、翼根元から尾へ伸びる棒に見えたため廃止。
+  // 肩帯は bodyGroup 側の短い見た目パーツとして描画し、翼骨格は既存rootから動かす。
+  // 既存の updateWingMotion() が w.scap を参照するため、表示用ではない互換ダミーを残す。
+  // これで構造・位相を変えずに停止だけ防ぐ。
+  const scap = new THREE.Group();
+  root.add(scap);
+
+  const shoulder = new THREE.Group();
+  shoulder.position.set(side * 0.16, -0.02, 0.25);
+  root.add(shoulder);
+  shoulder.add(makeJoint(0.07, 0xffff00));
+
+  const upperLen = 1.05;
+  const foreLen = 1.00;
+  const handLen = 0.90;
+
+  shoulder.add(makeBone(upperLen, 0xff3333, side));
+
+  const elbow = new THREE.Group();
+  elbow.position.x = side * upperLen;
+  shoulder.add(elbow);
+  elbow.add(makeJoint(0.055, 0xffaa00));
+  elbow.add(makeBone(foreLen, 0x33dd66, side));
+
+  const wrist = new THREE.Group();
+  wrist.position.x = side * foreLen;
+  elbow.add(wrist);
+  wrist.add(makeJoint(0.05, 0x00ccff));
+  wrist.add(makeBone(handLen, 0x3366ff, side));
+
+  const tip = new THREE.Group();
+  tip.position.x = side * handLen;
+  wrist.add(tip);
+  tip.add(makeJoint(0.04, 0xffffff));
+
+  const surface = makeWingSurface();
+  scene.add(surface);
+
+  return {
+    side, root, scap, shoulder, elbow, wrist, tip, surface,
+    prev: null,
+    speeds: [0,0,0,0]
+  };
+}
+
+const leftWing = makeWing(-1);
+const rightWing = makeWing(1);
+
+const vS = new THREE.Vector3();
+const vE = new THREE.Vector3();
+const vW = new THREE.Vector3();
+const vT = new THREE.Vector3();
+
+function setVertex(arr, i, v) {
+  arr[i*3] = v.x;
+  arr[i*3+1] = v.y;
+  arr[i*3+2] = v.z;
+}
+
+const tmpAxisA = new THREE.Vector3();
+const tmpAxisB = new THREE.Vector3();
+const tmpAxisMid = new THREE.Vector3();
+const tmpAxisDir = new THREE.Vector3();
+function updateCylinderBetween(mesh, a, b, radiusScale=1.0) {
+  if (!mesh) return;
+  tmpAxisDir.subVectors(b, a);
+  const len = tmpAxisDir.length();
+  if (!Number.isFinite(len) || len < 1e-5) {
+    mesh.visible = false;
+    return;
+  }
+  mesh.visible = true;
+  tmpAxisMid.copy(a).add(b).multiplyScalar(0.5);
+  mesh.position.copy(tmpAxisMid);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tmpAxisDir.normalize());
+  mesh.scale.set(radiusScale, len, radiusScale);
+}
+
+function updateWingMotion(w, t) {
+  const side = w.side;
+  const tipLag = 0.34;
+  const flap = Math.sin(t);
+  const flapMid = Math.sin(t - tipLag * 0.5);
+  const flapTip = Math.sin(t - tipLag);
+  const sweep = Math.sin(t + Math.PI / 2);
+  const sweepTip = Math.sin(t + Math.PI / 2 - tipLag);
+  const twist = Math.sin(t + Math.PI);
+
+  w.scap.rotation.z = side * (0.08 + 0.12 * Math.sin(t + 0.65));
+  w.scap.rotation.x = 0.10 * Math.sin(t + 0.85);
+  w.scap.rotation.y = side * 0.16 * Math.sin(t + 0.30);
+
+  // 手首主導＋水平寄りホバリング：
+  // 肩はストローク面を作り、手首が迎角反転と翼先ねじれを主導する。
+  let down = Math.max(0, flap);
+  let up = Math.max(0, -flap);
+
+  let aoaDown = 0.46;   // 約+26°
+  let aoaUp = -0.22;    // 約-13°
+  let aoaReal = aoaDown * down + aoaUp * up;
+
+  let verticalStroke = 0.28 * flap;                 // 上下成分はさらに控えめ
+  let horizontalSweep = 0.82 * sweep;               // 水平掃引を主役にする
+  let figureEight = 0.30 * Math.sin(t * 2.0);       // 8の字補助
+
+  // 手首主導の返し。切り返しより少し先行させる。
+  let wristLead = Math.sin(t + 1.35 - tipLag * 0.7);
+  let wristSnap = Math.sin(t + Math.PI / 2.0 - tipLag);
+
+  // 肩：大きく上下に叩かず、水平面を掃く
+  w.shoulder.rotation.x = verticalStroke + aoaReal * 0.78;
+  w.shoulder.rotation.y = side * (horizontalSweep + 0.08);
+  w.shoulder.rotation.z = side * (0.44 + 0.25 * sweep + figureEight);
+
+  // 肘：大きく畳まず、手首に遅れてしなる
+  w.elbow.rotation.z = side * (-0.16 - 0.06 * Math.max(0, flapMid) + 0.10 * Math.sin(t + 0.95 - tipLag * 0.5));
+
+  // 手首：主役。回内回外を強くし、上下ストロークで迎角を反転させる
+  w.wrist.rotation.z = side * (0.58 * wristLead + 0.07 * sweepTip);
+  w.wrist.rotation.x = 1.18 * wristSnap + 0.18 * Math.sin((t - tipLag) * 2.0);
+
+  // 羽先側の追加しなり感：前フレーム速度を使い、速い切り返しほど羽先が遅れてたわむ。
+  if (w.tip) {
+    const speedFlex = Math.min(0.24, (w.speeds && w.speeds[3] ? w.speeds[3] : 0) * 6.5);
+    const inertialLag = Math.sin(t + 2.05 - tipLag);
+    w.tip.rotation.x = 0.44 * Math.sin(t + 1.65 - tipLag) - speedFlex * inertialLag;
+    w.tip.rotation.z = side * (0.28 * Math.sin(t + 1.25 - tipLag) + 0.16 * speedFlex * Math.cos(t - tipLag));
+  }
+}
+
+function updateWingGeometry(w, t) {
+  w.root.updateWorldMatrix(true, true);
+  w.shoulder.getWorldPosition(vS);
+  w.elbow.getWorldPosition(vE);
+  w.wrist.getWorldPosition(vW);
+  w.tip.getWorldPosition(vT);
+
+  const p = [vS.clone(), vE.clone(), vW.clone(), vT.clone()];
+
+  if (w.prev) {
+    for (let i = 0; i < 4; i++) {
+      const d = p[i].distanceTo(w.prev[i]);
+      w.speeds[i] = w.speeds[i] * 0.72 + d * 0.28;
+    }
+  }
+  w.prev = p.map(q => q.clone());
+
+  const arr = w.surface.geometry.attributes.position.array;
+  const spanN = w.surface.userData.spanN || 9;
+  const chordN = w.surface.userData.chordN || 3;
+
+  const root = p[0], elbow = p[1], wrist = p[2], tip = p[3];
+
+  const flapPhase = Math.sin(t);
+  const down = Math.max(0, flapPhase);
+  const up = Math.max(0, -flapPhase);
+  const turn = Math.pow(1.0 - Math.abs(flapPhase), 2.0); // 上死点・下死点の返し
+
+  // 実物寄り：全翼を一様に拡大縮小しない。
+  // 次列風切・内翼は比較的面を保ち、初列風切・外翼だけが大きく開閉する。
+  const innerCoverts = 1.0 + 0.08 * down - 0.04 * up;
+  const secondaryArea = 1.0 + 0.14 * down - 0.09 * up;
+  const primaryArea = 1.0 + 0.23 * down - 0.31 * up;
+
+  // 振り上げでは羽軸間が開いて空気を逃がし、振り下げでは閉じて連続面に近づく。
+  const slitBase = 0.010 + 0.018 * turn + 0.145 * up - 0.006 * down;
+
+  // 振り下げでは後縁側のキャンバーが増え、振り上げでは薄く逃げる。
+  const camber = 0.035 * down - 0.020 * up;
+
+  const tipLag = 0.34;
+  const wristTwist = Math.sin(t + Math.PI / 2.0 - tipLag);
+  const elasticWave = Math.sin(t + 1.45 - tipLag);
+  const tipFlexWave = Math.sin(t + 1.10 - tipLag);
+
+  function spanPoint(u) {
+    if (u < 0.38) {
+      return root.clone().lerp(elbow, u / 0.38);
+    } else if (u < 0.70) {
+      return elbow.clone().lerp(wrist, (u - 0.38) / 0.32);
+    } else {
+      return wrist.clone().lerp(tip, (u - 0.70) / 0.30);
+    }
+  }
+
+  function smoothstep(a, b, x) {
+    const q = Math.max(0, Math.min(1, (x - a) / (b - a)));
+    return q * q * (3 - 2 * q);
+  }
+
+  function areaScaleAt(u) {
+    const inner = 1.0 - smoothstep(0.22, 0.48, u);
+    const mid = smoothstep(0.25, 0.55, u) * (1.0 - smoothstep(0.66, 0.84, u));
+    const outer = smoothstep(0.62, 0.95, u);
+    return innerCoverts * inner + secondaryArea * mid + primaryArea * outer + 1.0 * Math.max(0, 1.0 - inner - mid - outer);
+  }
+
+  // ベース翼面は「羽毛の重なりで作る準連続面」。振り上げで薄くし、空気抜けを視覚化。
+  w.surface.material.opacity = wingTransparent ? (0.15 + 0.10 * down - 0.085 * up) : 0.85;
+
+  for (let c = 0; c < chordN; c++) {
+    const chord = c / (chordN - 1);
+    for (let s = 0; s < spanN; s++) {
+      const u = s / (spanN - 1);
+      const idx = c * spanN + s;
+      const base = spanPoint(u);
+
+      const scaleU = areaScaleAt(u);
+      const primary = smoothstep(0.64, 0.96, u);
+      const secondary = smoothstep(0.30, 0.62, u) * (1.0 - primary);
+
+      // 後縁幅：内翼は安定、外翼はアップストロークで強く閉じる。
+      const baseWidth = (0.055 + 0.50 * Math.sin(Math.PI * u) + 0.18 * u);
+      const chordWidth = baseWidth * chord * scaleU;
+
+      const twistGain = Math.pow(u, 1.75);
+      const tipDelayBoost = smoothstep(0.58, 1.00, u);
+      const twistAngle = (0.16 + 1.22 * twistGain) * wristTwist + 0.34 * twistGain * elasticWave;
+      const spanFlex = 0.055 * tipDelayBoost * tipFlexWave * (0.35 + 0.65 * chord);
+
+      // 実物寄りの「閉じる」方向：外翼の後縁が根元側・上側へ逃げる。
+      const outerFold = up * primary * (0.22 + 0.05 * turn);
+      const featherTuck = up * primary * chord * 0.18;
+
+      const spread = w.side * ((0.055 * u + 0.34 * u * chord) * scaleU - outerFold - featherTuck);
+
+      const chordArch = Math.sin(Math.PI * chord);
+      const featherBundle = (0.020 + 0.030 * secondary + 0.040 * primary) * chordArch * (0.55 + 0.45 * down);
+      const upperFluff = 0.018 * chordArch * (1.0 - 0.35 * up) + 0.010 * Math.sin(9.0 * u + t * 0.8) * chordArch;
+      const trailingSoftness = 0.018 * chord * chord * (0.40 + 0.80 * primary) * (0.55 + 0.45 * up);
+
+      const yDrop = chordWidth * Math.cos(twistAngle) - camber * chord * (0.4 + 0.8 * secondary + 1.1 * primary) - spanFlex - featherBundle - upperFluff + trailingSoftness;
+      const zTwist = chordWidth * Math.sin(twistAngle) - 0.018 * up * primary * chord + w.side * 0.018 * chordArch * (secondary + primary) * Math.sin(t + u * 4.0);
+
+      arr[idx*3+0] = base.x + spread;
+      arr[idx*3+1] = base.y - yDrop;
+      arr[idx*3+2] = base.z - 0.055 * s * chord + zTwist;
+    }
+  }
+
+  // 羽毛スリット短冊：初列風切と次列風切で振る舞いを分ける
+  const strips = w.surface.userData.featherStrips || [];
+  for (let i = 0; i < strips.length; i++) {
+    const strip = strips[i];
+    const fc = strip.userData.count;
+    const q0 = i / fc;
+    const q1 = (i + 0.82) / fc;
+    const u0 = 0.30 + q0 * 0.64;
+    const u1 = 0.30 + q1 * 0.64;
+
+    const b0 = spanPoint(u0);
+    const b1 = spanPoint(u1);
+
+    const localU = (u0 + u1) * 0.5;
+    const primary = smoothstep(0.64, 0.96, localU);
+    const secondary = smoothstep(0.30, 0.62, localU) * (1.0 - primary);
+    const scaleU = areaScaleAt(localU);
+
+    const twistGain = Math.pow(localU, 1.75);
+    const tipDelayBoost = smoothstep(0.58, 1.00, localU);
+    const twistAngle = (0.16 + 1.30 * twistGain) * wristTwist + 0.38 * twistGain * elasticWave;
+    const spanFlex = 0.060 * tipDelayBoost * tipFlexWave;
+
+    // 初列は長く、振り上げで強くすぼむ。次列は面を保つ。
+    const lengthBase = 0.18 + 0.38 * localU + 0.18 * primary + 0.05 * secondary;
+    const length = lengthBase * scaleU;
+    const gap = slitBase * (0.25 + 1.55 * primary + 0.55 * secondary);
+
+    // 振り上げ時だけ羽が櫛状に開く。振り下げでは重なって面になる。
+    const comb = up * primary * (i - fc * 0.5) / fc;
+    const rootShift = w.side * gap * ((i - fc/2) / fc + comb * 1.8);
+
+    function featherEnd(base, u, sideEdge) {
+      const primaryLocal = smoothstep(0.64, 0.96, u);
+      const scaleLocal = areaScaleAt(u);
+      const closeOnUp = up * primaryLocal * 0.20;
+      const outward = w.side * ((0.10 + 0.43*u) * scaleLocal - closeOnUp) + rootShift;
+      const vaneCrown = 0.022 * (0.35 + primaryLocal + secondary * 0.55) * (0.50 + 0.50 * down);
+      const featherCurl = 0.018 * primaryLocal * Math.sin(t + u * 5.5 + sideEdge * 1.7);
+      const yDrop = length * Math.cos(twistAngle) * (0.70 + 0.30*sideEdge) - camber * (0.6 + primaryLocal) - spanFlex * (0.5 + primaryLocal) - vaneCrown;
+      const zOff = length * Math.sin(twistAngle) - 0.12*u - 0.04 * up * primaryLocal + w.side * featherCurl;
+      return new THREE.Vector3(
+        base.x + outward + w.side * sideEdge * gap,
+        base.y - yDrop,
+        base.z + zOff
+      );
+    }
+
+    // 根元側は翼面に接続、先端側だけ開閉するので「羽毛が空気を逃がす」見え方になる。
+    const p0 = b0.clone();
+    const p1 = b1.clone();
+    const p2 = featherEnd(b0, u0, -0.5);
+    const p3 = featherEnd(b1, u1, 0.5);
+
+    const fa = strip.geometry.attributes.position.array;
+    p2.y += 0.010 * (0.4 + primary) * Math.sin(t * 0.9 + i * 0.73);
+    p3.y -= 0.008 * (0.4 + primary) * Math.cos(t * 0.8 + i * 0.61);
+
+    setVertex(fa, 0, p0);
+    setVertex(fa, 1, p1);
+    setVertex(fa, 2, p2);
+    setVertex(fa, 3, p3);
+    strip.geometry.attributes.position.needsUpdate = true;
+    strip.geometry.computeVertexNormals();
+
+    tmpAxisA.copy(p0).lerp(p1, 0.50);
+    tmpAxisB.copy(p2).lerp(p3, 0.50);
+    updateCylinderBetween(strip.userData.shaft, tmpAxisA, tmpAxisB, 1.0 + 0.30 * primary);
+
+    // ダウンストロークは密で不透明、アップストロークは透けてスリットが見える。
+    strip.material.opacity = wingTransparent ? (0.44 + 0.24*down - 0.16*up + 0.05*primary) : 0.92;
+    if (strip.userData.shaft) strip.userData.shaft.material.opacity = strip.material.opacity;
+  }
+
+  w.surface.geometry.attributes.position.needsUpdate = true;
+  w.surface.geometry.computeVertexNormals();
+
+}
+
+// 圧力・流線・渦・粒子・履歴は完全削除。
+
+let dragging = false, lastX = 0, lastY = 0, lastPinch = 0;
+
+function dist(e) {
+  const dx = e.touches[0].clientX - e.touches[1].clientX;
+  const dy = e.touches[0].clientY - e.touches[1].clientY;
+  return Math.sqrt(dx*dx + dy*dy);
+}
+
+renderer.domElement.addEventListener("touchstart", e => {
+  e.preventDefault();
+  if (e.touches.length === 1) {
+    dragging = true;
+    lastX = e.touches[0].clientX;
+    lastY = e.touches[0].clientY;
+  } else if (e.touches.length === 2) {
+    dragging = false;
+    lastPinch = dist(e);
+  }
+}, { passive:false });
+
+renderer.domElement.addEventListener("touchmove", e => {
+  e.preventDefault();
+  if (e.touches.length === 1 && dragging) {
+    const x = e.touches[0].clientX;
+    const y = e.touches[0].clientY;
+    camTheta -= (x - lastX) * 0.006;
+    camPhi -= (y - lastY) * 0.006;
+    lastX = x;
+    lastY = y;
+    updateCamera();
+  } else if (e.touches.length === 2) {
+    const d = dist(e);
+    camRadius -= (d - lastPinch) * 0.018;
+    lastPinch = d;
+    updateCamera();
+  }
+}, { passive:false });
+
+renderer.domElement.addEventListener("touchend", () => dragging = false);
+
+window.addEventListener("keydown", (e) => {
+  if (e.key === "t" || e.key === "T") {
+    nextMapMode();
+  }
+});
+
+document.getElementById("modeButton").addEventListener("click", (e) => {
+  e.stopPropagation();
+  nextMapMode();
+});
+
+applyMapMode();
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const t = Date.now() * 0.0046;
+  // 生体らしさの最終調整：完全な機械周期を避ける。
+  // 骨格長・関節数・基本位相は維持し、観察上の微小なリズム揺らぎだけを足す。
+  const bioRhythm = 0.014 * Math.sin(t * 0.63 + 0.4) + 0.007 * Math.sin(t * 1.17);
+  const tLive = t + bioRhythm;
+  updateLivingColors(tLive);
+
+  for (const p of bodySpeckles) {
+    p.material.opacity = p.userData.baseOpacity * (0.82 + 0.18 * Math.sin(t * 0.7 + p.userData.phase));
+  }
+
+  const flapPhase = tLive - 0.22;
+  const downstroke = Math.sin(flapPhase);
+  const reversal = Math.pow(Math.abs(Math.cos(flapPhase)), 2.0);
+
+  // 胴体運動分離：胸・腹・頭・尾筒を同時に動かさない。
+  // 翼骨格と位相は維持し、見た目の反力・慣性だけを分離する。
+  const thoraxLag = tLive - 0.30;      // 胸筋：翼に近く、反応が早い
+  const abdomenLag = tLive - 0.62;     // 腹：質量があり遅れる
+  const headStabilize = tLive - 0.82;  // 頭：視線安定のため振幅を小さく遅く
+  const tailBaseLag = tLive - 0.78;    // 腰〜尾筒：さらに遅れて追従
+
+  // 胴体全体は小さくピッチング。ただし頭を大きく揺らさないため振幅は控えめ。
+  bird.rotation.x = -0.18 + 0.010 * Math.sin(tLive - 0.48) + 0.007 * Math.sin(flapPhase - 0.62);
+  bird.rotation.z = 0.0045 * Math.sin(tLive * 0.73 + 0.9) + 0.0025 * Math.sin(tLive * 1.91);
+  bird.position.x = 0.0065 * Math.sin(tLive * 0.83 + 0.3) + 0.0025 * Math.sin(tLive * 1.73);
+  bird.position.y = 0.032 * Math.sin(tLive * 0.5) - 0.009 * downstroke;
+  bird.position.z = 0.0055 * Math.sin(tLive * 0.71 + 1.1);
+
+  // 胸郭：胸筋が主役。上下だけでなく前後にもごく小さく伸縮させる。
+  const thoraxPump = Math.sin(thoraxLag * 2.0 + 0.35);
+  chest.scale.x = 0.43 * (1.0 + 0.014 * downstroke + 0.006 * reversal);
+  chest.scale.y = 0.50 * (1.0 + 0.024 * thoraxPump + 0.010 * reversal);
+  chest.scale.z = 0.62 * (1.0 - 0.014 * downstroke - 0.008 * thoraxPump);
+  chest.rotation.z = 0.007 * Math.sin(thoraxLag);
+  chest.rotation.x = -0.10 + 0.016 * Math.sin(thoraxLag - 0.25);
+
+  // 腹：胸より遅れ、振幅も少し小さくする。
+  const abdomenInertia = Math.sin(abdomenLag * 2.0 + 1.1);
+  abdomen.scale.x = 0.34 * (1.0 - 0.006 * Math.sin(abdomenLag));
+  abdomen.scale.y = 0.36 * (1.0 + 0.012 * abdomenInertia);
+  abdomen.scale.z = 0.56 * (1.0 + 0.016 * abdomenInertia);
+  abdomen.rotation.x = 0.08 - 0.014 * Math.sin(abdomenLag - 0.10);
+
+  // 腰〜尾筒は胴体より少し遅れてしなる。急な継ぎ目ではなく、
+  // 胴体後端が尾羽を支える柔らかい収束部として動く。
+  rump.scale.x = 0.20 * (1.0 - 0.010 * downstroke);
+  rump.scale.y = 0.18 * (1.0 + 0.008 * reversal);
+  rump.scale.z = 0.34 * (1.0 + 0.012 * Math.sin(tailBaseLag + 0.55));
+  rump.rotation.x = 0.12 - 0.014 * Math.sin(tailBaseLag - 0.15);
+
+  tailCone.scale.x = 0.155 * (1.0 - 0.014 * downstroke + 0.008 * Math.sin(tailBaseLag));
+  tailCone.scale.y = 0.135 * (1.0 + 0.010 * reversal);
+  tailCone.scale.z = 0.315 * (1.0 + 0.018 * Math.sin(tailBaseLag + 0.45));
+  tailCone.rotation.x = 0.16 - 0.018 * Math.sin(tailBaseLag - 0.22);
+  tailCone.position.y = -0.082 - 0.004 * reversal;
+  tailCone.position.z = -1.035 + 0.008 * Math.sin(tailBaseLag + 0.30);
+
+  tailTipSleeve.scale.x = 0.095 * (1.0 - 0.020 * downstroke);
+  tailTipSleeve.scale.y = 0.080 * (1.0 + 0.010 * reversal);
+  tailTipSleeve.scale.z = 0.165 * (1.0 + 0.014 * Math.sin(tailBaseLag + 0.70));
+  tailTipSleeve.rotation.x = 0.12 - 0.016 * Math.sin(tailBaseLag - 0.10);
+  tailTipSleeve.position.y = -0.092 - 0.004 * reversal;
+  tailTipSleeve.position.z = -1.145 + 0.007 * Math.sin(tailBaseLag + 0.45);
+
+  for (const c of tailConeFeathers) {
+    const side = c.userData.side;
+    const absSide = c.userData.absSide;
+    const row = c.userData.row;
+    const soft = 0.007 * Math.sin(t * 1.15 + c.userData.phase);
+    c.rotation.x = c.userData.baseRotX - 0.010 * downstroke + soft;
+    c.rotation.y = c.userData.baseRotY + side * 0.018 * Math.sin(thoraxLag - 0.20);
+    c.rotation.z = c.userData.baseRotZ + side * 0.010 * Math.sin(t * 0.9 + row);
+    c.position.y = c.userData.baseY - 0.003 * reversal;
+    c.position.z = c.userData.baseZ + 0.004 * Math.sin(thoraxLag + row * 0.4);
+  }
+
+  chestBellyBlend.scale.x = 0.38 * (1.0 + 0.004 * Math.sin(thoraxLag));
+  chestBellyBlend.scale.y = 0.30 * (1.0 + 0.006 * reversal);
+  chestBellyBlend.scale.z = 0.42 * (1.0 + 0.006 * Math.sin(thoraxLag + 0.7));
+  chestBellyBlend.rotation.x = -0.02 + 0.006 * Math.sin(thoraxLag - 0.1);
+
+  // 頭部安定：胸の反力に完全同期させず、ホバリング中の視線固定感を優先する。
+  neck.rotation.x = -0.16 - 0.006 * Math.sin(headStabilize + 0.35);
+  neck.rotation.y = 0.004 * Math.sin(headStabilize * 0.8);
+  head.rotation.x = -0.05 + 0.0035 * Math.sin(headStabilize + 0.10) + 0.0020 * Math.sin(tLive * 2.6 + 0.2);
+  head.rotation.y = 0.0045 * Math.sin(headStabilize * 0.9 + 0.5) + 0.0028 * Math.sin(tLive * 3.2);
+  head.rotation.z = 0.0018 * Math.sin(tLive * 2.1 + 0.7);
+
+  // 目は頭に固定しつつ、ごく小さく遅れて揺らす。視線が泳ぎすぎると不自然なので振幅は極小。
+  for (const e of eyes) {
+    const sx = e.userData.side || 1;
+    e.position.x = e.userData.baseX + sx * 0.0018 * Math.sin(tLive * 1.35 + 0.4);
+    e.position.y = e.userData.baseY + 0.0015 * Math.sin(tLive * 1.9 + 0.2);
+    e.position.z = e.userData.baseZ + 0.0012 * Math.sin(tLive * 1.2);
+    e.rotation.y = sx * (0.28 + 0.010 * Math.sin(tLive * 1.55));
+    e.rotation.x = 0.04 + 0.006 * Math.sin(tLive * 1.85 + 0.3);
+  }
+
+  for (const c of shoulderCovers) {
+    const side = c.side;
+    c.mesh.position.y = 0.12 + 0.014 * Math.sin(thoraxLag - 0.15);
+    c.mesh.position.z = 0.18 - 0.018 * downstroke;
+    c.mesh.rotation.z = side * (0.18 + 0.035 * Math.sin(thoraxLag - 0.20));
+    c.mesh.rotation.y = side * (0.25 + 0.020 * Math.sin(thoraxLag + 0.40));
+  }
+
+  // 胴体表面の短い羽毛も胸郭の呼吸・反力に追従させる。
+  // 大きく動かすと虫のように見えるため、根元だけ微小に揺らす。
+  for (const g of bodyPlumageGroups) {
+    g.position.y = 0.004 * Math.sin(thoraxLag - 0.15);
+    g.position.z = -0.010 * downstroke;
+    g.rotation.x = 0.006 * Math.sin(thoraxLag - 0.20);
+    g.rotation.z = 0.004 * Math.sin(thoraxLag + 0.25);
+    for (const f of g.children) {
+      const dorsal = f.userData.dorsal || 0;
+      const ventral = f.userData.ventral || 0;
+      const phase = f.userData.phase || 0;
+      const flutter = 0.006 * Math.sin(t * 2.1 + phase) * (0.35 + 0.55 * dorsal + 0.25 * ventral);
+      f.position.y = f.userData.baseY + 0.0025 * Math.sin(thoraxLag + phase * 0.03) * (0.5 + dorsal);
+      f.position.z = f.userData.baseZ - 0.004 * downstroke * (0.3 + dorsal);
+      f.rotation.x = f.userData.baseRotX + flutter;
+      f.rotation.y = f.userData.baseRotY + flutter * 0.38;
+      f.rotation.z = f.userData.baseRotZ + 0.004 * Math.sin(t * 1.4 + phase);
+    }
+  }
+
+  // 羽毛密度カバーも胸郭・肩帯に追従。
+  // 根元の短い羽は大きく羽ばたかせず、微小に震わせるだけにする。
+  for (const g of covertFeatherGroups) {
+    const side = g.userData.side;
+    g.position.x = g.userData.baseX + side * 0.006 * Math.sin(thoraxLag - 0.18);
+    g.position.y = g.userData.baseY + 0.010 * Math.sin(thoraxLag - 0.25);
+    g.position.z = g.userData.baseZ - 0.020 * downstroke;
+    g.rotation.x = 0.018 * Math.sin(thoraxLag - 0.16);
+    g.rotation.y = side * 0.026 * Math.sin(thoraxLag - 0.32);
+    g.rotation.z = side * 0.018 * Math.sin(thoraxLag + 0.12);
+    for (const f of g.children) {
+      const q = f.userData.q || 0;
+      const row = f.userData.row || 0;
+      const flutter = 0.010 * Math.sin(t * 2.6 + f.userData.phase) * (0.35 + q + row * 0.22);
+      f.rotation.x = f.userData.baseRotX + flutter;
+      f.rotation.y = f.userData.baseRotY + side * flutter * 0.65;
+      f.rotation.z = f.userData.baseRotZ + side * 0.006 * Math.sin(t * 1.8 + f.userData.phase);
+    }
+  }
+
+  // 肩甲骨・烏口骨・叉骨の見た目だけを翼より少し遅らせて動かす。
+  // 実物の「肩帯が胴体上でわずかに滑る」印象を作るための微小変位。
+  for (const g of shoulderGirdleVisuals) {
+    const side = g.userData.side;
+    g.position.x = g.userData.baseX + side * 0.010 * Math.sin(thoraxLag - 0.10);
+    g.position.y = g.userData.baseY + 0.012 * Math.sin(thoraxLag - 0.30);
+    g.position.z = g.userData.baseZ - 0.030 * downstroke;
+    g.rotation.x = 0.035 * Math.sin(thoraxLag - 0.20);
+    g.rotation.y = side * 0.045 * Math.sin(thoraxLag - 0.35);
+    g.rotation.z = side * 0.030 * Math.sin(thoraxLag + 0.10);
+  }
+
+  // 叉骨バネ：振り下げでわずかに開き、反転で戻る。描画のみで翼長・位相は不変。
+  rebuildFurculaSpring(0.010 * downstroke + 0.004 * reversal);
+  furculaSpring.rotation.x = 0.012 * Math.sin(thoraxLag - 0.25);
+  furculaSpring.position.y = 0.004 * Math.sin(thoraxLag);
+
+  keel.position.y = -0.300 - 0.010 * reversal;
+  keel.rotation.x = -0.06 + 0.010 * Math.sin(thoraxLag - 0.20);
+  // 尾羽は翼より少し遅れて反応する。開く=空気抵抗とピッチ安定、閉じる=移動しやすい。
+  const tailPhase = tLive - 0.52 + 0.018 * Math.sin(tLive * 0.37);
+  const upAssist = 0.5 + 0.5 * Math.sin(tailPhase);
+  const reversalAirDump = Math.pow(Math.abs(Math.cos(tailPhase)), 2.2);
+  const tailOpen = 0.24 + 0.44 * upAssist + 0.12 * reversalAirDump;
+  const tailPitch = -0.16 + 0.10 * Math.sin(tailPhase - 0.55) + 0.035 * reversalAirDump;
+  const yawTrim = 0.018 * Math.sin(t * 0.73 + 1.2);
+
+  tailRoot.rotation.x = -0.04 + tailPitch;
+  tailRoot.rotation.y = yawTrim * 0.80;
+  tailRoot.rotation.z = 0.008 * Math.sin(t * 0.62);
+
+  for (let i = 0; i < tailFeathers.length; i++) {
+    const f = tailFeathers[i];
+    const side = f.userData.side;
+    const absSide = f.userData.absSide;
+    const curvature = absSide * absSide;
+    const layerRank = f.userData.layerRank || 0;
+    const signedLayer = layerRank - 4;
+    const micro = 0.018 * Math.sin(t * 1.7 + f.userData.microPhase);
+    const outerLag = 0.035 * absSide * Math.sin(tailPhase - 0.7);
+
+    // 実物寄り尾羽：同一平面の扇子ではなく、浅い円錐面に配置する。
+    // 外側羽ほど後方・下方へ落とし、中央羽は少し立てて安定板として残す。
+    const coneDepth = 0.032 * absSide + 0.095 * curvature * tailOpen;
+    const coneDrop = 0.012 * absSide + 0.060 * curvature * tailOpen;
+
+    // 羽同士の重なり。完全な同一面を避け、左右で薄い段差を作る。
+    const layerY = -0.0045 * layerRank + 0.0020 * Math.sin(t * 0.9 + layerRank);
+    const layerZ = 0.0045 * signedLayer;
+    const naturalAsym = f.userData.asym || 0;
+
+    f.position.x = side * (0.004 + 0.030 * curvature * tailOpen) + naturalAsym * (0.35 + absSide);
+    f.position.y = -0.010 - coneDrop + layerY;
+    f.position.z = 0.050 - coneDepth + layerZ;
+
+    // 左右へ扇状に開く。外側ほど大きく、中央羽は安定板として残る。
+    f.rotation.y = side * (0.09 + 0.35 * tailOpen + 0.16 * curvature * tailOpen) + outerLag + naturalAsym;
+
+    // 円錐曲面：外側羽ほど下向きに寝る。平面感を消す主成分。
+    f.rotation.x = -0.020 - 0.100 * curvature * tailOpen - 0.018 * absSide + micro * 0.75;
+
+    // 羽軸方向のねじれ。外側ほど強く、空気を受ける皿状の尾羽にする。
+    f.rotation.z = side * (0.014 + 0.045 * tailOpen + 0.070 * curvature * tailOpen) + micro * 0.45 + naturalAsym * 0.6;
+  }
+
+  // 接続カバー羽は尾羽より控えめに動き、尾筒と尾羽根元を連続させる。
+  tailRootCoverts.rotation.x = -0.04 + tailPitch * 0.42;
+  tailRootCoverts.rotation.y = yawTrim * 0.45;
+  tailRootCoverts.position.y = -0.064 - 0.006 * reversalAirDump;
+  tailRootCoverts.position.z = -0.975 + 0.010 * Math.sin(tailPhase - 0.30);
+  for (const c of tailRootCovertFeathers) {
+    const side = c.userData.side;
+    const absSide = c.userData.absSide;
+    const soft = 0.010 * Math.sin(t * 1.45 + c.userData.phase);
+    c.rotation.y = side * (0.10 + 0.20 * absSide + 0.12 * absSide * tailOpen);
+    c.rotation.x = -0.10 - 0.09 * absSide - 0.035 * absSide * tailOpen + soft;
+    c.rotation.z = side * (0.018 + 0.045 * absSide + 0.035 * tailOpen * absSide);
+  }
+
+  for (const c of tailBridgeFeathers) {
+    const side = c.userData.side;
+    const absSide = c.userData.absSide;
+    const soft = 0.007 * Math.sin(t * 1.25 + c.userData.phase);
+    c.rotation.x = 0.34 + 0.05 * absSide - 0.020 * tailOpen + soft;
+    c.rotation.y = side * (0.10 + 0.15 * absSide + 0.035 * tailOpen);
+    c.rotation.z = side * (0.020 + 0.040 * absSide + 0.018 * tailOpen);
+  }
+
+  // 左右を完全一致させない。ハチドリは平均的には対称だが、微小な位相差と振幅差が常にある。
+  const leftWingTime = tLive + 0.010 + 0.004 * Math.sin(tLive * 0.97);
+  const rightWingTime = tLive - 0.008 + 0.003 * Math.sin(tLive * 1.11 + 0.6);
+  updateWingMotion(leftWing, leftWingTime);
+  updateWingMotion(rightWing, rightWingTime);
+
+  // 形状更新も同じ微小時刻を使い、骨格長を変えずに羽先だけが少し生体的に遅れるように見せる。
+  updateWingGeometry(leftWing, leftWingTime);
+  updateWingGeometry(rightWing, rightWingTime);
+
+
+  renderer.render(scene, camera);
+}
+
+animate();
+
+addEventListener("resize", () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  updateCamera();
+});
 </script>
 </body>
 </html>
