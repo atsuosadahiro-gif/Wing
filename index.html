@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-<title>Hummingbird Rounded Feather Bundle Wing</title>
+<title>Hummingbird Pelvis Spine Reconnect v10</title>
 <style>
 html, body {
   margin: 0;
@@ -42,35 +42,128 @@ html, body {
   line-height: 1.45;
   white-space: pre-wrap;
 }
-#modeButton {
+#displayMenuWrap {
   position: fixed;
   right: 12px;
   bottom: 18px;
   z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+#modeButton {
   color: white;
-  background: rgba(30,80,130,0.85);
+  background: rgba(30,80,130,0.88);
   border: 1px solid rgba(255,255,255,0.35);
   border-radius: 999px;
   padding: 12px 16px;
   font-size: 14px;
   font-weight: bold;
+  box-shadow: 0 4px 14px rgba(20,45,70,0.18);
+}
+#displayMenu {
+  display: none;
+  min-width: 190px;
+  background: rgba(255,255,255,0.88);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(40,80,120,0.22);
+  border-radius: 14px;
+  padding: 6px;
+  box-shadow: 0 10px 28px rgba(20,45,70,0.22);
+}
+#displayMenu.open { display: block; }
+.displayModeItem {
+  width: 100%;
+  display: block;
+  text-align: left;
+  color: #17324a;
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  padding: 9px 10px;
+  font-size: 13px;
+  line-height: 1.25;
+}
+.displayModeItem.active {
+  background: rgba(30,80,130,0.14);
+  font-weight: bold;
+}
+.displayModeItem small {
+  display: block;
+  margin-top: 2px;
+  opacity: 0.72;
+  font-weight: normal;
+}
+
+#debugPanel {
+  position: fixed;
+  left: 10px;
+  bottom: 86px;
+  z-index: 18;
+  min-width: 210px;
+  max-width: min(420px, calc(100vw - 24px));
+  color: #123047;
+  background: rgba(255,255,255,0.74);
+  border: 1px solid rgba(60,110,150,0.22);
+  border-radius: 12px;
+  padding: 9px 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre;
+  display: none;
+  pointer-events: none;
+}
+#legModeWrap {
+  position: fixed;
+  left: 10px;
+  bottom: 18px;
+  z-index: 19;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  max-width: calc(100vw - 230px);
+}
+.legModeButton {
+  color: #17324a;
+  background: rgba(255,255,255,0.78);
+  border: 1px solid rgba(40,80,120,0.24);
+  border-radius: 999px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: bold;
+  box-shadow: 0 4px 12px rgba(20,45,70,0.12);
+}
+.legModeButton.active {
+  color: white;
+  background: rgba(30,80,130,0.88);
+}
+@media (max-width: 520px) {
+  #legModeWrap { max-width: calc(100vw - 24px); bottom: 72px; }
+  .legModeButton { padding: 7px 9px; font-size: 11px; }
 }
 </style>
 </head>
 <body>
 <div id="info">
-ハチドリ：丸みのある羽毛束翼アップデート版<br>
+ハチドリ：Step27 全身制御 減衰＋位相遅れ＋非対称版<br>
 軽量空気流＋動き強化版（重い圧力場は未使用）<br>
-ドラッグ：回転 / ピンチ：ズーム<br>右下ボタン：表示切り替え<br>胴体：胸筋厚め・短頸・小頭・細い尾筒 / 尾羽：扇状個別羽＋遅れ位相制御 / 羽毛翼：丸み・厚み・羽軸を追加 / 胴体：胸・腹・頭を分離制御
+ドラッグ：回転 / ピンチ：ズーム<br>右下ボタン：表示メニュー<br>胴体：胸・腹・尾筒分離 / 肩帯：既存維持 / 胸椎〜腰椎〜骨盤：一本化 / 胸骨竜骨：観察時は非表示
 </div>
 <div id="errorPanel"></div>
-<button id="modeButton">観察モード</button>
+<div id="debugPanel"></div>
+<div id="displayMenuWrap">
+  <div id="displayMenu" aria-label="表示メニュー"></div>
+  <button id="modeButton" aria-expanded="false">表示：観察</button>
+</div>
+<div id="legModeWrap" aria-label="脚モード"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 <script>
-// Refactored stable baseline
+// Shoulder-rig refactor baseline
 // - Geometry/phase/length/symmetry are intentionally preserved.
-// - Shoulder-girdle visuals are separated from the wing kinematic chain.
+// - Shoulder girdle, wing kinematic chain, body physics, and display modes are kept as separate layers.
 // - Runtime errors are shown on screen so the model does not fail silently on mobile browsers.
 const errorPanel = document.getElementById("errorPanel");
 window.addEventListener("error", (ev) => {
@@ -139,7 +232,11 @@ const bodyMat = new THREE.MeshStandardMaterial({ color: 0x324039, roughness: 0.8
 const wingMat = new THREE.MeshStandardMaterial({ color: 0x1b211d, roughness: 0.72, metalness: 0.02, transparent: false, opacity: 1.0, side: THREE.DoubleSide });
 const featherMat = new THREE.MeshStandardMaterial({ color: 0x22261f, roughness: 0.78, metalness: 0.01, transparent: false, opacity: 1.0, side: THREE.DoubleSide });
 const wingMaterials = [];
-let wingTransparent = true;
+const skeletonParts = [];
+const jointAxisHelpers = [];
+const bodyOriginalMaterials = new Map();
+const debugPanel = document.getElementById("debugPanel");
+let wingTransparent = false;
 
 function updateWingTransparency() {
   for (const m of wingMaterials) {
@@ -160,25 +257,221 @@ function updateWingTransparency() {
   }
 }
 
-// 表示切り替え（圧力・流線・渦・粒子・履歴はコードとして削除済み）
-const mapModes = ["観察モード", "本物色・不透明", "骨格確認"];
-let mapModeIndex = 0;
-function applyMapMode() {
-  wingTransparent = false;
-  updateWingTransparency();
-  if (typeof skeletonGroup !== "undefined" && skeletonGroup) skeletonGroup.visible = true;
+// 表示切り替え：実際に存在する表示だけをメニュー化する。
+// 観察：完成形。骨格とCFDは隠す。
+// 骨格確認：翼骨格・関節を表示して構造確認。
+// 軽量CFD：翼端渦・後流リボンだけを重ねる。
+const DISPLAY_MODES = [
+  { id: "observe", label: "観察", desc: "自然表示のみ" },
+  { id: "skeleton", label: "骨格確認", desc: "半透明ボディ＋骨格・軸・角度ログ" },
+  { id: "cfd", label: "軽量CFD", desc: "翼端渦・後流リボン" },
+  { id: "all", label: "骨格＋CFD", desc: "骨格確認に後流も重ねる" }
+];
+let displayModeIndex = 0;
+let displayMenuOpen = false;
+
+// Step15: 脚の機能モード。
+// 飛行中は空気抵抗を減らす収納、着地では伸展、把持では足指を強く巻く。
+const LEG_MODES = [
+  { id: "flight", label: "飛行", desc: "脚を腹側へ収納", tuck: 1.0, extend: 0.0, grasp: 0.25 },
+  { id: "landing", label: "着地", desc: "脚を下方へ伸展", tuck: 0.18, extend: 1.0, grasp: 0.42 },
+  { id: "grasp", label: "把持", desc: "枝をつかむ足指", tuck: 0.35, extend: 0.72, grasp: 1.0 }
+];
+let legModeIndex = 0;
+function getLegMode() { return LEG_MODES[legModeIndex] || LEG_MODES[0]; }
+function getLegModeParams(tLive=0) {
+  const m = getLegMode();
+  const reflex = 0.12 * Math.sin(tLive * 0.52 + 0.7);
+  return {
+    tuck: m.tuck,
+    extend: clamp01(m.extend + reflex * (m.id === "flight" ? 0.35 : 0.55)),
+    grasp: m.grasp,
+    reflex,
+    id: m.id,
+    label: m.label
+  };
+}
+function setLegModeById(id) {
+  const idx = LEG_MODES.findIndex(m => m.id === id);
+  legModeIndex = idx >= 0 ? idx : 0;
+  renderLegModeButtons();
+}
+function renderLegModeButtons() {
+  const wrap = document.getElementById("legModeWrap");
+  if (!wrap) return;
+  wrap.innerHTML = LEG_MODES.map((m, i) => `<button class="legModeButton ${i === legModeIndex ? "active" : ""}" data-leg-mode="${m.id}" title="${m.desc}">${i === legModeIndex ? "✓ " : ""}${m.label}</button>`).join("");
+}
+
+function getDisplayMode() {
+  return DISPLAY_MODES[displayModeIndex] || DISPLAY_MODES[0];
+}
+
+function isSkeletonDisplayMode() {
+  const id = getDisplayMode().id;
+  return id === "skeleton" || id === "all";
+}
+
+function setSkeletonVisible(visible) {
+  for (const p of skeletonParts) {
+    if (!p) continue;
+    p.visible = visible;
+    if (p.material) {
+      p.material.transparent = !visible;
+      p.material.opacity = visible ? 0.78 : 0.0;
+      p.material.depthWrite = visible;
+      p.material.needsUpdate = true;
+    }
+  }
+}
+
+function cacheOriginalMaterialState(obj) {
+  obj.traverse((child) => {
+    const mat = child.material;
+    if (!mat || bodyOriginalMaterials.has(mat)) return;
+    bodyOriginalMaterials.set(mat, {
+      transparent: !!mat.transparent,
+      opacity: mat.opacity,
+      depthWrite: mat.depthWrite
+    });
+  });
+}
+
+function setBodySkeletonMode(enabled) {
+  cacheOriginalMaterialState(bodyGroup);
+  bodyGroup.traverse((child) => {
+    const mat = child.material;
+    if (!mat) return;
+    const saved = bodyOriginalMaterials.get(mat);
+
+    // 肩周り骨格は bodyGroup 内に置くが、骨格確認時には胴体半透明化に巻き込まない。
+    // これにより胸郭の中に埋もれず、肩甲骨・烏口骨・叉骨の三点支持が読める。
+    if (child.userData && child.userData.isShoulderSkeleton) {
+      child.visible = !!enabled;
+      if (enabled) {
+        mat.transparent = true;
+        mat.opacity = child.userData.skeletonOpacity || 0.86;
+        mat.depthWrite = false;
+      } else if (saved) {
+        mat.transparent = saved.transparent;
+        mat.opacity = saved.opacity;
+        mat.depthWrite = saved.depthWrite;
+      }
+      mat.needsUpdate = true;
+      return;
+    }
+
+    if (enabled) {
+      mat.transparent = true;
+      mat.opacity = Math.min(saved ? saved.opacity : mat.opacity, 0.16);
+      mat.depthWrite = false;
+    } else if (saved) {
+      mat.transparent = saved.transparent;
+      mat.opacity = saved.opacity;
+      mat.depthWrite = saved.depthWrite;
+    }
+    mat.needsUpdate = true;
+  });
+}
+
+function setJointAxisVisible(visible) {
+  for (const h of jointAxisHelpers) h.visible = visible;
+}
+
+function setDebugPanelVisible(visible) {
+  if (debugPanel) debugPanel.style.display = visible ? "block" : "none";
+}
+
+function setWingSkeletonMode(enabled) {
+  wingTransparent = !!enabled;
+  for (const m of wingMaterials) {
+    if (!m) continue;
+    m.transparent = !!enabled;
+    m.opacity = enabled ? Math.min(m.opacity || 1.0, 0.28) : 1.0;
+    m.depthWrite = !enabled;
+    m.needsUpdate = true;
+  }
+  for (const w of [leftWing, rightWing]) {
+    if (!w || !w.surface) continue;
+    w.surface.visible = true;
+    if (w.surface.userData.featherStrips) {
+      for (const strip of w.surface.userData.featherStrips) {
+        strip.material.transparent = !!enabled;
+        strip.material.opacity = enabled ? 0.30 : 0.92;
+        strip.material.depthWrite = !enabled;
+        strip.material.needsUpdate = true;
+        if (strip.userData.shaft) {
+          strip.userData.shaft.visible = !!enabled;
+          strip.userData.shaft.material.transparent = true;
+          strip.userData.shaft.material.opacity = enabled ? 0.88 : 0.0;
+          strip.userData.shaft.material.depthWrite = false;
+          strip.userData.shaft.material.needsUpdate = true;
+        }
+      }
+    }
+  }
+}
+
+function applyDisplayMode() {
+  const mode = getDisplayMode();
+
+  const showSkeleton = mode.id === "skeleton" || mode.id === "all";
+  const showCfd = mode.id === "cfd" || mode.id === "all";
+  setSkeletonVisible(showSkeleton);
+  setBodySkeletonMode(showSkeleton);
+  setWingSkeletonMode(showSkeleton);
+  setJointAxisVisible(showSkeleton);
+  setDebugPanelVisible(showSkeleton);
+  if (typeof cfdVizGroup !== "undefined" && cfdVizGroup) cfdVizGroup.visible = showCfd;
+
   const btn = document.getElementById("modeButton");
-  if (btn) btn.textContent = mapModes[mapModeIndex];
+  if (btn) {
+    btn.textContent = "表示：" + mode.label;
+    btn.setAttribute("aria-expanded", displayMenuOpen ? "true" : "false");
+  }
+  renderDisplayMenu();
 }
-function nextMapMode() {
-  mapModeIndex = (mapModeIndex + 1) % mapModes.length;
-  applyMapMode();
+
+function setDisplayModeById(id) {
+  const idx = DISPLAY_MODES.findIndex(m => m.id === id);
+  displayModeIndex = idx >= 0 ? idx : 0;
+  displayMenuOpen = false;
+  applyDisplayMode();
 }
+
+function nextDisplayMode() {
+  displayModeIndex = (displayModeIndex + 1) % DISPLAY_MODES.length;
+  applyDisplayMode();
+}
+
+function renderDisplayMenu() {
+  const menu = document.getElementById("displayMenu");
+  if (!menu) return;
+  menu.classList.toggle("open", displayMenuOpen);
+  menu.innerHTML = DISPLAY_MODES.map((m, i) => `
+    <button class="displayModeItem ${i === displayModeIndex ? "active" : ""}" data-mode="${m.id}">
+      ${i === displayModeIndex ? "✓ " : ""}${m.label}<small>${m.desc}</small>
+    </button>
+  `).join("");
+}
+
+function toggleDisplayMenu() {
+  displayMenuOpen = !displayMenuOpen;
+  applyDisplayMode();
+}
+
+// Step24: 背骨一本化リファクタリング。
+// bodyGroup / 胸郭 / 肩帯 / 骨盤脚 / 翼root を、同じ spineRoot 配下に統合する。
+// これにより「見た目用背骨」と「胸郭用背骨」が別々に見える二重中枢を避ける。
+// spineRoot 自体はまだ大きく動かさず、全身の唯一の基準軸として使う。
+const spineRoot = new THREE.Group();
+spineRoot.name = "single_spine_root_step26";
+bird.add(spineRoot);
 
 // 実物寄り胴体：ハチドリは「丸い胴」ではなく、
 // 胸筋が厚い前胴・細い尾筒・短い首・小さい頭の組み合わせで見せる。
 const bodyGroup = new THREE.Group();
-bird.add(bodyGroup);
+bodyGroup.name = "body_attached_to_single_spine_root";
+spineRoot.add(bodyGroup);
 
 // 胴体側の可動パーツ。翼骨格は変えず、胸郭・肩帯だけ微小に連動させる。
 const shoulderGirdleVisuals = [];
@@ -878,8 +1171,161 @@ addFeatherDensityCover(1);
 // 肩帯の見た目専用パーツ：翼骨格には接続せず、
 // 胸郭の表面に短い肩甲骨・烏口骨・叉骨だけを置く。
 // これにより「翼の付け根から尾へ伸びる直方体」に見える長い箱を避ける。
+// 次の肩周り骨格アップデートでは、この SHOULDER_RIG_SPEC だけを変更すればよい。
 const girdleMat = new THREE.MeshStandardMaterial({ color: 0xd6b66a, roughness: 0.72 });
 const sternumMat = new THREE.MeshStandardMaterial({ color: 0x3d423f, roughness: 0.88 });
+const shoulderRigParts = [];
+
+const SHOULDER_RIG_SPEC = Object.freeze({
+  root: { x: 0.405, y: 0.145, z: 0.205 },
+  jointRadius: 0.036,
+  landmarkRadius: 0.020,
+  // local x は「胴体中心方向」を負に置き、mirrorShoulderPoint(side, p) で左右鏡像化する。
+  points: {
+    glenoid:       [ 0.000,  0.000,  0.000], // 肩関節窩：翼骨格の起点
+    scapulaMid:    [-0.035,  0.066, -0.155], // 背側へ流れる肩甲骨中間点
+    scapulaTip:    [-0.012,  0.092, -0.325], // 肩甲骨後端。尾筒までは伸ばさない
+    coracoidKnee:  [-0.055, -0.088, -0.018], // 烏口骨の屈曲点
+    sternumAnchor: [-0.100, -0.198,  0.030], // 胸骨・竜骨側アンカー
+    furculaArm:    [-0.060, -0.006,  0.082], // 叉骨の肩側腕
+    furculaNotch:  [-0.185, -0.020,  0.178], // 中央叉骨へ向かう前胸側
+    humerusNeck:   [ 0.105, -0.010,  0.030]  // 上腕骨入口。翼三節の長さは変えない
+  },
+  bones: [
+    { key: "scapulaA",    label: "肩甲骨A",   from: "glenoid",      to: "scapulaMid",    radius: 0.014, color: 0xd8bd74 },
+    { key: "scapulaB",    label: "肩甲骨B",   from: "scapulaMid",   to: "scapulaTip",    radius: 0.012, color: 0xd2b56e },
+    { key: "coracoidA",   label: "烏口骨A",   from: "glenoid",      to: "coracoidKnee",  radius: 0.017, color: 0xe0c982 },
+    { key: "coracoidB",   label: "烏口骨B",   from: "coracoidKnee", to: "sternumAnchor", radius: 0.016, color: 0xe0c982 },
+    { key: "furculaArm",  label: "叉骨腕",     from: "glenoid",      to: "furculaArm",    radius: 0.011, color: 0xc9ddff },
+    { key: "furculaLink", label: "叉骨前枝",   from: "furculaArm",   to: "furculaNotch",  radius: 0.010, color: 0xc9ddff },
+    { key: "humerusNeck", label: "上腕骨入口", from: "glenoid",      to: "humerusNeck",   radius: 0.018, color: 0xff7666 }
+  ],
+  landmarks: ["glenoid", "scapulaTip", "sternumAnchor", "furculaNotch", "humerusNeck"],
+  musclePad: { offset: [-0.018, -0.020, 0.010], scale: [0.080, 0.055, 0.105] },
+  motion: {
+    lateralSlide: 0.010,
+    heave: 0.012,
+    downHeave: 0.005,
+    downBack: 0.030,
+    reactionBack: 0.007,
+    rotX: 0.035,
+    rotY: 0.045,
+    rotZ: 0.030,
+    scapulaGlide: 0.018,
+    coracoidCompression: 0.014,
+    furculaSpring: 0.012,
+    humerusSocketRoll: 0.030
+  }
+});
+
+// Step18: 胸周り精密化のための中間仕様。
+// 肋骨は観察モードでは見せず、骨格確認モードだけで胸郭の立体構造として表示する。
+// 外観メッシュに骨を混ぜないことで、胸下のコブ再発を防ぐ。
+// 胸周り精密化のための新しい中間仕様。
+// ここでは「見た目の胴体」と「骨格ランドマーク」を分離する。
+// 次の更新では THORACIC_RIG_SPEC.points / bones だけを触れば、
+// 胸骨・竜骨突起・叉骨・烏口骨・肩甲骨の位置関係を崩さず調整できる。
+const THORACIC_RIG_SPEC = Object.freeze({
+  // Step22: 背骨と肋骨の関係を明確化。
+  // 鳥類の胸郭は「背骨から出る背側肋骨」「胸骨へ入る腹側/胸骨肋骨」
+  // 「後方の肋骨へ掛かる鉤状突起」で、圧縮に耐える箱として扱う。
+  points: {
+    sternumCranial: [0.000, -0.095,  0.245],
+    sternumMid:     [0.000, -0.230,  0.080],
+    keelTip:        [0.000, -0.470,  0.020],
+    keelCaudal:     [0.000, -0.265, -0.260],
+    furculaNotch:   [0.000,  0.050,  0.380],
+    furculaLeft:    [-0.255, 0.120,  0.330],
+    furculaRight:   [ 0.255, 0.120,  0.330],
+
+    // 胸椎列。肋骨の起点はここに固定する。
+    spineThoracic1: [0.000,  0.270,  0.190],
+    spineThoracic2: [0.000,  0.245,  0.010],
+    spineThoracic3: [0.000,  0.205, -0.170],
+    spineThoracic4: [0.000,  0.155, -0.330],
+    spineThoracic5: [0.000,  0.095, -0.470],
+
+    // 後方互換用。旧コードが参照しても背骨節に一致するよう残す。
+    ribDorsal1:     [0.000,  0.270,  0.190],
+    ribDorsal2:     [0.000,  0.245,  0.010],
+    ribDorsal3:     [0.000,  0.205, -0.170],
+    ribDorsal4:     [0.000,  0.155, -0.330],
+
+    // 胸骨側の接続点。各肋骨はここに必ず入る。
+    sternumRib1:    [0.000, -0.112,  0.178],
+    sternumRib2:    [0.000, -0.158,  0.020],
+    sternumRib3:    [0.000, -0.198, -0.132],
+    sternumRib4:    [0.000, -0.225, -0.270],
+
+    ribVentral1:    [0.000, -0.112,  0.178],
+    ribVentral2:    [0.000, -0.158,  0.020],
+    ribVentral3:    [0.000, -0.198, -0.132],
+    ribVentral4:    [0.000, -0.225, -0.270]
+  },
+  ribs: [
+    { spine: "spineThoracic1", sternum: "sternumRib1", xOuter: 0.235, yOuter: 0.050, zLag: -0.018, hook: 0.070, radius: 0.0072 },
+    { spine: "spineThoracic2", sternum: "sternumRib2", xOuter: 0.285, yOuter: 0.020, zLag: -0.040, hook: 0.086, radius: 0.0070 },
+    { spine: "spineThoracic3", sternum: "sternumRib3", xOuter: 0.265, yOuter: -0.010, zLag: -0.050, hook: 0.078, radius: 0.0066 },
+    { spine: "spineThoracic4", sternum: "sternumRib4", xOuter: 0.195, yOuter: -0.025, zLag: -0.046, hook: 0.060, radius: 0.0060 }
+  ],
+  visual: {
+    keelScale: [0.075, 0.220, 0.340],
+    keelPosition: [0.000, -0.300, 0.050],
+    keelRotationX: -0.060,
+    furculaRadius: 0.010,
+    sternumRadius: 0.012,
+    spineRadius: 0.010,
+    landmarkRadius: 0.018
+  },
+  motion: {
+    breathScale: 0.010,
+    furculaSpring: 0.018,
+    keelPulse: 0.006,
+    sternumRock: 0.018,
+    forceSternumRock: 0.026,
+    forceKeelRecoil: 0.016,
+    coracoidCompression: 0.038,
+    furculaForceSpring: 0.030,
+    ribElasticSpread: 0.014
+  }
+});
+
+function v3FromArray(a) { return new THREE.Vector3(a[0], a[1], a[2]); }
+function getThoracicPoint(key) { return v3FromArray(THORACIC_RIG_SPEC.points[key]); }
+
+// Step26: 胸椎と腰仙骨の一本化。
+// Step27: 全身制御（減衰・位相遅れ・微非対称）を追加。
+// 胸郭内の spineThoracic5 は thoracicRigGroup ローカル、骨盤は spineRoot ローカルで扱っていたため、
+// そのまま足すと「胸椎列」と「骨盤列」が別系統に見える。
+// ここで胸椎末端を必ず spineRoot ローカルへ変換し、そこから腰仙骨・骨盤を連続させる。
+function thoracicPointToSpineRoot(key) {
+  const p = getThoracicPoint(key);
+  if (typeof thoracicRigGroup !== "undefined" && thoracicRigGroup) {
+    thoracicRigGroup.updateWorldMatrix(true, false);
+    thoracicRigGroup.localToWorld(p);
+    spineRoot.worldToLocal(p);
+  }
+  return p;
+}
+function thoracicSpineEndPoint() {
+  return thoracicPointToSpineRoot("spineThoracic5");
+}
+function lumbarSynsacrumPoint(tLive=0, bodyPhys=null) {
+  const t5 = thoracicSpineEndPoint();
+  const tailBase = bodyLocalPoint(tailCone, 0, -0.018, -0.020);
+  const pelvisLag = bodyPhys ? (bodyPhys.pelvisLag || 0) : 0;
+  const abdomenCouple = bodyPhys ? (bodyPhys.abdomenReaction || 0) : 0;
+  const p = t5.clone().lerp(tailBase, 0.58);
+  // 腰仙骨は胸椎末端の後方へ連続する剛体軸。腹側へ落としすぎない。
+  p.y += -0.006 + 0.0015 * abdomenCouple;
+  p.z += -0.030 - 0.004 * pelvisLag;
+  p.x += 0.0015 * Math.sin(tLive * 0.42);
+  return p;
+}
+
+function mirrorShoulderPoint(side, arr) {
+  return new THREE.Vector3(side * arr[0], arr[1], arr[2]);
+}
 
 function makeCapsuleBone(radius, length, mat, radial=12) {
   return new THREE.Mesh(new THREE.CylinderGeometry(radius, radius * 0.82, length, radial), mat);
@@ -895,93 +1341,1396 @@ function capsuleBetween(a, b, radius, mat, radial=12) {
   return m;
 }
 
+function getShoulderPoint(side, key) {
+  const p = SHOULDER_RIG_SPEC.points[key];
+  return mirrorShoulderPoint(side, p);
+}
+
+function makeShoulderBoneMaterial(def) {
+  return new THREE.MeshStandardMaterial({
+    color: def.color || 0xd6b66a,
+    roughness: 0.70,
+    metalness: 0.02,
+    transparent: true,
+    opacity: 0.0,
+    depthWrite: false
+  });
+}
+
+function markShoulderSkeleton(obj, opacity=0.86) {
+  obj.userData.isShoulderSkeleton = true;
+  obj.userData.skeletonOpacity = opacity;
+  obj.visible = false;
+  skeletonParts.push(obj);
+  return obj;
+}
+
 function addShoulderGirdleVisual(side) {
   const g = new THREE.Group();
-  g.position.set(side * 0.405, 0.145, 0.205);
+  const root = SHOULDER_RIG_SPEC.root;
+  g.position.set(side * root.x, root.y, root.z);
+  g.userData.side = side;
+  g.userData.baseX = g.position.x;
+  g.userData.baseY = g.position.y;
+  g.userData.baseZ = g.position.z;
+  g.userData.bones = {};
+  g.userData.landmarks = {};
 
-  // 翼関節を頂点にした「三角肩帯」。
-  // 1本の長い棒をやめ、肩甲骨・烏口骨・叉骨の短い3方向に分解する。
-  const joint = new THREE.Vector3(0.000, 0.000, 0.000);
-  const scapBack = new THREE.Vector3(-side * 0.055, 0.075, -0.215);   // 背中側へ短く後退
-  const coracoidDown = new THREE.Vector3(-side * 0.075, -0.145, -0.015); // 胸骨側へ落ちる
-  const furculaFront = new THREE.Vector3(-side * 0.145, -0.010, 0.125);  // 前胸側へ向かう
+  const landmarkMat = new THREE.MeshStandardMaterial({
+    color: 0xfff2a0,
+    roughness: 0.62,
+    metalness: 0.05,
+    transparent: true,
+    opacity: 0.0,
+    depthWrite: false
+  });
 
-  const jointBall = new THREE.Mesh(
-    new THREE.SphereGeometry(0.032, 14, 10),
-    girdleMat
-  );
-  jointBall.position.copy(joint);
-  g.add(jointBall);
+  for (const key of SHOULDER_RIG_SPEC.landmarks) {
+    const isGlenoid = key === "glenoid";
+    const sphere = new THREE.Mesh(
+      new THREE.SphereGeometry(isGlenoid ? SHOULDER_RIG_SPEC.jointRadius : SHOULDER_RIG_SPEC.landmarkRadius, 14, 10),
+      landmarkMat.clone()
+    );
+    sphere.position.copy(getShoulderPoint(side, key));
+    sphere.name = "shoulder_landmark_" + key;
+    sphere.userData.label = key;
+    markShoulderSkeleton(sphere, isGlenoid ? 0.96 : 0.78);
+    g.add(sphere);
+    g.userData.landmarks[key] = sphere;
+  }
 
-  const scapula = capsuleBetween(joint, scapBack, 0.015, girdleMat, 10);
-  scapula.name = "short_scapula";
-  g.add(scapula);
+  for (const def of SHOULDER_RIG_SPEC.bones) {
+    const from = getShoulderPoint(side, def.from);
+    const to = getShoulderPoint(side, def.to);
+    const bone = capsuleBetween(from, to, def.radius, makeShoulderBoneMaterial(def), 10);
+    bone.name = "shoulder_" + def.key;
+    bone.userData.label = def.label;
+    bone.userData.fromKey = def.from;
+    bone.userData.toKey = def.to;
+    bone.userData.baseFrom = from.clone();
+    bone.userData.baseTo = to.clone();
+    bone.userData.radius = def.radius;
+    markShoulderSkeleton(bone, def.key === "humerusNeck" ? 0.92 : 0.86);
+    g.add(bone);
+    g.userData.bones[def.key] = bone;
+    shoulderRigParts.push(bone);
+  }
 
-  const coracoid = capsuleBetween(joint, coracoidDown, 0.018, girdleMat, 10);
-  coracoid.name = "short_coracoid";
-  g.add(coracoid);
-
-  const furculaArm = capsuleBetween(joint, furculaFront, 0.012, girdleMat, 10);
-  furculaArm.name = "short_furcula_arm";
-  g.add(furculaArm);
-
-  // 筋肉に埋もれる肩の丸み。骨をむき出しの棒に見せないための薄い被覆。
-  const musclePad = ellipsoid(0.070, 0.050, 0.095, chestMat, 16);
-  musclePad.position.set(-side * 0.018, -0.020, 0.010);
+  // 筋肉に埋もれる肩の丸み。観察時の外形は残し、骨格確認時は半透明胴体の下に沈める。
+  const mp = SHOULDER_RIG_SPEC.musclePad;
+  const musclePad = ellipsoid(mp.scale[0], mp.scale[1], mp.scale[2], chestMat, 16);
+  musclePad.name = "shoulder_muscle_pad";
+  musclePad.position.set(side * mp.offset[0], mp.offset[1], mp.offset[2]);
   musclePad.rotation.y = side * 0.35;
   musclePad.material = musclePad.material.clone();
   musclePad.material.transparent = true;
   musclePad.material.opacity = 0.55;
   g.add(musclePad);
+  g.userData.musclePad = musclePad;
 
-  g.userData.side = side;
-  g.userData.baseX = g.position.x;
-  g.userData.baseY = g.position.y;
-  g.userData.baseZ = g.position.z;
   shoulderGirdleVisuals.push(g);
   bodyGroup.add(g);
+  return g;
 }
 
-// 叉骨の中央バネ：左右の肩を硬く一本で結ばず、胸前で浅いV字にしなる表示だけを持たせる。
+function orientShoulderBone(bone, from, to) {
+  const dir = new THREE.Vector3().subVectors(to, from);
+  const len = Math.max(0.0001, dir.length());
+  bone.position.copy(from).add(to).multiplyScalar(0.5);
+  bone.scale.y = len / Math.max(0.0001, bone.geometry.parameters.height || len);
+  bone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+}
+
+function updateShoulderGirdleKinematics(thoraxLag, downstroke, downImpulse, thoraxReaction, reversal) {
+  const m = SHOULDER_RIG_SPEC.motion;
+  for (const g of shoulderGirdleVisuals) {
+    const side = g.userData.side;
+    g.position.x = g.userData.baseX + side * m.lateralSlide * Math.sin(thoraxLag - 0.10);
+    g.position.y = g.userData.baseY + m.heave * Math.sin(thoraxLag - 0.30) + m.downHeave * downImpulse;
+    g.position.z = g.userData.baseZ - m.downBack * downstroke - m.reactionBack * thoraxReaction;
+    g.rotation.x = m.rotX * Math.sin(thoraxLag - 0.20) - 0.010 * thoraxReaction;
+    g.rotation.y = side * m.rotY * Math.sin(thoraxLag - 0.35);
+    g.rotation.z = side * m.rotZ * Math.sin(thoraxLag + 0.10);
+
+    // 各骨の局所変形。翼三節の長さ・位相は変えず、肩帯の受け側だけを微小に動かす。
+    const pts = {};
+    for (const key of Object.keys(SHOULDER_RIG_SPEC.points)) pts[key] = getShoulderPoint(side, key);
+
+    const scapGlide = m.scapulaGlide * Math.sin(thoraxLag - 0.55) + 0.006 * reversal;
+    pts.scapulaMid.z -= scapGlide * 0.65;
+    pts.scapulaTip.z -= scapGlide;
+    pts.scapulaTip.y += 0.006 * downImpulse;
+
+    const corComp = m.coracoidCompression * downImpulse + 0.004 * thoraxReaction;
+    pts.coracoidKnee.y += corComp * 0.35;
+    pts.sternumAnchor.y += corComp;
+    pts.sternumAnchor.z -= 0.006 * downstroke;
+
+    const furc = m.furculaSpring * reversal;
+    pts.furculaArm.x -= side * furc * 0.35;
+    pts.furculaNotch.x -= side * furc;
+    pts.furculaNotch.y -= furc * 0.25;
+
+    const socketRoll = m.humerusSocketRoll * Math.sin(thoraxLag + 0.15);
+    pts.humerusNeck.y += 0.010 * downImpulse;
+    pts.humerusNeck.z += 0.012 * Math.sin(thoraxLag + 0.20);
+    pts.humerusNeck.x += side * socketRoll;
+
+    for (const [key, sphere] of Object.entries(g.userData.landmarks || {})) {
+      if (pts[key]) sphere.position.copy(pts[key]);
+    }
+    for (const bone of Object.values(g.userData.bones || {})) {
+      const fromKey = bone.userData.fromKey;
+      const toKey = bone.userData.toKey;
+      if (pts[fromKey] && pts[toKey]) orientShoulderBone(bone, pts[fromKey], pts[toKey]);
+    }
+  }
+}
+
+function updateThoracicRigKinematics(thoraxLag, downstroke, downImpulse, thoraxReaction, reversal) {
+  const m = THORACIC_RIG_SPEC.motion;
+
+  // Step21: 胸郭バイオメカニクス。
+  // 翼の振り下げインパルスを、胸骨/竜骨→烏口骨→叉骨→肋骨へ流す。
+  // ここで変えるのは「受け側の骨格表示と胸郭反応」だけ。翼三節の長さ・位相は変えない。
+  const wingLoad = clampSym(0.70 * downImpulse + 0.30 * Math.abs(thoraxReaction), 1.0);
+  const forceSign = thoraxReaction >= 0 ? 1 : -1;
+  // 呼吸は羽ばたきよりかなり遅い周期で薄く入れる。
+  const breathSlow = 0.5 + 0.5 * Math.sin(thoraxLag * 0.22 - 0.40);
+  const breathe = Math.sin(thoraxLag * 0.22 - 0.40) * 0.38 + downImpulse * 0.10;
+  const sternumForce = wingLoad * forceSign;
+  const keelRecoil = m.forceKeelRecoil * wingLoad + 0.006 * reversal;
+  const furculaLoad = m.furculaForceSpring * (0.65 * reversal + 0.35 * wingLoad);
+
+  // 胸郭骨格は剛体箱として扱い、大きな翼同期変形はさせない。
+  thoracicRigGroup.rotation.x =
+    0.18 * m.sternumRock * Math.sin(thoraxLag - 0.35)
+    - 0.16 * m.forceSternumRock * sternumForce
+    - 0.0015 * thoraxReaction;
+  thoracicRigGroup.rotation.y = 0.0018 * Math.sin(thoraxLag * 0.31 + 0.5);
+  thoracicRigGroup.rotation.z = 0.0015 * Math.sin(thoraxLag * 0.27 - 0.3);
+  thoracicRigGroup.position.y =
+    0.35 * m.breathScale * Math.sin(thoraxLag * 0.22 - 0.40)
+    + 0.18 * m.keelPulse * downImpulse
+    - 0.0018 * wingLoad;
+  thoracicRigGroup.position.z = -0.0025 * downstroke - 0.0015 * thoraxReaction - 0.24 * keelRecoil;
+
+  if (typeof ribCageGroup !== "undefined" && ribCageGroup) {
+    ribCageGroup.scale.x = 1.0 + 0.010 * Math.sin(thoraxLag * 0.22 - 0.40);
+    ribCageGroup.scale.y = 1.0 + 0.004 * Math.sin(thoraxLag * 0.22 - 0.65);
+    ribCageGroup.scale.z = 1.0 + 0.006 * Math.sin(thoraxLag * 0.22 - 0.55);
+  }
+
+  // コブ再発防止：keel は制御ノードだけ。見える塊は持たせない。
+  keel.scale.y = 1.0 + 0.004 * Math.sin(thoraxLag * 0.22 - 0.20);
+  keel.position.y = THORACIC_RIG_SPEC.visual.keelPosition[1] - 0.0015 * downImpulse - 0.0015 * wingLoad;
+  keel.position.z = THORACIC_RIG_SPEC.visual.keelPosition[2] - 0.22 * keelRecoil;
+  keel.rotation.x = THORACIC_RIG_SPEC.visual.keelRotationX - 0.0035 * sternumForce - 0.0015 * Math.sin(thoraxLag);
+
+  // 叉骨は翼の切り返しと負荷で開閉するバネとして表示する。
+  rebuildFurculaSpring(breathe + 0.45 * reversal + furculaLoad);
+
+  // 胸周り詳細骨格は、名前ごとに力学的な役割を分けて動かす。
+  // 烏口骨：圧縮材 / 竜骨稜：反力受け / 肋骨：胸郭の弾性拡張 / 胸骨板：薄板の微小ロール
+  if (typeof thoracicBoneDetailGroup !== "undefined" && thoracicBoneDetailGroup) {
+    thoracicBoneDetailGroup.rotation.x = -0.0025 * sternumForce;
+    thoracicBoneDetailGroup.rotation.y = 0.0012 * Math.sin(thoraxLag * 0.22);
+    thoracicBoneDetailGroup.position.y = -0.0012 * wingLoad;
+    thoracicBoneDetailGroup.position.z = -0.0015 * wingLoad;
+    for (const obj of thoracicBoneDetailGroup.children) {
+      const name = obj.name || "";
+      if (name.includes("coracoid")) {
+        obj.scale.y = 1.0 - 0.28 * m.coracoidCompression * wingLoad;
+      } else if (name.includes("furcula")) {
+        obj.scale.x = 1.0 + 0.35 * furculaLoad;
+      } else if (name.includes("rib") || name.includes("uncinate")) {
+        obj.scale.x = 1.0 + 0.0035 * Math.sin(thoraxLag * 0.22 - 0.40);
+        obj.scale.y = 1.0 + 0.0015 * Math.sin(thoraxLag * 0.22 - 0.65);
+      } else if (name.includes("keel") || name.includes("sternum")) {
+        obj.rotation.x = -0.0018 * sternumForce;
+      }
+    }
+  }
+}
+
+// 胸郭骨格レイヤー：胸骨・竜骨突起・叉骨を肩帯から独立させる。
+// まだ精密骨格化の前段なので、外観は維持しながらランドマークと更新関数を分離する。
+const thoracicRigGroup = new THREE.Group();
+thoracicRigGroup.name = "thoracic_rig_refactor";
+bodyGroup.add(thoracicRigGroup);
+
 const furculaSpring = new THREE.Group();
-bodyGroup.add(furculaSpring);
+furculaSpring.name = "furcula_spring_refactored";
+thoracicRigGroup.add(furculaSpring);
+
+const sternumLineGroup = new THREE.Group();
+sternumLineGroup.name = "sternum_keel_landmarks";
+thoracicRigGroup.add(sternumLineGroup);
+
+const ribCageGroup = new THREE.Group();
+ribCageGroup.name = "thoracic_rib_cage_skeleton";
+thoracicRigGroup.add(ribCageGroup);
+
+function buildBirdRibPoints(side, spec) {
+  const spine = getThoracicPoint(spec.spine);
+  const sternum = getThoracicPoint(spec.sternum);
+  const outerA = new THREE.Vector3(
+    side * spec.xOuter * 0.72,
+    spine.y * 0.66 + sternum.y * 0.34 + spec.yOuter,
+    spine.z * 0.70 + sternum.z * 0.30 + spec.zLag
+  );
+  const outerB = new THREE.Vector3(
+    side * spec.xOuter,
+    spine.y * 0.46 + sternum.y * 0.54 + spec.yOuter * 0.42,
+    spine.z * 0.48 + sternum.z * 0.52 + spec.zLag * 0.70
+  );
+  const sternalSide = sternum.clone();
+  sternalSide.x = side * Math.max(0.070, spec.xOuter * 0.26);
+  sternalSide.y += 0.002;
+  sternalSide.z += 0.002;
+  return { spine, outerA, outerB, sternalSide, sternum };
+}
+
+function rebuildThoracicRibCage() {
+  ribCageGroup.clear();
+  const ribMatDef = { color: 0xbfd8d8 };
+  const sternumRibMatDef = { color: 0xd8c8a4 };
+  const hookMatDef = { color: 0xe9dcc6 };
+
+  // 胸椎列：ここから肋骨が出ることを明示する。
+  const spineKeys = ["spineThoracic1", "spineThoracic2", "spineThoracic3", "spineThoracic4", "spineThoracic5"];
+  for (let i = 0; i < spineKeys.length - 1; i++) {
+    const seg = capsuleBetween(
+      getThoracicPoint(spineKeys[i]),
+      getThoracicPoint(spineKeys[i + 1]),
+      THORACIC_RIG_SPEC.visual.spineRadius * (1.0 - i * 0.045),
+      makeShoulderBoneMaterial({ color: 0xded7c9 }),
+      10
+    );
+    seg.name = `thoracic_spine_segment_${i}`;
+    markShoulderSkeleton(seg, 0.72);
+    ribCageGroup.add(seg);
+  }
+
+  const sideRibs = { "-1": [], "1": [] };
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < THORACIC_RIG_SPEC.ribs.length; i++) {
+      const spec = THORACIC_RIG_SPEC.ribs[i];
+      const pts = buildBirdRibPoints(side, spec);
+      sideRibs[String(side)].push(pts);
+      const r = spec.radius;
+
+      // 背側肋骨：背骨から後ろ外側へ出る。
+      const dorsalA = capsuleBetween(pts.spine, pts.outerA, r, makeShoulderBoneMaterial(ribMatDef), 8);
+      dorsalA.name = `thoracic_vertebral_rib_from_spine_${side}_${i}_a`;
+      markShoulderSkeleton(dorsalA, 0.68);
+      ribCageGroup.add(dorsalA);
+
+      const dorsalB = capsuleBetween(pts.outerA, pts.outerB, r * 0.96, makeShoulderBoneMaterial(ribMatDef), 8);
+      dorsalB.name = `thoracic_vertebral_rib_from_spine_${side}_${i}_b`;
+      markShoulderSkeleton(dorsalB, 0.66);
+      ribCageGroup.add(dorsalB);
+
+      // 胸骨肋骨：外側肋骨から胸骨へ必ず入る。
+      const sternalA = capsuleBetween(pts.outerB, pts.sternalSide, r * 0.86, makeShoulderBoneMaterial(sternumRibMatDef), 8);
+      sternalA.name = `thoracic_sternal_rib_to_sternum_${side}_${i}_a`;
+      markShoulderSkeleton(sternalA, 0.62);
+      ribCageGroup.add(sternalA);
+
+      const sternalB = capsuleBetween(pts.sternalSide, pts.sternum, r * 0.72, makeShoulderBoneMaterial(sternumRibMatDef), 8);
+      sternalB.name = `thoracic_sternal_rib_to_sternum_${side}_${i}_b`;
+      markShoulderSkeleton(sternalB, 0.56);
+      ribCageGroup.add(sternalB);
+
+      const spineLm = new THREE.Mesh(new THREE.SphereGeometry(r * 1.8, 10, 6), makeShoulderBoneMaterial({ color: 0xf2f2c8 }));
+      spineLm.position.copy(pts.spine);
+      spineLm.name = `thoracic_spine_rib_joint_${side}_${i}`;
+      markShoulderSkeleton(spineLm, 0.68);
+      ribCageGroup.add(spineLm);
+
+      const sternumLm = new THREE.Mesh(new THREE.SphereGeometry(r * 1.45, 10, 6), makeShoulderBoneMaterial({ color: 0xffdf95 }));
+      sternumLm.position.copy(pts.sternum);
+      sternumLm.name = `thoracic_sternum_rib_joint_${side}_${i}`;
+      markShoulderSkeleton(sternumLm, 0.58);
+      ribCageGroup.add(sternumLm);
+    }
+
+    // 鉤状突起：各肋骨から後ろの肋骨へ掛かるように伸ばす。
+    const ribs = sideRibs[String(side)];
+    for (let i = 0; i < ribs.length - 1; i++) {
+      const base = ribs[i].outerB.clone().lerp(ribs[i].outerA, 0.25);
+      const next = ribs[i + 1].outerA.clone().lerp(ribs[i + 1].outerB, 0.35);
+      const tip = base.clone().lerp(next, 0.72);
+      tip.y += 0.020;
+      tip.x += side * 0.014;
+      const hook = capsuleBetween(base, tip, THORACIC_RIG_SPEC.ribs[i].radius * 0.48, makeShoulderBoneMaterial(hookMatDef), 8);
+      hook.name = `thoracic_uncinate_locks_to_next_rib_${side}_${i}`;
+      markShoulderSkeleton(hook, 0.60);
+      ribCageGroup.add(hook);
+    }
+  }
+}
+
 function rebuildFurculaSpring(breathe=0) {
   furculaSpring.clear();
-  const left = new THREE.Vector3(-0.255 - breathe, 0.120, 0.330);
-  const right = new THREE.Vector3(0.255 + breathe, 0.120, 0.330);
-  const notch = new THREE.Vector3(0, 0.050 - breathe * 0.35, 0.380 + breathe * 0.20);
-  furculaSpring.add(capsuleBetween(left, notch, 0.010, girdleMat, 10));
-  furculaSpring.add(capsuleBetween(right, notch, 0.010, girdleMat, 10));
+  const spring = THORACIC_RIG_SPEC.motion.furculaSpring;
+  const left = getThoracicPoint("furculaLeft");
+  const right = getThoracicPoint("furculaRight");
+  const notch = getThoracicPoint("furculaNotch");
+  left.x -= breathe * spring;
+  right.x += breathe * spring;
+  notch.y -= breathe * spring * 0.35;
+  notch.z += breathe * spring * 0.20;
+  const a = capsuleBetween(left, notch, THORACIC_RIG_SPEC.visual.furculaRadius, makeShoulderBoneMaterial({ color: 0xc9ddff }), 10);
+  const b = capsuleBetween(right, notch, THORACIC_RIG_SPEC.visual.furculaRadius, makeShoulderBoneMaterial({ color: 0xc9ddff }), 10);
+  markShoulderSkeleton(a, 0.80);
+  markShoulderSkeleton(b, 0.80);
+  furculaSpring.add(a);
+  furculaSpring.add(b);
+}
+
+function rebuildSternumKeelLandmarks() {
+  sternumLineGroup.clear();
+  const p0 = getThoracicPoint("sternumCranial");
+  const p1 = getThoracicPoint("sternumMid");
+  const p2 = getThoracicPoint("keelTip");
+  const p3 = getThoracicPoint("keelCaudal");
+  const bones = [
+    capsuleBetween(p0, p1, THORACIC_RIG_SPEC.visual.sternumRadius, makeShoulderBoneMaterial({ color: 0xd0d6cf }), 10),
+    capsuleBetween(p1, p2, THORACIC_RIG_SPEC.visual.sternumRadius * 0.92, makeShoulderBoneMaterial({ color: 0xd0d6cf }), 10),
+    capsuleBetween(p1, p3, THORACIC_RIG_SPEC.visual.sternumRadius * 0.82, makeShoulderBoneMaterial({ color: 0xd0d6cf }), 10)
+  ];
+  for (const b of bones) {
+    markShoulderSkeleton(b, 0.72);
+    sternumLineGroup.add(b);
+  }
+  for (const key of ["sternumCranial", "sternumMid", "keelTip", "keelCaudal", "furculaNotch"]) {
+    const lm = new THREE.Mesh(
+      new THREE.SphereGeometry(THORACIC_RIG_SPEC.visual.landmarkRadius, 12, 8),
+      makeShoulderBoneMaterial({ color: key === "keelTip" ? 0xffd080 : 0xf2f2c8 })
+    );
+    lm.position.copy(getThoracicPoint(key));
+    lm.name = "thoracic_landmark_" + key;
+    markShoulderSkeleton(lm, key === "keelTip" ? 0.86 : 0.70);
+    sternumLineGroup.add(lm);
+  }
 }
 rebuildFurculaSpring(0);
+rebuildSternumKeelLandmarks();
+rebuildThoracicRibCage();
 
-// 竜骨突起の見た目。胸筋の下に短く置き、尾筒とは連結させない。
-const keel = ellipsoid(0.075, 0.22, 0.34, sternumMat, 24);
-keel.position.set(0, -0.300, 0.050);
-keel.rotation.x = -0.06;
-bodyGroup.add(keel);
+// Step19: 胸周りの骨を追加。
+// 観察モードで外に出るコブを避けるため、全て骨格確認モード専用にする。
+// 追加範囲：胸骨板・竜骨稜・烏口骨の胸骨側接続・肋骨の胸骨肋骨部・鉤状突起。
+const thoracicBoneDetailGroup = new THREE.Group();
+thoracicBoneDetailGroup.name = "thoracic_bone_detail_layer_step19";
+thoracicRigGroup.add(thoracicBoneDetailGroup);
+
+function makeThoracicMat(color, opacity=0.76) {
+  const m = makeShoulderBoneMaterial({ color });
+  m.userData.targetOpacity = opacity;
+  return m;
+}
+function markThoracicSkeleton(obj, opacity=0.76) {
+  markShoulderSkeleton(obj, opacity);
+  obj.userData.isThoracicDetail = true;
+  return obj;
+}
+function addThoracicSegment(name, a, b, radius, color, opacity=0.76, radial=10) {
+  const seg = capsuleBetween(a, b, radius, makeThoracicMat(color, opacity), radial);
+  seg.name = name;
+  markThoracicSkeleton(seg, opacity);
+  thoracicBoneDetailGroup.add(seg);
+  return seg;
+}
+function addThoracicLandmark(name, p, radius, color, opacity=0.78) {
+  const lm = new THREE.Mesh(new THREE.SphereGeometry(radius, 12, 8), makeThoracicMat(color, opacity));
+  lm.name = name;
+  lm.position.copy(p);
+  markThoracicSkeleton(lm, opacity);
+  thoracicBoneDetailGroup.add(lm);
+  return lm;
+}
+function makeSternumPlateGeometry() {
+  const p0 = getThoracicPoint("sternumCranial");
+  const p1 = getThoracicPoint("sternumMid");
+  const p2 = getThoracicPoint("keelCaudal");
+  const verts = new Float32Array([
+    -0.105, p0.y, p0.z,  0.105, p0.y, p0.z,
+    -0.145, p1.y, p1.z,  0.145, p1.y, p1.z,
+    -0.078, p2.y, p2.z,  0.078, p2.y, p2.z
+  ]);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(verts, 3));
+  geo.setIndex([0,1,2, 1,3,2, 2,3,4, 3,5,4]);
+  geo.computeVertexNormals();
+  return geo;
+}
+function makeKeelBladeGeometry() {
+  const cranial = getThoracicPoint("sternumCranial");
+  const mid = getThoracicPoint("sternumMid");
+  const tip = getThoracicPoint("keelTip");
+  const caudal = getThoracicPoint("keelCaudal");
+  const geo = new THREE.BufferGeometry();
+  const verts = new Float32Array([
+    0.000, cranial.y, cranial.z,
+    0.000, mid.y, mid.z,
+    0.000, tip.y, tip.z,
+    0.000, caudal.y, caudal.z,
+    0.018, mid.y, mid.z - 0.010,
+   -0.018, mid.y, mid.z - 0.010
+  ]);
+  geo.setAttribute("position", new THREE.BufferAttribute(verts, 3));
+  geo.setIndex([0,4,2, 0,2,5, 4,3,2, 5,2,3]);
+  geo.computeVertexNormals();
+  return geo;
+}
+function rebuildThoracicBoneDetails() {
+  thoracicBoneDetailGroup.clear();
+  const sternumPlateMat = makeThoracicMat(0xf1e0b6, 0.32);
+  sternumPlateMat.side = THREE.DoubleSide;
+  sternumPlateMat.depthWrite = false;
+  const sternumPlate = new THREE.Mesh(makeSternumPlateGeometry(), sternumPlateMat);
+  sternumPlate.name = "sternum_flat_plate_skeleton_only";
+  markThoracicSkeleton(sternumPlate, 0.32);
+  thoracicBoneDetailGroup.add(sternumPlate);
+
+  const keelBladeMat = makeThoracicMat(0xffd080, 0.36);
+  keelBladeMat.side = THREE.DoubleSide;
+  keelBladeMat.depthWrite = false;
+  const keelBlade = new THREE.Mesh(makeKeelBladeGeometry(), keelBladeMat);
+  keelBlade.name = "keel_blade_skeleton_only";
+  markThoracicSkeleton(keelBlade, 0.36);
+  thoracicBoneDetailGroup.add(keelBlade);
+
+  const sternumCranial = getThoracicPoint("sternumCranial");
+  const sternumMid = getThoracicPoint("sternumMid");
+  const keelTip = getThoracicPoint("keelTip");
+  const keelCaudal = getThoracicPoint("keelCaudal");
+  addThoracicSegment("sternum_keel_front_ridge", sternumCranial, keelTip, 0.010, 0xffd080, 0.78, 10);
+  addThoracicSegment("sternum_keel_rear_ridge", sternumMid, keelCaudal, 0.009, 0xffd080, 0.68, 10);
+
+  for (const side of [-1, 1]) {
+    const shoulderRoot = new THREE.Vector3(side * SHOULDER_RIG_SPEC.root.x, SHOULDER_RIG_SPEC.root.y, SHOULDER_RIG_SPEC.root.z);
+    const glenoid = shoulderRoot.clone().add(getShoulderPoint(side, "glenoid"));
+    const coracoidKnee = new THREE.Vector3(side * 0.245, -0.010, 0.225);
+    const sternalAnchor = new THREE.Vector3(side * 0.090, -0.145, 0.190);
+    addThoracicSegment(`thoracic_coracoid_upper_${side}`, glenoid, coracoidKnee, 0.014, 0xe0c982, 0.82, 10);
+    addThoracicSegment(`thoracic_coracoid_lower_${side}`, coracoidKnee, sternalAnchor, 0.015, 0xe0c982, 0.82, 10);
+    addThoracicLandmark(`thoracic_glenoid_link_${side}`, glenoid, 0.020, 0xfff2a0, 0.78);
+    addThoracicLandmark(`thoracic_sternal_coracoid_anchor_${side}`, sternalAnchor, 0.016, 0xffdf95, 0.72);
+
+    for (let i = 0; i < THORACIC_RIG_SPEC.ribs.length; i++) {
+      const spec = THORACIC_RIG_SPEC.ribs[i];
+      const pts = buildBirdRibPoints(side, spec);
+      const ribR = spec.radius * 0.92;
+      addThoracicSegment(`detail_spine_based_vertebral_rib_${side}_${i}_a`, pts.spine, pts.outerA, ribR, 0xbfd8d8, 0.64, 8);
+      addThoracicSegment(`detail_spine_based_vertebral_rib_${side}_${i}_b`, pts.outerA, pts.outerB, ribR * 0.96, 0xbfd8d8, 0.62, 8);
+      addThoracicSegment(`detail_sternal_rib_to_sternum_${side}_${i}_a`, pts.outerB, pts.sternalSide, ribR * 0.80, 0xd8c8a4, 0.58, 8);
+      addThoracicSegment(`detail_sternal_rib_to_sternum_${side}_${i}_b`, pts.sternalSide, pts.sternum, ribR * 0.66, 0xd8c8a4, 0.52, 8);
+
+      if (i < THORACIC_RIG_SPEC.ribs.length - 1) {
+        const nextPts = buildBirdRibPoints(side, THORACIC_RIG_SPEC.ribs[i + 1]);
+        const hookBase = pts.outerB.clone().lerp(pts.outerA, 0.25);
+        const hookTip = hookBase.clone().lerp(nextPts.outerA.clone().lerp(nextPts.outerB, 0.35), 0.72);
+        hookTip.y += 0.020;
+        hookTip.x += side * 0.014;
+        addThoracicSegment(`detail_uncinate_process_to_next_rib_${side}_${i}`, hookBase, hookTip, ribR * 0.44, 0xe9dcc6, 0.58, 8);
+      }
+    }
+  }
+  addThoracicLandmark("thoracic_sternum_cranial_landmark", sternumCranial, 0.017, 0xf2f2c8, 0.70);
+  addThoracicLandmark("thoracic_keel_tip_landmark", keelTip, 0.020, 0xffd080, 0.84);
+}
+rebuildThoracicBoneDetails();
+
+// Step20 修正：胸周りの「コブボディ」を完全撤去。
+// 竜骨突起は厚い楕円体ではなく、thoracicBoneDetailGroup 内の
+// keel_blade_skeleton_only / sternum_keel_*_ridge だけで表現する。
+// updateThoracicRigKinematics が参照する制御ノードだけを残し、
+// 観察モード・骨格確認モードのどちらでも塊メッシュは表示しない。
+const keel = new THREE.Group();
+keel.name = "keel_control_node_no_visible_lump";
+keel.position.set(THORACIC_RIG_SPEC.visual.keelPosition[0], THORACIC_RIG_SPEC.visual.keelPosition[1], THORACIC_RIG_SPEC.visual.keelPosition[2]);
+keel.rotation.x = THORACIC_RIG_SPEC.visual.keelRotationX;
+thoracicRigGroup.add(keel);
 addShoulderGirdleVisual(-1);
 addShoulderGirdleVisual(1);
 
 function makeBone(len, color, side) {
   const m = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.03, 0.03, len, 10),
-    new THREE.MeshStandardMaterial({ color })
+    new THREE.CylinderGeometry(0.024, 0.024, len, 10),
+    new THREE.MeshStandardMaterial({ color, roughness: 0.7, transparent: true, opacity: 0.0 })
   );
   m.rotation.z = Math.PI / 2;
   m.position.x = side * len / 2;
+  m.visible = false;
+  skeletonParts.push(m);
   return m;
 }
 
 function makeJoint(size, color) {
-  // 研究用の関節ボールは本物の見た目では目立ちすぎるため、
-  // 骨格計算用の位置保持だけにし、描画は羽毛カバーで隠す。
   const m = new THREE.Mesh(
-    new THREE.SphereGeometry(size * 0.16, 10, 8),
-    new THREE.MeshStandardMaterial({ color: 0x314f3f, roughness: 0.95, transparent: true, opacity: 0.10 })
+    new THREE.SphereGeometry(size * 0.42, 12, 8),
+    new THREE.MeshStandardMaterial({ color, roughness: 0.75, transparent: true, opacity: 0.0 })
   );
   m.visible = false;
+  skeletonParts.push(m);
   return m;
+}
+
+function makeDebugBoneMesh(len=1.0, color=0xffffff, radius=0.018) {
+  const m = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius, radius, len, 10),
+    new THREE.MeshStandardMaterial({ color, roughness: 0.65, transparent: true, opacity: 0.0 })
+  );
+  m.visible = false;
+  skeletonParts.push(m);
+  return m;
+}
+
+const bodySegmentRig = (() => {
+  const g = new THREE.Group();
+  g.name = "body_segment_skeleton_level2";
+  spineRoot.add(g);
+  const joints = {
+    thorax: makeJoint(0.085, 0xfff066),
+    sternum: makeJoint(0.060, 0xffa044),
+    abdomen: makeJoint(0.070, 0x99ff88),
+    tailBase: makeJoint(0.060, 0x66ddff),
+    tailTip: makeJoint(0.048, 0x99bbff),
+    neck: makeJoint(0.050, 0xff88cc),
+    head: makeJoint(0.048, 0xffffff)
+  };
+  for (const k of Object.keys(joints)) g.add(joints[k]);
+  const bones = {
+    thoraxAbdomen: makeDebugBoneMesh(1, 0xffe35a, 0.018),
+    abdomenTail: makeDebugBoneMesh(1, 0x66ff99, 0.016),
+    tailAxis: makeDebugBoneMesh(1, 0x66ccff, 0.014),
+    thoraxSternum: makeDebugBoneMesh(1, 0xffaa44, 0.015),
+    thoraxNeck: makeDebugBoneMesh(1, 0xff88cc, 0.014),
+    neckHead: makeDebugBoneMesh(1, 0xffffff, 0.012)
+  };
+  for (const k of Object.keys(bones)) g.add(bones[k]);
+
+  // Step24: 胸郭側に正式な胸椎列を持たせたため、
+  // 旧レベル2の太い体幹サマリー線は「背骨2系統」に見える。
+  // 接続点は内部計算に残すが、骨格確認モードでは正式胸椎列を優先して非表示にする。
+  bones.thoraxAbdomen.userData.hideWhenUnifiedSpine = true;
+  bones.abdomenTail.userData.hideWhenUnifiedSpine = true;
+  bones.tailAxis.userData.hideWhenUnifiedSpine = true;
+  bones.thoraxSternum.userData.hideWhenUnifiedSpine = true;
+  bones.thoraxNeck.userData.hideWhenUnifiedSpine = true;
+
+  return { group: g, joints, bones };
+})();
+
+// Step29: 頚椎〜頭蓋骨追加用リグ。
+// 外形の首・頭はそのまま残し、骨格確認モードだけで見える内部骨格として分離する。
+// これにより次段階で「頚椎のS字配列」「頭蓋骨」「上嘴・下嘴」を個別に精密化できる。
+const CERVICAL_SKULL_SPEC = Object.freeze({
+  vertebraCount: 7,
+
+  // Step30: 頚椎の起点を外形の胸メッシュから取らない。
+  // 胸椎列の最前端 spineThoracic1 に直接接続し、
+  // 「胸椎 → 頚椎 → 後頭顆 → 頭蓋骨」を一本の spineRoot 系統にする。
+  neckBase:  { thoracic: "spineThoracic1", offset: [0.000, 0.018, 0.030] },
+  neckMid:   { mesh: "neck",  offset: [0.000, 0.010, 0.040] },
+  skullBase: { mesh: "head",  offset: [0.000, -0.010, -0.135] },
+  skullCore: { mesh: "head",  offset: [0.000, 0.010, 0.020] },
+  beakBase:  { mesh: "head",  offset: [0.000, -0.006, 0.190] },
+  beakTip:   { mesh: "upperBeak", offset: [0.000, 0.000, 0.330] }
+});
+
+function makeCervicalSkeletonMaterial(color, opacity=0.0, wire=false) {
+  return new THREE.MeshStandardMaterial({
+    color,
+    roughness: 0.68,
+    metalness: 0.02,
+    transparent: true,
+    opacity,
+    depthWrite: false,
+    wireframe: !!wire
+  });
+}
+function registerCervicalPart(mesh, opacity=0.76) {
+  mesh.visible = false;
+  mesh.userData.isCervicalSkullSkeleton = true;
+  mesh.userData.skeletonOpacity = opacity;
+  skeletonParts.push(mesh);
+  return mesh;
+}
+function makeCervicalJoint(radius, color) {
+  return registerCervicalPart(new THREE.Mesh(
+    new THREE.SphereGeometry(radius, 14, 10),
+    makeCervicalSkeletonMaterial(color)
+  ), 0.82);
+}
+function makeCervicalLink(radius, color) {
+  return registerCervicalPart(new THREE.Mesh(
+    new THREE.CylinderGeometry(radius, radius * 0.86, 1, 10),
+    makeCervicalSkeletonMaterial(color)
+  ), 0.74);
+}
+function makeSkullWireEllipsoid(rx, ry, rz, color) {
+  const m = new THREE.Mesh(
+    new THREE.SphereGeometry(1, 24, 14),
+    makeCervicalSkeletonMaterial(color, 0.0, true)
+  );
+  m.scale.set(rx, ry, rz);
+  return registerCervicalPart(m, 0.68);
+}
+
+// Step31: 頚椎分節＋頭慣性＋視線制御用の状態。
+// 頭を直接ガチ固定せず、頚椎列にわずかな遅れを持たせて安定させる。
+const headControlState = {
+  pitch: 0,
+  yaw: 0,
+  roll: 0,
+  gazeYaw: 0,
+  gazePitch: 0
+};
+
+const cervicalSkullRig = (() => {
+  const g = new THREE.Group();
+  g.name = "cervical_skull_rig_step29";
+  spineRoot.add(g);
+
+  const vertebrae = [];
+  const cervicalLinks = [];
+  for (let i = 0; i < CERVICAL_SKULL_SPEC.vertebraCount; i++) {
+    const q = i / Math.max(1, CERVICAL_SKULL_SPEC.vertebraCount - 1);
+    const r = 0.030 - 0.008 * q;
+    const v = makeCervicalJoint(r, 0xe9d6a2);
+    v.name = "cervical_vertebra_" + (i + 1);
+    g.add(v);
+    vertebrae.push(v);
+    if (i > 0) {
+      const link = makeCervicalLink(0.010 - 0.002 * q, 0xd7c38d);
+      link.name = "cervical_intercentrum_link_" + i;
+      g.add(link);
+      cervicalLinks.push(link);
+    }
+  }
+
+  const skull = makeSkullWireEllipsoid(0.145, 0.098, 0.175, 0xf6ead0);
+  skull.name = "skull_cranium_wire";
+  g.add(skull);
+
+  const occipital = makeCervicalJoint(0.020, 0xffffff);
+  occipital.name = "occipital_condyle";
+  g.add(occipital);
+
+  const beakUpper = makeCervicalLink(0.007, 0xffe2b0);
+  beakUpper.name = "premaxilla_upper_beak_axis";
+  g.add(beakUpper);
+  const beakLower = makeCervicalLink(0.0055, 0xd8c2a0);
+  beakLower.name = "mandible_lower_beak_axis";
+  g.add(beakLower);
+
+  const leftOrbit = registerCervicalPart(new THREE.Mesh(
+    new THREE.TorusGeometry(0.038, 0.0032, 8, 24),
+    makeCervicalSkeletonMaterial(0xdde8ff)
+  ), 0.70);
+  leftOrbit.name = "left_orbit_ring";
+  g.add(leftOrbit);
+  const rightOrbit = registerCervicalPart(leftOrbit.clone(), 0.70);
+  rightOrbit.material = leftOrbit.material.clone();
+  rightOrbit.name = "right_orbit_ring";
+  g.add(rightOrbit);
+
+  const temporalBarL = makeCervicalLink(0.0045, 0xcfdcff);
+  const temporalBarR = makeCervicalLink(0.0045, 0xcfdcff);
+  temporalBarL.name = "left_temporal_bar";
+  temporalBarR.name = "right_temporal_bar";
+  g.add(temporalBarL, temporalBarR);
+
+  const thoracicCervicalBridge = makeCervicalLink(0.011, 0xffd7a0);
+  thoracicCervicalBridge.name = "thoracic1_to_cervical1_bridge";
+  g.add(thoracicCervicalBridge);
+
+  return { group: g, vertebrae, cervicalLinks, skull, occipital, beakUpper, beakLower, leftOrbit, rightOrbit, temporalBarL, temporalBarR, thoracicCervicalBridge };
+})();
+
+function cervicalRefPoint(ref) {
+  if (!ref) return new THREE.Vector3();
+
+  // Step30: 胸椎由来の参照点は thoracicRigGroup ローカルから
+  // 必ず spineRoot ローカルへ変換して使う。これで頚椎と胸椎が離れない。
+  if (ref.thoracic) {
+    const p = thoracicPointToSpineRoot(ref.thoracic);
+    const off = ref.offset || [0, 0, 0];
+    p.x += off[0] || 0;
+    p.y += off[1] || 0;
+    p.z += off[2] || 0;
+    return p;
+  }
+
+  const meshMap = { chest, neck, head, upperBeak, lowerBeak };
+  const mesh = meshMap[ref.mesh];
+  if (!mesh) return new THREE.Vector3();
+  return bodyLocalPoint(mesh, ref.offset[0], ref.offset[1], ref.offset[2]);
+}
+function cubicBezierVec(a, b, c, d, u) {
+  const inv = 1 - u;
+  return new THREE.Vector3(
+    inv*inv*inv*a.x + 3*inv*inv*u*b.x + 3*inv*u*u*c.x + u*u*u*d.x,
+    inv*inv*inv*a.y + 3*inv*inv*u*b.y + 3*inv*u*u*c.y + u*u*u*d.y,
+    inv*inv*inv*a.z + 3*inv*inv*u*b.z + 3*inv*u*u*c.z + u*u*u*d.z
+  );
+}
+function setRigObjectQuaternionFromMesh(obj, mesh) {
+  mesh.updateWorldMatrix(true, false);
+  spineRoot.updateWorldMatrix(true, false);
+  const qWorld = new THREE.Quaternion();
+  const qParent = new THREE.Quaternion();
+  mesh.getWorldQuaternion(qWorld);
+  spineRoot.getWorldQuaternion(qParent);
+  obj.quaternion.copy(qParent.invert().multiply(qWorld));
+}
+function updateCervicalSkullRig(tLive=0, bodyPhys=null) {
+  if (!cervicalSkullRig) return;
+  const base = cervicalRefPoint(CERVICAL_SKULL_SPEC.neckBase);
+  const mid = cervicalRefPoint(CERVICAL_SKULL_SPEC.neckMid);
+  const skullBase = cervicalRefPoint(CERVICAL_SKULL_SPEC.skullBase);
+
+  // 鳥類の頚椎らしいS字：胸郭から一度上がり、頭蓋骨直前で前方へ入る。
+  const ctrl1 = mid.clone().lerp(base, 0.25);
+  ctrl1.y += 0.055;
+  ctrl1.z -= 0.045;
+  const ctrl2 = mid.clone().lerp(skullBase, 0.38);
+  ctrl2.y += 0.018;
+  ctrl2.z += 0.055;
+
+  const breath = 0.003 * Math.sin(tLive * 0.78 + 0.4);
+  const nerve = 0.0025 * Math.sin(tLive * 5.6) + 0.0016 * Math.sin(tLive * 8.9 + 0.6);
+
+  const pts = [];
+  for (let i = 0; i < cervicalSkullRig.vertebrae.length; i++) {
+    const u = i / Math.max(1, cervicalSkullRig.vertebrae.length - 1);
+    const p = cubicBezierVec(base, ctrl1, ctrl2, skullBase, u);
+    p.x += nerve * Math.sin(i * 1.7 + tLive * 0.4);
+    p.y += breath * (0.4 + u);
+    p.z += 0.002 * Math.sin(tLive * 1.3 + i * 0.55) * (1.0 - Math.abs(u - 0.5));
+    pts.push(p);
+    const v = cervicalSkullRig.vertebrae[i];
+    v.position.copy(p);
+    // 分節頚椎：胸椎側は安定、頭蓋骨側ほど視線補正を多く受ける。
+    const headShare = smooth01(u);
+    const baseShare = 1.0 - headShare;
+    v.rotation.x = 0.10 * baseShare * headControlState.pitch + 0.030 * Math.sin(tLive * 1.15 + i * 0.55) * (1.0 - Math.abs(u - 0.50));
+    v.rotation.y = 0.18 * headShare * headControlState.gazeYaw + 0.010 * Math.sin(tLive * 0.95 + i * 0.72);
+    v.rotation.z = 0.12 * headShare * headControlState.roll + 0.006 * Math.sin(tLive * 1.4 + i);
+  }
+  for (let i = 0; i < cervicalSkullRig.cervicalLinks.length; i++) {
+    updateCylinderBetween(cervicalSkullRig.cervicalLinks[i], pts[i], pts[i + 1], 1.0);
+  }
+
+  // Step30: 胸椎1番と頚椎1番の間を明示的に連結する。
+  // これがないと、点列は近くても骨格確認モードで隙間に見える。
+  const thoracicAnchor = thoracicPointToSpineRoot("spineThoracic1");
+  updateCylinderBetween(cervicalSkullRig.thoracicCervicalBridge, thoracicAnchor, pts[0], 1.0);
+
+  const skullCore = cervicalRefPoint(CERVICAL_SKULL_SPEC.skullCore);
+  const beakBase = cervicalRefPoint(CERVICAL_SKULL_SPEC.beakBase);
+  const beakTip = cervicalRefPoint(CERVICAL_SKULL_SPEC.beakTip);
+  const lowerBase = bodyLocalPoint(head, 0, -0.026, 0.175);
+  const lowerTip = bodyLocalPoint(lowerBeak, 0, 0.000, 0.285);
+
+  cervicalSkullRig.skull.position.copy(skullCore);
+  setRigObjectQuaternionFromMesh(cervicalSkullRig.skull, head);
+  cervicalSkullRig.skull.rotation.x += 0.10 * headControlState.pitch;
+  cervicalSkullRig.skull.rotation.y += 0.12 * headControlState.gazeYaw;
+  cervicalSkullRig.skull.rotation.z += 0.08 * headControlState.roll;
+  cervicalSkullRig.occipital.position.copy(skullBase);
+  updateCylinderBetween(cervicalSkullRig.beakUpper, beakBase, beakTip, 0.70);
+  updateCylinderBetween(cervicalSkullRig.beakLower, lowerBase, lowerTip, 0.62);
+
+  for (const side of [-1, 1]) {
+    const orbit = side < 0 ? cervicalSkullRig.leftOrbit : cervicalSkullRig.rightOrbit;
+    const orbitP = bodyLocalPoint(head, side * 0.105, 0.035, 0.070);
+    orbit.position.copy(orbitP);
+    setRigObjectQuaternionFromMesh(orbit, head);
+    orbit.rotation.y += side * 0.16;
+    orbit.rotation.x += 0.12;
+
+    const bar = side < 0 ? cervicalSkullRig.temporalBarL : cervicalSkullRig.temporalBarR;
+    const barA = bodyLocalPoint(head, side * 0.105, 0.018, 0.045);
+    const barB = bodyLocalPoint(head, side * 0.080, -0.020, -0.095);
+    updateCylinderBetween(bar, barA, barB, 0.55);
+  }
+}
+
+
+// Step10 refactor: 骨盤・足を後から安全に追加するための下半身リグ層。
+// ここでは既存の胴体・肩・翼・尾羽の構造は変更しない。
+// 次ステップでは LOWER_BODY_RIG_SPEC の点だけを調整すれば、骨盤・大腿・足を実体化できる。
+const LOWER_BODY_RIG_SPEC = Object.freeze({
+  // Step14 anatomical correction:
+  // 股関節は腹部真下ではなく、骨盤側面のやや後方・腹側に置く。
+  // 鳥脚の見え方は「股関節→膝が前下方、膝→足首が後下方、足首→足根中足骨先端が前下方」のZ字。
+  // ここで toe は足指そのものではなく、足根中足骨の先端＝足指の分岐点として扱う。
+  hip:    { x: 0.132, y: -0.058, z: -0.058 },
+  knee:   { x: 0.082, y: -0.220, z:  0.052 },
+  ankle:  { x: 0.106, y: -0.350, z: -0.088 },
+  toe:    { x: 0.118, y: -0.462, z:  0.020 },
+  boneRadius: 0.010,
+  jointRadius: 0.026
+});
+
+function makeLowerBodyRig() {
+  const g = new THREE.Group();
+  g.name = "lower_body_pelvis_leg_scaffold";
+  spineRoot.add(g);
+  const joints = {
+    thoracicEnd: makeJoint(0.044, 0xff6666),
+    synsacrum: makeJoint(0.052, 0xff8844),
+    pelvis: makeJoint(0.060, 0xffcc88),
+    leftHip: makeJoint(LOWER_BODY_RIG_SPEC.jointRadius, 0xffaa66),
+    leftKnee: makeJoint(LOWER_BODY_RIG_SPEC.jointRadius * 0.86, 0xffdd88),
+    leftAnkle: makeJoint(LOWER_BODY_RIG_SPEC.jointRadius * 0.78, 0x99ddff),
+    leftToe: makeJoint(LOWER_BODY_RIG_SPEC.jointRadius * 0.62, 0xddeeff),
+    rightHip: makeJoint(LOWER_BODY_RIG_SPEC.jointRadius, 0xffaa66),
+    rightKnee: makeJoint(LOWER_BODY_RIG_SPEC.jointRadius * 0.86, 0xffdd88),
+    rightAnkle: makeJoint(LOWER_BODY_RIG_SPEC.jointRadius * 0.78, 0x99ddff),
+    rightToe: makeJoint(LOWER_BODY_RIG_SPEC.jointRadius * 0.62, 0xddeeff)
+  };
+  for (const k of Object.keys(joints)) g.add(joints[k]);
+  const bones = {
+    thoracicLumbarLink: makeDebugBoneMesh(1, 0xff6655, 0.010),
+    synsacrumPelvisLink: makeDebugBoneMesh(1, 0xff8844, 0.010),
+    pelvisSpineLink: makeDebugBoneMesh(1, 0xff9966, 0.010),
+    pelvisBar: makeDebugBoneMesh(1, 0xffbb66, 0.012),
+    leftFemur: makeDebugBoneMesh(1, 0xffcc77, LOWER_BODY_RIG_SPEC.boneRadius),
+    leftTibiotarsus: makeDebugBoneMesh(1, 0xffdd99, LOWER_BODY_RIG_SPEC.boneRadius * 0.82),
+    leftTarsometatarsus: makeDebugBoneMesh(1, 0x99ddff, LOWER_BODY_RIG_SPEC.boneRadius * 0.68),
+    rightFemur: makeDebugBoneMesh(1, 0xffcc77, LOWER_BODY_RIG_SPEC.boneRadius),
+    rightTibiotarsus: makeDebugBoneMesh(1, 0xffdd99, LOWER_BODY_RIG_SPEC.boneRadius * 0.82),
+    rightTarsometatarsus: makeDebugBoneMesh(1, 0x99ddff, LOWER_BODY_RIG_SPEC.boneRadius * 0.68)
+  };
+  for (const k of Object.keys(bones)) g.add(bones[k]);
+  return { group: g, joints, bones };
+}
+const lowerBodyRig = makeLowerBodyRig();
+
+// Step11: 骨盤・脚の実体表示。
+// 既存の翼・肩・尾羽リグには接続せず、Step10 の lowerBodyRig の点列だけを参照する。
+// ハチドリの脚は飛翔中ほぼ腹側にたたまれるため、長く目立たせず、腹〜尾筒下に小さく収める。
+// Step12: 翼加速度→胸郭→骨盤→脚→足指へ、遅れを持った反作用伝播を追加する。
+const lowerBodyVisualMaterials = {
+  pelvis: new THREE.MeshStandardMaterial({ color: 0x5a5143, roughness: 0.86, metalness: 0.01, transparent: true, opacity: 0.66 }),
+  thigh: new THREE.MeshStandardMaterial({ color: 0x23251f, roughness: 0.80, metalness: 0.02 }),
+  shank: new THREE.MeshStandardMaterial({ color: 0x1d1d18, roughness: 0.78, metalness: 0.03 }),
+  foot: new THREE.MeshStandardMaterial({ color: 0x191713, roughness: 0.72, metalness: 0.06 }),
+  claw: new THREE.MeshStandardMaterial({ color: 0x070605, roughness: 0.55, metalness: 0.10 }),
+  covert: new THREE.MeshStandardMaterial({ color: 0x24251e, roughness: 0.82, metalness: 0.02, side: THREE.DoubleSide, transparent: true, opacity: 0.82 })
+};
+
+function makeLegCylinder(radius, colorMat) {
+  return new THREE.Mesh(new THREE.CylinderGeometry(radius, radius * 0.78, 1, 10), colorMat);
+}
+
+function makeFootToe(name, side, spread, len, radius=0.0055) {
+  const g = new THREE.Group();
+  g.name = name;
+  g.userData.side = side;
+  g.userData.spread = spread;
+  g.userData.len = len;
+  const toe = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius * 0.72, len, 8), lowerBodyVisualMaterials.foot);
+  toe.rotation.x = Math.PI / 2;
+  toe.position.z = len * 0.5;
+  g.add(toe);
+  const claw = new THREE.Mesh(new THREE.ConeGeometry(radius * 1.15, len * 0.22, 8), lowerBodyVisualMaterials.claw);
+  claw.rotation.x = -Math.PI / 2;
+  claw.position.z = len * 1.02;
+  claw.position.y = -0.002;
+  g.add(claw);
+  return g;
+}
+
+function makeLowerBellyCovertGeometry(len=0.13, rootW=0.020, tipW=0.012) {
+  const geo = new THREE.BufferGeometry();
+  const verts = new Float32Array([
+    -rootW, 0.000, 0.000,
+     rootW, 0.000, 0.000,
+     tipW,  0.006, -len * 0.72,
+     0.000, 0.000, -len,
+    -tipW,  0.006, -len * 0.72
+  ]);
+  geo.setAttribute("position", new THREE.BufferAttribute(verts, 3));
+  geo.setIndex([0,1,2, 0,2,4, 4,2,3]);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function makeLowerBodyVisualRig() {
+  const g = new THREE.Group();
+  g.name = "lower_body_pelvis_and_legs_visual";
+  spineRoot.add(g);
+
+  const pelvisGroup = new THREE.Group();
+  pelvisGroup.name = "pelvis_visual_block";
+  const pelvisShell = ellipsoid(0.165, 0.080, 0.115, lowerBodyVisualMaterials.pelvis, 24);
+  pelvisShell.rotation.x = -0.18;
+  pelvisGroup.add(pelvisShell);
+  const pelvisKeel = new THREE.Mesh(new THREE.CylinderGeometry(0.010, 0.008, 0.245, 10), lowerBodyVisualMaterials.pelvis);
+  pelvisKeel.rotation.z = Math.PI / 2;
+  pelvisKeel.position.y = -0.030;
+  pelvisGroup.add(pelvisKeel);
+  g.add(pelvisGroup);
+
+  const limbs = {};
+  for (const side of [-1, 1]) {
+    const prefix = side < 0 ? "left" : "right";
+    limbs[prefix + "Thigh"] = makeLegCylinder(0.017, lowerBodyVisualMaterials.thigh);
+    limbs[prefix + "Shank"] = makeLegCylinder(0.012, lowerBodyVisualMaterials.shank);
+    limbs[prefix + "Metatarsus"] = makeLegCylinder(0.0085, lowerBodyVisualMaterials.foot);
+    g.add(limbs[prefix + "Thigh"], limbs[prefix + "Shank"], limbs[prefix + "Metatarsus"]);
+
+    const footGroup = new THREE.Group();
+    footGroup.name = prefix + "_foot_four_toes";
+    footGroup.userData.side = side;
+    const toes = [
+      makeFootToe(prefix + "ToeCenter", side, 0.00, 0.118, 0.0058),
+      makeFootToe(prefix + "ToeOuter", side, side * 0.34, 0.088, 0.0050),
+      makeFootToe(prefix + "ToeInner", side, -side * 0.26, 0.078, 0.0046),
+      makeFootToe(prefix + "ToeBack", side, Math.PI, 0.066, 0.0046)
+    ];
+    for (const toe of toes) footGroup.add(toe);
+    limbs[prefix + "Foot"] = footGroup;
+    g.add(footGroup);
+  }
+
+  const covertGroup = new THREE.Group();
+  covertGroup.name = "lower_belly_leg_coverts";
+  const coverts = [];
+  for (let i = -4; i <= 4; i++) {
+    const side = i / 4;
+    const absSide = Math.abs(side);
+    const mat = lowerBodyVisualMaterials.covert.clone();
+    mat.color.copy(colBelly).lerp(colWingRoot, 0.55 + 0.22 * absSide);
+    const feather = new THREE.Mesh(makeLowerBellyCovertGeometry(0.105 + 0.020 * (1 - absSide), 0.014, 0.016), mat);
+    feather.userData.side = side;
+    feather.userData.phase = i * 0.53;
+    feather.userData.baseX = side * 0.050;
+    feather.userData.baseY = -0.010 - 0.008 * absSide;
+    feather.userData.baseZ = -0.020 + 0.004 * Math.cos(i);
+    feather.position.set(feather.userData.baseX, feather.userData.baseY, feather.userData.baseZ);
+    feather.rotation.x = 0.54 + 0.04 * absSide;
+    feather.rotation.y = side * 0.18;
+    feather.rotation.z = side * 0.08;
+    covertGroup.add(feather);
+    coverts.push(feather);
+  }
+  g.add(covertGroup);
+
+  return { group: g, pelvisGroup, limbs, covertGroup, coverts };
+}
+const lowerBodyVisualRig = makeLowerBodyVisualRig();
+
+function updateLowerBodyVisuals(tLive=0, bodyPhys=null) {
+  if (!lowerBodyVisualRig || !lowerBodyRig) return;
+  const j = lowerBodyRig.joints;
+  const v = lowerBodyVisualRig;
+  const tailCouple = bodyPhys ? (bodyPhys.tailReaction || 0) : 0;
+  const abdomenCouple = bodyPhys ? (bodyPhys.abdomenReaction || 0) : 0;
+  const pelvisLag = bodyPhys ? (bodyPhys.pelvisLag || 0) : 0;
+  const legLag = bodyPhys ? (bodyPhys.legLag || 0) : 0;
+  const toeLag = bodyPhys ? (bodyPhys.toeLag || 0) : 0;
+  const legMode = getLegModeParams(tLive);
+  const showSkeleton = isSkeletonDisplayMode();
+
+  v.pelvisGroup.position.copy(j.pelvis.position);
+  v.pelvisGroup.rotation.x = 0.10 + 0.026 * pelvisLag + 0.010 * abdomenCouple;
+  v.pelvisGroup.rotation.y = 0.010 * tailCouple - 0.020 * pelvisLag;
+  v.pelvisGroup.rotation.z = 0.010 * legLag;
+  v.pelvisGroup.scale.set(1.0, 1.0 + 0.030 * Math.abs(pelvisLag), 1.0 + 0.018 * Math.abs(abdomenCouple));
+  for (const child of v.pelvisGroup.children) {
+    if (child.material) {
+      child.material.opacity = showSkeleton ? 0.44 : 0.22;
+      child.material.transparent = true;
+      child.material.depthWrite = !showSkeleton;
+      child.material.needsUpdate = true;
+    }
+  }
+
+  for (const side of [-1, 1]) {
+    const prefix = side < 0 ? "left" : "right";
+    const hip = j[prefix + "Hip"].position;
+    const knee = j[prefix + "Knee"].position;
+    const ankle = j[prefix + "Ankle"].position;
+    const toe = j[prefix + "Toe"].position;
+
+    updateCylinderBetween(v.limbs[prefix + "Thigh"], hip, knee, 0.88);
+    updateCylinderBetween(v.limbs[prefix + "Shank"], knee, ankle, 0.72);
+    updateCylinderBetween(v.limbs[prefix + "Metatarsus"], ankle, toe, 0.60);
+
+    const foot = v.limbs[prefix + "Foot"];
+    // 足指は足根中足骨の先端から分岐させる。骨盤や下腿に直接貼らない。
+    foot.position.copy(toe);
+    const metatarsalDir = new THREE.Vector3().subVectors(toe, ankle).normalize();
+    const footAim = metatarsalDir
+      .clone()
+      .multiplyScalar(0.56)
+      .add(new THREE.Vector3(side * (0.012 + 0.008 * legLag), -0.010 - 0.006 * Math.abs(toeLag), 0.088 + 0.016 * pelvisLag))
+      .normalize();
+    foot.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), footAim);
+    foot.rotation.z += side * (0.055 + 0.025 * legLag);
+    foot.rotation.x += -0.10 + 0.020 * tailCouple - 0.030 * toeLag;
+
+    let idx = 0;
+    for (const toeMesh of foot.children) {
+      const spread = toeMesh.userData.spread;
+      const passiveDelay = toeLag * (0.85 + 0.10 * idx) + 0.010 * Math.sin(tLive * 0.75 + idx * 1.7);
+      const graspCurl = 0.16 + 0.30 * legMode.grasp + 0.06 * Math.max(0, legMode.extend);
+      if (spread === Math.PI) {
+        toeMesh.rotation.y = Math.PI + side * (0.10 + 0.035 * passiveDelay);
+        toeMesh.rotation.x = -0.18 - graspCurl * 0.70 - 0.045 * passiveDelay;
+      } else {
+        toeMesh.rotation.y = spread + side * (0.030 * Math.sin(tLive * 0.75 + idx) + 0.052 * passiveDelay);
+        toeMesh.rotation.x = -0.04 - graspCurl - 0.036 * passiveDelay;
+      }
+      idx++;
+    }
+  }
+
+  v.covertGroup.position.copy(j.pelvis.position);
+  v.covertGroup.position.y += 0.005 - 0.004 * Math.abs(pelvisLag);
+  v.covertGroup.position.z += 0.055 + 0.010 * pelvisLag;
+  v.covertGroup.rotation.x = 0.12 + 0.022 * pelvisLag;
+  v.covertGroup.rotation.y = 0.010 * tailCouple;
+  for (const f of v.coverts) {
+    const side = f.userData.side;
+    const soft = 0.010 * Math.sin(tLive * 1.0 + f.userData.phase) + 0.010 * pelvisLag;
+    f.position.x = f.userData.baseX + side * (0.003 * Math.sin(tLive * 0.6) + 0.004 * legLag);
+    f.position.y = f.userData.baseY - 0.003 * Math.abs(tailCouple) - 0.003 * Math.abs(pelvisLag);
+    f.position.z = f.userData.baseZ + 0.004 * Math.sin(tLive * 0.6 + f.userData.phase) + 0.004 * pelvisLag;
+    f.rotation.x = 0.54 + soft;
+    f.rotation.y = side * (0.18 + 0.014 * Math.sin(tLive * 0.8) + 0.016 * legLag);
+  }
+}
+function lowerBodyPoint(side, key) {
+  const p = LOWER_BODY_RIG_SPEC[key];
+  return new THREE.Vector3(side * p.x, p.y, p.z);
+}
+
+function lowerBodyDynamicPoint(side, key, pelvisLag, legLag, toeLag, wingKin, tLive=0) {
+  const p = lowerBodyPoint(side, key);
+  const sweep = wingKin ? wingKin.forceSweep : 0;
+  const pitch = wingKin ? wingKin.forcePitch : 0;
+  const legMode = getLegModeParams(tLive);
+  const tuck = legMode.tuck;
+  const extend = legMode.extend;
+  // Step27: 左右完全ミラーを崩さない程度の微非対称。
+  // 解剖接続は保ち、末端ほどわずかに位相差と神経ノイズを増やす。
+  const sidePhase = side < 0 ? 0.0 : 0.23;
+  const asymHip = 0.0035 * Math.sin(tLive * 1.35 + sidePhase);
+  const asymLeg = 0.0060 * Math.sin(tLive * 1.70 + sidePhase + 0.55);
+  const asymToe = 0.0080 * Math.sin(tLive * 2.10 + sidePhase + 1.10);
+  if (key === "hip") {
+    // 股関節は骨盤側面後方に固定される支点。大きく振らず、骨盤の微小ロールだけを受ける。
+    p.x += side * (0.005 * pelvisLag + 0.002 * sweep + asymHip);
+    p.y += 0.003 * pelvisLag + 0.0015 * asymHip;
+    p.z += -0.004 * pelvisLag + 0.002 * pitch + 0.0015 * asymHip;
+  } else if (key === "knee") {
+    // 大腿骨は前下方へ折りたたむ。脚の遅れで膝が少しつぶれる。
+    p.x += side * (0.007 * legLag + 0.003 * pelvisLag + asymLeg);
+    p.y += 0.018 * legLag - 0.006 * Math.abs(pelvisLag) + 0.0020 * asymLeg;
+    p.z += 0.010 * pelvisLag + 0.012 * legLag + 0.0025 * asymLeg;
+  } else if (key === "ankle") {
+    // 下腿は後下方へ戻る。末端ほど遅れを増やす。
+    p.x += side * (0.010 * legLag + 0.004 * toeLag + asymLeg * 0.75);
+    p.y += 0.026 * legLag - 0.010 * Math.abs(toeLag) + 0.0025 * asymToe;
+    p.z += -0.012 * pelvisLag - 0.020 * legLag + 0.004 * toeLag + 0.0030 * asymLeg;
+  } else if (key === "toe") {
+    // toe は足指の分岐点。足根中足骨の先端として、足首から前下方へ出す。
+    p.x += side * (0.012 * legLag + 0.006 * toeLag + asymToe);
+    p.y += 0.032 * legLag - 0.016 * Math.abs(toeLag) + 0.0030 * asymToe;
+    p.z += 0.006 * pelvisLag + 0.010 * legLag + 0.026 * toeLag + 0.0040 * asymToe;
+  }
+
+  // 機能モード補正：点列を崩さず、Z字のまま全体の使われ方だけを変える。
+  // flight: 脚を腹側へ引き込み、足指は軽く握る。
+  // landing: 股関節から下へ伸ばし、足根中足骨を前下方へ出す。
+  // grasp: 着地姿勢に近づけつつ、足指分岐点をやや下げて把持しやすくする。
+  if (key === "hip") {
+    p.y += 0.010 * tuck - 0.006 * extend;
+    p.z += -0.012 * tuck + 0.006 * extend;
+  } else if (key === "knee") {
+    p.y += 0.075 * tuck - 0.090 * extend;
+    p.z += -0.050 * tuck + 0.036 * extend;
+    p.x += side * (0.010 * tuck - 0.006 * extend);
+  } else if (key === "ankle") {
+    p.y += 0.125 * tuck - 0.150 * extend;
+    p.z += -0.072 * tuck + 0.062 * extend;
+    p.x += side * (0.012 * tuck - 0.004 * extend);
+  } else if (key === "toe") {
+    p.y += 0.155 * tuck - 0.185 * extend - 0.018 * legMode.grasp;
+    p.z += -0.080 * tuck + 0.095 * extend - 0.018 * legMode.grasp;
+    p.x += side * (0.010 * tuck + 0.006 * legMode.grasp);
+  }
+
+  return p;
+}
+
+// Step25: pelvis-spine reconnect.
+// 骨盤は腹部後端と尾筒基部の間にある仙骨側アンカーとして計算し、
+// 胸郭・背骨・骨盤・脚を同じ spineRoot ローカル座標で接続する。
+function pelvisSpineAnchorPoint(tLive=0, bodyPhys=null) {
+  // Step26: 骨盤の親を「腹部メッシュ」ではなく、正式胸椎列の終端から続く腰仙骨に変更。
+  // これで胸椎列と骨盤列がワールド座標で連続し、2本の背骨に見える問題を解消する。
+  const synsacrum = lumbarSynsacrumPoint(tLive, bodyPhys);
+  const tailBase = bodyLocalPoint(tailCone, 0, -0.030, -0.030);
+  const pelvisLag = bodyPhys ? (bodyPhys.pelvisLag || 0) : 0;
+  const legLag = bodyPhys ? (bodyPhys.legLag || 0) : 0;
+  const tailCouple = bodyPhys ? (bodyPhys.tailReaction || 0) : 0;
+  const abdomenCouple = bodyPhys ? (bodyPhys.abdomenReaction || 0) : 0;
+
+  // 鳥類の骨盤は腰椎・仙椎と癒合した synsacrum の後腹側に乗る。
+  // tailCone の見た目に寄せすぎると腹部と分離するので、胸椎末端由来の synsacrum を主基準にする。
+  const p = synsacrum.clone().lerp(tailBase, 0.28);
+  p.y += -0.030 + 0.004 * pelvisLag + 0.002 * abdomenCouple;
+  p.z += -0.035 - 0.006 * pelvisLag + 0.004 * tailCouple;
+  p.x +=  0.002 * Math.sin(tLive * 0.46) + 0.003 * legLag;
+  return p;
+}
+
+function updateLowerBodyRigSkeleton(tLive=0, bodyPhys=null) {
+  if (!lowerBodyRig || !lowerBodyRig.joints) return;
+  const visible = isSkeletonDisplayMode();
+  const j = lowerBodyRig.joints;
+  const b = lowerBodyRig.bones;
+  const tailCouple = bodyPhys ? (bodyPhys.tailReaction || 0) : 0;
+  const abdomenCouple = bodyPhys ? (bodyPhys.abdomenReaction || 0) : 0;
+  const pelvisLag = bodyPhys ? (bodyPhys.pelvisLag || 0) : 0;
+  const legLag = bodyPhys ? (bodyPhys.legLag || 0) : 0;
+  const toeLag = bodyPhys ? (bodyPhys.toeLag || 0) : 0;
+  const wingKin = bodyPhys ? bodyPhys.wingKin : null;
+
+  // Step26: 胸椎末端→腰仙骨→骨盤を同じ spineRoot ローカルで一本化する。
+  const thoracicEnd = thoracicSpineEndPoint();
+  const synsacrum = lumbarSynsacrumPoint(tLive, bodyPhys);
+  const pelvis = pelvisSpineAnchorPoint(tLive, bodyPhys);
+
+  const leftHip = pelvis.clone().add(lowerBodyDynamicPoint(-1, "hip", pelvisLag, legLag, toeLag, wingKin, tLive));
+  const rightHip = pelvis.clone().add(lowerBodyDynamicPoint(1, "hip", pelvisLag, legLag, toeLag, wingKin, tLive));
+  const leftKnee = pelvis.clone().add(lowerBodyDynamicPoint(-1, "knee", pelvisLag, legLag, toeLag, wingKin, tLive));
+  const rightKnee = pelvis.clone().add(lowerBodyDynamicPoint(1, "knee", pelvisLag, legLag, toeLag, wingKin, tLive));
+  const leftAnkle = pelvis.clone().add(lowerBodyDynamicPoint(-1, "ankle", pelvisLag, legLag, toeLag, wingKin, tLive));
+  const rightAnkle = pelvis.clone().add(lowerBodyDynamicPoint(1, "ankle", pelvisLag, legLag, toeLag, wingKin, tLive));
+  const leftToe = pelvis.clone().add(lowerBodyDynamicPoint(-1, "toe", pelvisLag, legLag, toeLag, wingKin, tLive));
+  const rightToe = pelvis.clone().add(lowerBodyDynamicPoint(1, "toe", pelvisLag, legLag, toeLag, wingKin, tLive));
+
+  const tuck = 0.010 * legLag + 0.006 * tailCouple;
+  for (const p of [leftKnee, rightKnee]) p.y += tuck;
+  for (const p of [leftAnkle, rightAnkle]) { p.y += tuck * 1.25; p.z += 0.007 * toeLag; }
+  for (const p of [leftToe, rightToe]) { p.y += tuck * 1.35; p.z += 0.012 * toeLag; }
+
+  if (j.thoracicEnd) j.thoracicEnd.position.copy(thoracicEnd);
+  if (j.synsacrum) j.synsacrum.position.copy(synsacrum);
+  j.pelvis.position.copy(pelvis);
+  j.leftHip.position.copy(leftHip); j.rightHip.position.copy(rightHip);
+  j.leftKnee.position.copy(leftKnee); j.rightKnee.position.copy(rightKnee);
+  j.leftAnkle.position.copy(leftAnkle); j.rightAnkle.position.copy(rightAnkle);
+  j.leftToe.position.copy(leftToe); j.rightToe.position.copy(rightToe);
+  // 旧 tailBase ではなく、正式胸椎末端から腰仙骨を経由して骨盤へつなぐ。
+  if (b.thoracicLumbarLink) updateCylinderBetween(b.thoracicLumbarLink, thoracicEnd, synsacrum, 0.54);
+  if (b.synsacrumPelvisLink) updateCylinderBetween(b.synsacrumPelvisLink, synsacrum, pelvis, 0.56);
+  updateCylinderBetween(b.pelvisSpineLink, synsacrum, pelvis, 0.38);
+  updateCylinderBetween(b.pelvisBar, leftHip, rightHip, 0.62);
+  updateCylinderBetween(b.leftFemur, leftHip, leftKnee, 0.55);
+  updateCylinderBetween(b.rightFemur, rightHip, rightKnee, 0.55);
+  updateCylinderBetween(b.leftTibiotarsus, leftKnee, leftAnkle, 0.45);
+  updateCylinderBetween(b.rightTibiotarsus, rightKnee, rightAnkle, 0.45);
+  updateCylinderBetween(b.leftTarsometatarsus, leftAnkle, leftToe, 0.35);
+  updateCylinderBetween(b.rightTarsometatarsus, rightAnkle, rightToe, 0.35);
+  for (const part of [...Object.values(j), ...Object.values(b)]) part.visible = visible;
+}
+
+
+// Step4: 胴体レベル2物理化。
+const bodyPhysics = {
+  lastT: null,
+  thorax: { x: 0, v: 0 },
+  abdomen: { x: 0, v: 0 },
+  tail: { x: 0, v: 0 },
+  heave: { x: 0, v: 0 },
+  recoilZ: { x: 0, v: 0 },
+  sternum: { x: 0, v: 0 },
+  pelvisLag: { x: 0, v: 0 },
+  legLag: { x: 0, v: 0 },
+  toeLag: { x: 0, v: 0 },
+  // Step5 A1: 翼角度から速度・加速度を取り、軸別に反作用へ変換する。
+  // wingY: 上下ストローク / wingPitch: 迎角・ねじれ / wingSweep: 前後成分。
+  wingKinematics: {
+    initialized: false,
+    lastT: null,
+    prevY: 0, prevPitch: 0, prevSweep: 0,
+    velY: 0, velPitch: 0, velSweep: 0,
+    accY: 0, accPitch: 0, accSweep: 0,
+    forceY: 0, forcePitch: 0, forceSweep: 0,
+    impulse: 0
+  },
+  energy: 0
+};
+function stepSpringMass(node, target, dt, stiffness, damping, limit) {
+  dt = Math.min(Math.max(dt, 0.001), 0.045);
+  const accel = (target - node.x) * stiffness - node.v * damping;
+  node.v += accel * dt;
+  node.x += node.v * dt;
+  if (Number.isFinite(limit)) node.x = Math.max(-limit, Math.min(limit, node.x));
+  return node.x;
+}
+function smoothKinematicValue(current, next, blend) {
+  return current * (1 - blend) + next * blend;
+}
+function updateWingKinematics(tLive, flapPhase) {
+  const k = bodyPhysics.wingKinematics;
+  let dt = 1 / 60;
+  if (k.lastT !== null) dt = Math.max(0.001, Math.min(0.045, tLive - k.lastT));
+  k.lastT = tLive;
+
+  // 既存の翼骨格を直接変更せず、同じ位相から「原因量」だけを読む。
+  const wingY = Math.sin(flapPhase);
+  const wingPitch = 0.62 * Math.sin(flapPhase + 0.42) + 0.24 * Math.sin(2.0 * flapPhase - 0.25);
+  const wingSweep = 0.38 * Math.sin(flapPhase - 0.55);
+
+  if (!k.initialized) {
+    k.initialized = true;
+    k.prevY = wingY;
+    k.prevPitch = wingPitch;
+    k.prevSweep = wingSweep;
+    return k;
+  }
+
+  const rawVelY = (wingY - k.prevY) / dt;
+  const rawVelPitch = (wingPitch - k.prevPitch) / dt;
+  const rawVelSweep = (wingSweep - k.prevSweep) / dt;
+  const rawAccY = (rawVelY - k.velY) / dt;
+  const rawAccPitch = (rawVelPitch - k.velPitch) / dt;
+  const rawAccSweep = (rawVelSweep - k.velSweep) / dt;
+
+  // スマホ描画でのフレーム揺れを拾いすぎないように、物理量だけ低域化する。
+  k.velY = smoothKinematicValue(k.velY, rawVelY, 0.32);
+  k.velPitch = smoothKinematicValue(k.velPitch, rawVelPitch, 0.30);
+  k.velSweep = smoothKinematicValue(k.velSweep, rawVelSweep, 0.30);
+  k.accY = smoothKinematicValue(k.accY, rawAccY, 0.12);
+  k.accPitch = smoothKinematicValue(k.accPitch, rawAccPitch, 0.12);
+  k.accSweep = smoothKinematicValue(k.accSweep, rawAccSweep, 0.12);
+
+  const clampForce = (v, s) => Math.max(-1, Math.min(1, v * s));
+  k.forceY = clampForce(-k.accY, 0.00042);
+  k.forcePitch = clampForce(-k.accPitch, 0.00052);
+  k.forceSweep = clampForce(-k.accSweep, 0.00062);
+  k.impulse = Math.max(-1, Math.min(1, 0.56 * k.forceY + 0.30 * k.forcePitch + 0.14 * k.forceSweep));
+
+  k.prevY = wingY;
+  k.prevPitch = wingPitch;
+  k.prevSweep = wingSweep;
+  return k;
+}
+function updateBodyPhysics(tLive, flapPhase, wingImpulse, reversal, wingKin) {
+  let dt = 1 / 60;
+  if (bodyPhysics.lastT !== null) dt = Math.max(0.001, Math.min(0.045, tLive - bodyPhysics.lastT));
+  bodyPhysics.lastT = tLive;
+
+  // A1: 軸別反作用。従来の疑似インパルスは保険として薄く残し、主成分は加速度由来にする。
+  const forceY = wingKin ? wingKin.forceY : 0;
+  const forcePitch = wingKin ? wingKin.forcePitch : 0;
+  const forceSweep = wingKin ? wingKin.forceSweep : 0;
+  const accelImpulse = wingKin ? wingKin.impulse : wingImpulse;
+
+  const thoraxTarget = 0.86 * accelImpulse + 0.34 * forcePitch + 0.10 * wingImpulse + 0.16 * Math.sin(flapPhase + Math.PI * 0.18) * reversal;
+  const abdomenTarget = 0.42 * forceY + 0.46 * Math.sin(flapPhase - 0.42) * Math.abs(Math.cos(flapPhase - 0.16)) + 0.32 * bodyPhysics.thorax.x;
+  const tailTarget = 0.36 * forceSweep + 0.40 * Math.sin(flapPhase - 0.70) * Math.abs(Math.cos(flapPhase - 0.28)) + 0.46 * bodyPhysics.abdomen.x;
+  const heaveTarget = 0.62 * forceY + 0.18 * Math.max(0, wingImpulse) - 0.10 * Math.max(0, -wingImpulse);
+  const recoilTarget = 0.72 * forceSweep - 0.24 * bodyPhysics.thorax.x + 0.06 * Math.sin(flapPhase - 0.50);
+  const sternumTarget = 0.52 * Math.abs(forcePitch) + 0.20 * Math.abs(forceY) + 0.12 * reversal;
+
+  // Step27: 全身制御モデル。翼反力は胸郭から末端へ行くほど減衰し、
+  // 位相も spine -> pelvis -> leg -> toe の順に遅れる。完全ミラーを避けるため、
+  // 下半身には後段で左右のごく小さい非対称ノイズを加える。
+  const spineWave = clampSym(0.72 * thoraxTarget + 0.22 * forcePitch + 0.06 * Math.sin(flapPhase - 0.10), 0.82);
+  const pelvisTarget = clampSym(-0.46 * spineWave + 0.22 * abdomenTarget - 0.14 * forceSweep + 0.035 * Math.sin(flapPhase - 0.30), 0.58);
+  const legTarget = clampSym(0.34 * bodyPhysics.pelvisLag.x + 0.16 * tailTarget + 0.055 * Math.sin(flapPhase - 0.62), 0.46);
+  const toeTarget = clampSym(0.36 * bodyPhysics.legLag.x + 0.12 * forceSweep + 0.035 * Math.sin(flapPhase - 0.95), 0.36);
+
+  const thorax = stepSpringMass(bodyPhysics.thorax, thoraxTarget, dt, 58, 13.5, 1.0);
+  const abdomen = stepSpringMass(bodyPhysics.abdomen, abdomenTarget, dt, 32, 10.5, 1.0);
+  const tail = stepSpringMass(bodyPhysics.tail, tailTarget, dt, 22, 8.0, 1.0);
+  const heave = stepSpringMass(bodyPhysics.heave, heaveTarget, dt, 36, 11.0, 1.0);
+  const recoilZ = stepSpringMass(bodyPhysics.recoilZ, recoilTarget, dt, 26, 9.0, 1.0);
+  const sternum = stepSpringMass(bodyPhysics.sternum, sternumTarget, dt, 45, 14.0, 1.0);
+  const pelvisLag = stepSpringMass(bodyPhysics.pelvisLag, pelvisTarget, dt, 18, 7.2, 1.0);
+  const legLag = stepSpringMass(bodyPhysics.legLag, legTarget, dt, 12, 5.8, 1.0);
+  const toeLag = stepSpringMass(bodyPhysics.toeLag, toeTarget, dt, 8, 4.2, 1.0);
+  bodyPhysics.energy = 0.86 * bodyPhysics.energy + 0.14 * (Math.abs(bodyPhysics.thorax.v) + 0.55 * Math.abs(bodyPhysics.abdomen.v) + 0.35 * Math.abs(bodyPhysics.tail.v) + 0.18 * Math.abs(bodyPhysics.pelvisLag.v));
+  return { thoraxReaction: thorax, abdomenReaction: abdomen, tailReaction: tail, heaveReaction: heave, recoilZ, sternumCompression: sternum, pelvisLag, legLag, toeLag, energy: bodyPhysics.energy, wingKin };
+}const shoulderJointPhysics = {
+  left:  { lift: {x:0,v:0}, sweep: {x:0,v:0}, twist: {x:0,v:0} },
+  right: { lift: {x:0,v:0}, sweep: {x:0,v:0}, twist: {x:0,v:0} },
+  sternumSpread: {x:0,v:0},
+  thoraxCouple: {x:0,v:0},
+  debug: { lift:0, sweep:0, twist:0, spread:0 }
+};
+const SHOULDER_LIMITS = Object.freeze({
+  lift: 0.115,   // 上下ストローク受け。最大でも約6.6度。
+  sweep: 0.065,  // 前後スイープ受け。肩が外れるように見えない範囲。
+  twist: 0.042,  // 上腕ねじり受け。小さく抑える。
+  spread: 0.018
+});
+function clampSym(v, lim) { return Math.max(-lim, Math.min(lim, v)); }
+function updateShoulderJointTransmission(dt, flapPhase, wingKin, bodyPhys, reversal, downstroke) {
+  if (!leftWing || !rightWing || !wingKin || !bodyPhys) return;
+  dt = Math.max(0.001, Math.min(0.045, dt || 1 / 60));
+
+  // 加速度由来の力を、肩の3軸に分解する。
+  // lift: 上下ストローク反力 / sweep: 前後反力 / twist: 迎角・翼面ねじれ反力。
+  const liftTarget = clampSym(-0.070 * wingKin.forceY + 0.020 * Math.sin(flapPhase - 0.35) * reversal, SHOULDER_LIMITS.lift);
+  const sweepTarget = clampSym( 0.048 * wingKin.forceSweep + 0.010 * Math.sin(flapPhase - 0.75), SHOULDER_LIMITS.sweep);
+  const twistTarget = clampSym(-0.038 * wingKin.forcePitch + 0.010 * Math.sin(flapPhase + 0.30) * downstroke, SHOULDER_LIMITS.twist);
+
+  const lLift  = stepSpringMass(shoulderJointPhysics.left.lift,  liftTarget,  dt, 70, 15.0, SHOULDER_LIMITS.lift);
+  const rLift  = stepSpringMass(shoulderJointPhysics.right.lift, liftTarget,  dt, 70, 15.0, SHOULDER_LIMITS.lift);
+  const lSweep = stepSpringMass(shoulderJointPhysics.left.sweep, sweepTarget, dt, 55, 13.0, SHOULDER_LIMITS.sweep);
+  const rSweep = stepSpringMass(shoulderJointPhysics.right.sweep,sweepTarget, dt, 55, 13.0, SHOULDER_LIMITS.sweep);
+  const lTwist = stepSpringMass(shoulderJointPhysics.left.twist, twistTarget, dt, 64, 14.5, SHOULDER_LIMITS.twist);
+  const rTwist = stepSpringMass(shoulderJointPhysics.right.twist,twistTarget, dt, 64, 14.5, SHOULDER_LIMITS.twist);
+
+  // 左右の翼は同相羽ばたきだが、鏡像なので sweep/twist の符号だけ左右反転させる。
+  leftWing.root.rotation.x  = lLift;
+  rightWing.root.rotation.x = rLift;
+  leftWing.root.rotation.y  = -lSweep;
+  rightWing.root.rotation.y =  rSweep;
+  leftWing.root.rotation.z  = -lTwist;
+  rightWing.root.rotation.z =  rTwist;
+
+  // 肩関節の受けを胸郭と叉骨へ戻す。翼rootとは別に、胴体側の反応だけを微小加算する。
+  const spreadTarget = clampSym(0.012 * Math.abs(wingKin.forcePitch) + 0.010 * reversal + 0.006 * Math.abs(liftTarget), SHOULDER_LIMITS.spread);
+  const thoraxTarget = clampSym(0.55 * liftTarget + 0.25 * twistTarget + 0.14 * bodyPhys.thoraxReaction, 0.10);
+  const spread = stepSpringMass(shoulderJointPhysics.sternumSpread, spreadTarget, dt, 48, 12.0, SHOULDER_LIMITS.spread);
+  const thorax = stepSpringMass(shoulderJointPhysics.thoraxCouple, thoraxTarget, dt, 42, 11.0, 0.10);
+
+  chest.rotation.z += 0.16 * thorax;
+  chest.rotation.x -= 0.10 * thorax;
+  keel.rotation.x  -= 0.10 * thorax;
+  furculaSpring.scale.x = 1.0 + spread;
+  furculaSpring.position.y -= spread * 0.18;
+
+  shoulderJointPhysics.debug.lift = liftTarget;
+  shoulderJointPhysics.debug.sweep = sweepTarget;
+  shoulderJointPhysics.debug.twist = twistTarget;
+  shoulderJointPhysics.debug.spread = spread;
+}
+const bodyRigTmp = new THREE.Vector3();
+function bodyLocalPoint(mesh, x=0, y=0, z=0) {
+  bodyRigTmp.set(x, y, z);
+  mesh.updateWorldMatrix(true, false);
+  mesh.localToWorld(bodyRigTmp);
+  // Step24: bodySegmentRig も spineRoot 配下に置いたため、
+  // デバッグ骨格座標は bird ではなく spineRoot ローカルに戻す。
+  spineRoot.worldToLocal(bodyRigTmp);
+  return bodyRigTmp.clone();
 }
 
 function makeWingSurface() {
@@ -1062,22 +2811,45 @@ function makeWingSurface() {
 }
 
 
+
+function makeJointAxes(size=0.22) {
+  const g = new THREE.Group();
+  const axisDefs = [
+    { dir: new THREE.Vector3(1, 0, 0), color: 0xff4040 },
+    { dir: new THREE.Vector3(0, 1, 0), color: 0x30c85a },
+    { dir: new THREE.Vector3(0, 0, 1), color: 0x3b77ff }
+  ];
+  for (const a of axisDefs) {
+    const mat = new THREE.LineBasicMaterial({ color: a.color, transparent: true, opacity: 0.95, depthWrite: false });
+    const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), a.dir.clone().multiplyScalar(size)]);
+    g.add(new THREE.Line(geo, mat));
+  }
+  g.visible = false;
+  jointAxisHelpers.push(g);
+  return g;
+}
+
 function makeWing(side) {
   const root = new THREE.Group();
-  root.position.set(side * 0.42, 0.15, 0.18);
-  bird.add(root);
+  // Step8: 翼rootを肩帯の glenoid と同一点へ統合する。
+  // ここだけを移動し、上腕骨・前腕・手根の長さと位相は一切変更しない。
+  root.position.set(side * SHOULDER_RIG_SPEC.root.x, SHOULDER_RIG_SPEC.root.y, SHOULDER_RIG_SPEC.root.z);
+  root.userData.isConnectedToShoulderGlenoid = true;
+  spineRoot.add(root);
 
-  // 旧版の長い直方体肩甲骨は、翼根元から尾へ伸びる棒に見えたため廃止。
-  // 肩帯は bodyGroup 側の短い見た目パーツとして描画し、翼骨格は既存rootから動かす。
   // 既存の updateWingMotion() が w.scap を参照するため、表示用ではない互換ダミーを残す。
-  // これで構造・位相を変えずに停止だけ防ぐ。
+  // 肩甲骨そのものは SHOULDER_RIG_SPEC 側で描く。
   const scap = new THREE.Group();
   root.add(scap);
 
   const shoulder = new THREE.Group();
-  shoulder.position.set(side * 0.16, -0.02, 0.25);
+  // Step8: 上腕骨の起点を root 原点に置く。
+  // これで肩帯の肩関節球と翼の肩関節球が完全に重なる。
+  shoulder.position.set(0, 0, 0);
+  shoulder.userData.isSharedGlenoidSocket = true;
   root.add(shoulder);
   shoulder.add(makeJoint(0.07, 0xffff00));
+  shoulder.add(makeJointAxes(0.24));
 
   const upperLen = 1.05;
   const foreLen = 1.00;
@@ -1089,18 +2861,21 @@ function makeWing(side) {
   elbow.position.x = side * upperLen;
   shoulder.add(elbow);
   elbow.add(makeJoint(0.055, 0xffaa00));
+  elbow.add(makeJointAxes(0.20));
   elbow.add(makeBone(foreLen, 0x33dd66, side));
 
   const wrist = new THREE.Group();
   wrist.position.x = side * foreLen;
   elbow.add(wrist);
   wrist.add(makeJoint(0.05, 0x00ccff));
+  wrist.add(makeJointAxes(0.18));
   wrist.add(makeBone(handLen, 0x3366ff, side));
 
   const tip = new THREE.Group();
   tip.position.x = side * handLen;
   wrist.add(tip);
   tip.add(makeJoint(0.04, 0xffffff));
+  tip.add(makeJointAxes(0.14));
 
   const surface = makeWingSurface();
   scene.add(surface);
@@ -1114,6 +2889,123 @@ function makeWing(side) {
 
 const leftWing = makeWing(-1);
 const rightWing = makeWing(1);
+
+
+// 軽量CFD風可視化：重い格子計算は行わず、翼下の後流リボンと翼端渦だけを描く。
+// 目的は「空気を押している向き」を見ることで、圧力場・流線・粒子の全面計算は戻さない。
+const cfdVizGroup = new THREE.Group();
+cfdVizGroup.visible = false;
+scene.add(cfdVizGroup);
+
+const cfdLineMat = new THREE.LineBasicMaterial({
+  color: 0x5aa8ff,
+  transparent: true,
+  opacity: 0.30,
+  depthWrite: false
+});
+const cfdVortexMat = new THREE.LineBasicMaterial({
+  color: 0xffffff,
+  transparent: true,
+  opacity: 0.32,
+  depthWrite: false
+});
+const cfdRibbons = [];
+const cfdVortices = [];
+const CFD_POINTS = 18;
+
+function makeCfdRibbon(side, index, count) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(CFD_POINTS * 3), 3));
+  const line = new THREE.Line(geo, cfdLineMat.clone());
+  line.userData.side = side;
+  line.userData.index = index;
+  line.userData.count = count;
+  line.userData.phase = index * 0.73 + (side < 0 ? 0.2 : 1.1);
+  cfdVizGroup.add(line);
+  cfdRibbons.push(line);
+}
+
+function makeCfdVortex(side, index) {
+  const pts = 32;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(pts * 3), 3));
+  const line = new THREE.LineLoop(geo, cfdVortexMat.clone());
+  line.userData.side = side;
+  line.userData.index = index;
+  line.userData.phase = index * 1.4 + (side < 0 ? 0.4 : 1.7);
+  cfdVizGroup.add(line);
+  cfdVortices.push(line);
+}
+
+for (const side of [-1, 1]) {
+  for (let i = 0; i < 9; i++) makeCfdRibbon(side, i, 9);
+  for (let i = 0; i < 3; i++) makeCfdVortex(side, i);
+}
+
+const tmpCfdS = new THREE.Vector3();
+const tmpCfdW = new THREE.Vector3();
+const tmpCfdT = new THREE.Vector3();
+const tmpCfdRootToTip = new THREE.Vector3();
+
+function updateLightCfdViz(leftW, rightW, t) {
+  if (!cfdVizGroup.visible) return;
+  const wings = [leftW, rightW];
+  const down = Math.max(0, Math.sin(t));
+  const up = Math.max(0, -Math.sin(t));
+  const impulse = 0.35 + 0.75 * down + 0.20 * Math.abs(Math.cos(t));
+  let ribbonCursor = 0;
+  let vortexCursor = 0;
+
+  for (const w of wings) {
+    w.shoulder.getWorldPosition(tmpCfdS);
+    w.wrist.getWorldPosition(tmpCfdW);
+    w.tip.getWorldPosition(tmpCfdT);
+    tmpCfdRootToTip.subVectors(tmpCfdT, tmpCfdS);
+
+    for (let i = 0; i < 9; i++, ribbonCursor++) {
+      const line = cfdRibbons[ribbonCursor];
+      const q = i / 8;
+      const span = 0.18 + q * 0.76;
+      const base = tmpCfdS.clone().lerp(tmpCfdT, span);
+      const arr = line.geometry.attributes.position.array;
+      const sideOffset = w.side * (q - 0.5) * 0.08;
+      const phase = line.userData.phase;
+      const alpha = 0.16 + 0.30 * down + 0.10 * (1.0 - q);
+      line.material.opacity = alpha;
+
+      for (let p = 0; p < CFD_POINTS; p++) {
+        const u = p / (CFD_POINTS - 1);
+        // 後流は翼の下方＋少し後方へ流す。外翼ほど巻き込みを大きくする。
+        const curl = Math.sin(u * Math.PI * 2.0 + t * 1.6 + phase) * (0.035 + 0.060 * q) * (0.35 + impulse);
+        const wakeDrop = u * (0.34 + 0.34 * impulse) * (0.65 + 0.55 * q);
+        const wakeBack = u * (0.16 + 0.18 * impulse) + 0.025 * Math.sin(t + phase);
+        const wakeSide = sideOffset + w.side * curl + w.side * 0.035 * up * q;
+        arr[p*3+0] = base.x + wakeSide;
+        arr[p*3+1] = base.y - wakeDrop;
+        arr[p*3+2] = base.z - wakeBack - 0.05 * u * q;
+      }
+      line.geometry.attributes.position.needsUpdate = true;
+    }
+
+    for (let j = 0; j < 3; j++, vortexCursor++) {
+      const ring = cfdVortices[vortexCursor];
+      const q = 0.72 + j * 0.105;
+      const center = tmpCfdS.clone().lerp(tmpCfdT, q);
+      const arr = ring.geometry.attributes.position.array;
+      const pts = arr.length / 3;
+      const radius = (0.080 + 0.030 * j) * (0.80 + 0.50 * down);
+      const squash = 0.55 + 0.20 * Math.sin(t + ring.userData.phase);
+      ring.material.opacity = 0.10 + 0.28 * down + 0.08 * Math.abs(Math.cos(t));
+      for (let p = 0; p < pts; p++) {
+        const a = (p / pts) * Math.PI * 2 + t * 0.55 * w.side + ring.userData.phase;
+        arr[p*3+0] = center.x + w.side * Math.cos(a) * radius;
+        arr[p*3+1] = center.y - 0.10 - j * 0.045 + Math.sin(a) * radius * squash;
+        arr[p*3+2] = center.z - 0.10 - j * 0.060 + Math.sin(a + Math.PI/2) * radius * 0.28;
+      }
+      ring.geometry.attributes.position.needsUpdate = true;
+    }
+  }
+}
 
 const vS = new THREE.Vector3();
 const vE = new THREE.Vector3();
@@ -1143,6 +3035,40 @@ function updateCylinderBetween(mesh, a, b, radiusScale=1.0) {
   mesh.position.copy(tmpAxisMid);
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tmpAxisDir.normalize());
   mesh.scale.set(radiusScale, len, radiusScale);
+}
+
+function updateBodySegmentSkeleton() {
+  if (!bodySegmentRig || !bodySegmentRig.joints) return;
+  const visible = isSkeletonDisplayMode();
+  const j = bodySegmentRig.joints;
+  const b = bodySegmentRig.bones;
+
+  const thorax = bodyLocalPoint(chest, 0, -0.02, 0.12);
+  const sternum = bodyLocalPoint(keel, 0, -0.06, 0.04);
+  const abdomenP = bodyLocalPoint(abdomen, 0, -0.01, -0.08);
+  const tailBase = bodyLocalPoint(tailCone, 0, -0.01, -0.01);
+  const tailTip = bodyLocalPoint(tailTipSleeve, 0, -0.005, -0.03);
+  const neckP = bodyLocalPoint(neck, 0, 0.02, 0.02);
+  const headP = bodyLocalPoint(head, 0, 0.00, 0.02);
+
+  j.thorax.position.copy(thorax);
+  j.sternum.position.copy(sternum);
+  j.abdomen.position.copy(abdomenP);
+  j.tailBase.position.copy(tailBase);
+  j.tailTip.position.copy(tailTip);
+  j.neck.position.copy(neckP);
+  j.head.position.copy(headP);
+
+  updateCylinderBetween(b.thoraxAbdomen, thorax, abdomenP, 1.0);
+  updateCylinderBetween(b.abdomenTail, abdomenP, tailBase, 0.92);
+  updateCylinderBetween(b.tailAxis, tailBase, tailTip, 0.76);
+  updateCylinderBetween(b.thoraxSternum, thorax, sternum, 0.82);
+  updateCylinderBetween(b.thoraxNeck, thorax, neckP, 0.72);
+  updateCylinderBetween(b.neckHead, neckP, headP, 0.62);
+
+  for (const part of [...Object.values(j), ...Object.values(b)]) {
+    part.visible = visible && !(part.userData && part.userData.hideWhenUnifiedSpine);
+  }
 }
 
 function updateWingMotion(w, t) {
@@ -1375,6 +3301,7 @@ function updateWingGeometry(w, t) {
     tmpAxisA.copy(p0).lerp(p1, 0.50);
     tmpAxisB.copy(p2).lerp(p3, 0.50);
     updateCylinderBetween(strip.userData.shaft, tmpAxisA, tmpAxisB, 1.0 + 0.30 * primary);
+    if (strip.userData.shaft) strip.userData.shaft.visible = wingTransparent;
 
     // ダウンストロークは密で不透明、アップストロークは透けてスリットが見える。
     strip.material.opacity = wingTransparent ? (0.44 + 0.24*down - 0.16*up + 0.05*primary) : 0.92;
@@ -1430,16 +3357,53 @@ renderer.domElement.addEventListener("touchend", () => dragging = false);
 
 window.addEventListener("keydown", (e) => {
   if (e.key === "t" || e.key === "T") {
-    nextMapMode();
+    nextDisplayMode();
   }
 });
 
-document.getElementById("modeButton").addEventListener("click", (e) => {
-  e.stopPropagation();
-  nextMapMode();
+const modeButton = document.getElementById("modeButton");
+const displayMenu = document.getElementById("displayMenu");
+if (modeButton) {
+  modeButton.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleDisplayMenu();
+  });
+}
+if (displayMenu) {
+  displayMenu.addEventListener("click", (e) => {
+    const item = e.target.closest(".displayModeItem");
+    if (!item) return;
+    e.stopPropagation();
+    setDisplayModeById(item.dataset.mode);
+  });
+}
+document.addEventListener("click", () => {
+  if (!displayMenuOpen) return;
+  displayMenuOpen = false;
+  applyDisplayMode();
 });
 
-applyMapMode();
+applyDisplayMode();
+
+function radToDeg(v) { return (v * 180 / Math.PI); }
+function fmtDeg(v) { return (v >= 0 ? "+" : "") + radToDeg(v).toFixed(1); }
+function updateDebugPanel(tLive) {
+  if (!debugPanel || debugPanel.style.display === "none") return;
+  const mode = getDisplayMode().label;
+  debugPanel.textContent =
+    `骨格確認 / ${mode}\n` +
+    `body rig: 胸郭→腹部→骨盤→脚 / tail: 骨盤主導安定板 / shoulder: 肩関節接続済\n` +
+    `body physics: thorax ${bodyPhysics.thorax.x.toFixed(2)}  abdomen ${bodyPhysics.abdomen.x.toFixed(2)}  tail ${bodyPhysics.tail.x.toFixed(2)}  pelvis ${bodyPhysics.pelvisLag.x.toFixed(2)}  leg ${bodyPhysics.legLag.x.toFixed(2)}\n` +
+    `wing accel force: Y ${bodyPhysics.wingKinematics.forceY.toFixed(2)}  pitch ${bodyPhysics.wingKinematics.forcePitch.toFixed(2)}  sweep ${bodyPhysics.wingKinematics.forceSweep.toFixed(2)}\n` +
+    `shoulder constraint: lift ${(shoulderJointPhysics.debug.lift*57.2958).toFixed(1)}°  sweep ${(shoulderJointPhysics.debug.sweep*57.2958).toFixed(1)}°  twist ${(shoulderJointPhysics.debug.twist*57.2958).toFixed(1)}°  furcula ${(shoulderJointPhysics.debug.spread*1000).toFixed(1)}mm\n` +
+    `phase ${Math.sin(tLive).toFixed(2)}  turn ${Math.abs(Math.cos(tLive)).toFixed(2)}\n` +
+    `L shoulder x/y/z ${fmtDeg(leftWing.shoulder.rotation.x)} ${fmtDeg(leftWing.shoulder.rotation.y)} ${fmtDeg(leftWing.shoulder.rotation.z)}\n` +
+    `L elbow z ${fmtDeg(leftWing.elbow.rotation.z)}  wrist x/z ${fmtDeg(leftWing.wrist.rotation.x)} ${fmtDeg(leftWing.wrist.rotation.z)}\n` +
+    `R shoulder x/y/z ${fmtDeg(rightWing.shoulder.rotation.x)} ${fmtDeg(rightWing.shoulder.rotation.y)} ${fmtDeg(rightWing.shoulder.rotation.z)}\n` +
+    `R elbow z ${fmtDeg(rightWing.elbow.rotation.z)}  wrist x/z ${fmtDeg(rightWing.wrist.rotation.x)} ${fmtDeg(rightWing.wrist.rotation.z)}\n` +
+    `lower body: thoracicEnd -> synsacrum -> pelvis -> hip/knee/ankle/toe unified / leg mode ${getLegMode().label}\n` +
+    `軸色: X赤 / Y緑 / Z青`;
+}
 
 function animate() {
   requestAnimationFrame(animate);
@@ -1459,6 +3423,23 @@ function animate() {
   const downstroke = Math.sin(flapPhase);
   const reversal = Math.pow(Math.abs(Math.cos(flapPhase)), 2.0);
 
+  // バイオメカニクス作用反作用：
+  // 翼の速度ピークそのものではなく「切り返し〜加速開始」で胸郭が反力を受けるようにする。
+  // 値は疑似インパルスで、翼骨格・関節長・位相は変更しない。
+  const wingKin = updateWingKinematics(tLive, flapPhase);
+  const wingVelocityLike = Math.cos(flapPhase);
+  const wingAccelLike = -Math.sin(flapPhase);
+  const wingImpulse = 0.42 * wingVelocityLike * Math.abs(wingAccelLike) + 0.58 * wingKin.impulse;
+  const downImpulse = Math.max(0, wingImpulse);
+  const upImpulse = Math.max(0, -wingImpulse);
+  let thoraxReaction = 0.70 * wingImpulse + 0.30 * Math.sin(flapPhase + Math.PI * 0.18) * reversal;
+  let abdomenReaction = 0.62 * Math.sin(flapPhase - 0.38) * Math.abs(Math.cos(flapPhase - 0.18));
+  let tailReaction = 0.52 * Math.sin(flapPhase - 0.62) * Math.abs(Math.cos(flapPhase - 0.30));
+  const bodyPhys = updateBodyPhysics(tLive, flapPhase, wingImpulse, reversal, wingKin);
+  thoraxReaction = bodyPhys.thoraxReaction;
+  abdomenReaction = bodyPhys.abdomenReaction;
+  tailReaction = bodyPhys.tailReaction;
+
   // 胴体運動分離：胸・腹・頭・尾筒を同時に動かさない。
   // 翼骨格と位相は維持し、見た目の反力・慣性だけを分離する。
   const thoraxLag = tLive - 0.30;      // 胸筋：翼に近く、反応が早い
@@ -1467,47 +3448,62 @@ function animate() {
   const tailBaseLag = tLive - 0.78;    // 腰〜尾筒：さらに遅れて追従
 
   // 胴体全体は小さくピッチング。ただし頭を大きく揺らさないため振幅は控えめ。
-  bird.rotation.x = -0.18 + 0.010 * Math.sin(tLive - 0.48) + 0.007 * Math.sin(flapPhase - 0.62);
-  bird.rotation.z = 0.0045 * Math.sin(tLive * 0.73 + 0.9) + 0.0025 * Math.sin(tLive * 1.91);
-  bird.position.x = 0.0065 * Math.sin(tLive * 0.83 + 0.3) + 0.0025 * Math.sin(tLive * 1.73);
-  bird.position.y = 0.032 * Math.sin(tLive * 0.5) - 0.009 * downstroke;
-  bird.position.z = 0.0055 * Math.sin(tLive * 0.71 + 1.1);
+  bird.rotation.x = -0.18
+    + 0.010 * Math.sin(tLive - 0.48)
+    + 0.007 * Math.sin(flapPhase - 0.62)
+    - 0.010 * thoraxReaction
+    - 0.006 * wingKin.forcePitch; // 翼迎角加速度への逆相ピッチ応答
+  bird.rotation.z = 0.0045 * Math.sin(tLive * 0.73 + 0.9)
+    + 0.0025 * Math.sin(tLive * 1.91)
+    + 0.0020 * Math.sin(flapPhase + 0.35) * reversal;
+  bird.position.x = 0.0065 * Math.sin(tLive * 0.83 + 0.3)
+    + 0.0025 * Math.sin(tLive * 1.73)
+    + 0.0022 * Math.sin(flapPhase + 0.20) * reversal;
+  bird.position.y = 0.032 * Math.sin(tLive * 0.5)
+    - 0.009 * downstroke
+    + 0.014 * downImpulse
+    - 0.006 * upImpulse
+    + 0.010 * bodyPhys.heaveReaction
+    + 0.004 * wingKin.forceY; // 空気を押した反作用としての微小な上下応答
+  bird.position.z = 0.0055 * Math.sin(tLive * 0.71 + 1.1)
+    - 0.0045 * thoraxReaction
+    + 0.0035 * bodyPhys.recoilZ;
 
   // 胸郭：胸筋が主役。上下だけでなく前後にもごく小さく伸縮させる。
   const thoraxPump = Math.sin(thoraxLag * 2.0 + 0.35);
-  chest.scale.x = 0.43 * (1.0 + 0.014 * downstroke + 0.006 * reversal);
-  chest.scale.y = 0.50 * (1.0 + 0.024 * thoraxPump + 0.010 * reversal);
-  chest.scale.z = 0.62 * (1.0 - 0.014 * downstroke - 0.008 * thoraxPump);
-  chest.rotation.z = 0.007 * Math.sin(thoraxLag);
-  chest.rotation.x = -0.10 + 0.016 * Math.sin(thoraxLag - 0.25);
+  chest.scale.x = 0.43 * (1.0 + 0.014 * downstroke + 0.006 * reversal + 0.006 * Math.abs(thoraxReaction));
+  chest.scale.y = 0.50 * (1.0 + 0.024 * thoraxPump + 0.010 * reversal + 0.010 * downImpulse);
+  chest.scale.z = 0.62 * (1.0 - 0.014 * downstroke - 0.008 * thoraxPump - 0.008 * thoraxReaction);
+  chest.rotation.z = 0.007 * Math.sin(thoraxLag) + 0.004 * Math.sin(flapPhase + 0.40) * reversal;
+  chest.rotation.x = -0.10 + 0.016 * Math.sin(thoraxLag - 0.25) - 0.016 * thoraxReaction;
 
   // 腹：胸より遅れ、振幅も少し小さくする。
   const abdomenInertia = Math.sin(abdomenLag * 2.0 + 1.1);
-  abdomen.scale.x = 0.34 * (1.0 - 0.006 * Math.sin(abdomenLag));
-  abdomen.scale.y = 0.36 * (1.0 + 0.012 * abdomenInertia);
-  abdomen.scale.z = 0.56 * (1.0 + 0.016 * abdomenInertia);
-  abdomen.rotation.x = 0.08 - 0.014 * Math.sin(abdomenLag - 0.10);
+  abdomen.scale.x = 0.34 * (1.0 - 0.006 * Math.sin(abdomenLag) - 0.003 * abdomenReaction);
+  abdomen.scale.y = 0.36 * (1.0 + 0.012 * abdomenInertia + 0.005 * Math.abs(abdomenReaction));
+  abdomen.scale.z = 0.56 * (1.0 + 0.016 * abdomenInertia + 0.006 * abdomenReaction);
+  abdomen.rotation.x = 0.08 - 0.014 * Math.sin(abdomenLag - 0.10) + 0.010 * abdomenReaction;
 
   // 腰〜尾筒は胴体より少し遅れてしなる。急な継ぎ目ではなく、
   // 胴体後端が尾羽を支える柔らかい収束部として動く。
   rump.scale.x = 0.20 * (1.0 - 0.010 * downstroke);
   rump.scale.y = 0.18 * (1.0 + 0.008 * reversal);
   rump.scale.z = 0.34 * (1.0 + 0.012 * Math.sin(tailBaseLag + 0.55));
-  rump.rotation.x = 0.12 - 0.014 * Math.sin(tailBaseLag - 0.15);
+  rump.rotation.x = 0.12 - 0.014 * Math.sin(tailBaseLag - 0.15) + 0.008 * tailReaction;
 
   tailCone.scale.x = 0.155 * (1.0 - 0.014 * downstroke + 0.008 * Math.sin(tailBaseLag));
   tailCone.scale.y = 0.135 * (1.0 + 0.010 * reversal);
   tailCone.scale.z = 0.315 * (1.0 + 0.018 * Math.sin(tailBaseLag + 0.45));
-  tailCone.rotation.x = 0.16 - 0.018 * Math.sin(tailBaseLag - 0.22);
-  tailCone.position.y = -0.082 - 0.004 * reversal;
-  tailCone.position.z = -1.035 + 0.008 * Math.sin(tailBaseLag + 0.30);
+  tailCone.rotation.x = 0.16 - 0.018 * Math.sin(tailBaseLag - 0.22) + 0.010 * tailReaction;
+  tailCone.position.y = -0.082 - 0.004 * reversal - 0.003 * tailReaction;
+  tailCone.position.z = -1.035 + 0.008 * Math.sin(tailBaseLag + 0.30) + 0.004 * tailReaction;
 
   tailTipSleeve.scale.x = 0.095 * (1.0 - 0.020 * downstroke);
   tailTipSleeve.scale.y = 0.080 * (1.0 + 0.010 * reversal);
   tailTipSleeve.scale.z = 0.165 * (1.0 + 0.014 * Math.sin(tailBaseLag + 0.70));
-  tailTipSleeve.rotation.x = 0.12 - 0.016 * Math.sin(tailBaseLag - 0.10);
-  tailTipSleeve.position.y = -0.092 - 0.004 * reversal;
-  tailTipSleeve.position.z = -1.145 + 0.007 * Math.sin(tailBaseLag + 0.45);
+  tailTipSleeve.rotation.x = 0.12 - 0.016 * Math.sin(tailBaseLag - 0.10) + 0.012 * tailReaction;
+  tailTipSleeve.position.y = -0.092 - 0.004 * reversal - 0.0035 * tailReaction;
+  tailTipSleeve.position.z = -1.145 + 0.007 * Math.sin(tailBaseLag + 0.45) + 0.0045 * tailReaction;
 
   for (const c of tailConeFeathers) {
     const side = c.userData.side;
@@ -1526,29 +3522,44 @@ function animate() {
   chestBellyBlend.scale.z = 0.42 * (1.0 + 0.006 * Math.sin(thoraxLag + 0.7));
   chestBellyBlend.rotation.x = -0.02 + 0.006 * Math.sin(thoraxLag - 0.1);
 
-  // 頭部安定：胸の反力に完全同期させず、ホバリング中の視線固定感を優先する。
-  neck.rotation.x = -0.16 - 0.006 * Math.sin(headStabilize + 0.35);
-  neck.rotation.y = 0.004 * Math.sin(headStabilize * 0.8);
-  head.rotation.x = -0.05 + 0.0035 * Math.sin(headStabilize + 0.10) + 0.0020 * Math.sin(tLive * 2.6 + 0.2);
-  head.rotation.y = 0.0045 * Math.sin(headStabilize * 0.9 + 0.5) + 0.0028 * Math.sin(tLive * 3.2);
-  head.rotation.z = 0.0018 * Math.sin(tLive * 2.1 + 0.7);
+  // Step31 頚椎分節＋頭慣性＋視線制御：
+  // 胴体の揺れを首全体で分散して打ち消し、頭蓋骨は少しだけ慣性遅れを持って安定する。
+  const headCounterPitch = -0.76 * (bird.rotation.x + 0.18) - 0.18 * chest.rotation.x;
+  const headCounterRoll = -0.70 * bird.rotation.z - 0.10 * chest.rotation.z;
+  const targetHeadPitch = headCounterPitch + 0.0025 * Math.sin(tLive * 0.82 + 0.4);
+  const targetHeadRoll = headCounterRoll + 0.0012 * Math.sin(tLive * 1.4);
+  const targetGazeYaw = 0.010 * Math.sin(tLive * 0.48 + 0.7) + 0.003 * Math.sin(tLive * 1.7);
+  const targetGazePitch = 0.004 * Math.sin(tLive * 0.62 + 1.1);
+  headControlState.pitch += (targetHeadPitch - headControlState.pitch) * 0.115;
+  headControlState.roll += (targetHeadRoll - headControlState.roll) * 0.105;
+  headControlState.gazeYaw += (targetGazeYaw - headControlState.gazeYaw) * 0.075;
+  headControlState.gazePitch += (targetGazePitch - headControlState.gazePitch) * 0.080;
 
-  // 目は頭に固定しつつ、ごく小さく遅れて揺らす。視線が泳ぎすぎると不自然なので振幅は極小。
+  // 首は一つの棒ではなく、胸椎側・中位頚椎・後頭部で補正を分担する。
+  neck.rotation.x = -0.16 + 0.34 * headControlState.pitch - 0.0040 * Math.sin(headStabilize + 0.35);
+  neck.rotation.y = 0.40 * headControlState.gazeYaw + 0.0020 * Math.sin(headStabilize * 0.8);
+  neck.rotation.z = 0.28 * headControlState.roll;
+  head.rotation.x = -0.05 + 0.66 * headControlState.pitch + headControlState.gazePitch + 0.0012 * Math.sin(tLive * 2.6 + 0.2);
+  head.rotation.y = 0.72 * headControlState.gazeYaw + 0.0015 * Math.sin(tLive * 3.2);
+  head.rotation.z = 0.62 * headControlState.roll + 0.0010 * Math.sin(tLive * 2.1 + 0.7);
+
+  // 目は頭に固定せず、視線ターゲットへごく小さく先行する。
+  // 大きく動かすと哺乳類的になるので、眼球運動は極小に抑える。
   for (const e of eyes) {
     const sx = e.userData.side || 1;
-    e.position.x = e.userData.baseX + sx * 0.0018 * Math.sin(tLive * 1.35 + 0.4);
-    e.position.y = e.userData.baseY + 0.0015 * Math.sin(tLive * 1.9 + 0.2);
-    e.position.z = e.userData.baseZ + 0.0012 * Math.sin(tLive * 1.2);
-    e.rotation.y = sx * (0.28 + 0.010 * Math.sin(tLive * 1.55));
-    e.rotation.x = 0.04 + 0.006 * Math.sin(tLive * 1.85 + 0.3);
+    e.position.x = e.userData.baseX + sx * 0.0014 * Math.sin(tLive * 1.35 + 0.4);
+    e.position.y = e.userData.baseY + 0.0012 * Math.sin(tLive * 1.9 + 0.2);
+    e.position.z = e.userData.baseZ + 0.0010 * Math.sin(tLive * 1.2);
+    e.rotation.y = sx * (0.28 + 0.55 * headControlState.gazeYaw + 0.006 * Math.sin(tLive * 1.55));
+    e.rotation.x = 0.04 + 0.40 * headControlState.gazePitch + 0.004 * Math.sin(tLive * 1.85 + 0.3);
   }
 
   for (const c of shoulderCovers) {
     const side = c.side;
-    c.mesh.position.y = 0.12 + 0.014 * Math.sin(thoraxLag - 0.15);
-    c.mesh.position.z = 0.18 - 0.018 * downstroke;
-    c.mesh.rotation.z = side * (0.18 + 0.035 * Math.sin(thoraxLag - 0.20));
-    c.mesh.rotation.y = side * (0.25 + 0.020 * Math.sin(thoraxLag + 0.40));
+    c.mesh.position.y = 0.12 + 0.014 * Math.sin(thoraxLag - 0.15) + 0.006 * downImpulse;
+    c.mesh.position.z = 0.18 - 0.018 * downstroke - 0.006 * thoraxReaction;
+    c.mesh.rotation.z = side * (0.18 + 0.035 * Math.sin(thoraxLag - 0.20) + 0.010 * thoraxReaction);
+    c.mesh.rotation.y = side * (0.25 + 0.020 * Math.sin(thoraxLag + 0.40) + 0.006 * thoraxReaction);
   }
 
   // 胴体表面の短い羽毛も胸郭の呼吸・反力に追従させる。
@@ -1576,9 +3587,9 @@ function animate() {
   for (const g of covertFeatherGroups) {
     const side = g.userData.side;
     g.position.x = g.userData.baseX + side * 0.006 * Math.sin(thoraxLag - 0.18);
-    g.position.y = g.userData.baseY + 0.010 * Math.sin(thoraxLag - 0.25);
-    g.position.z = g.userData.baseZ - 0.020 * downstroke;
-    g.rotation.x = 0.018 * Math.sin(thoraxLag - 0.16);
+    g.position.y = g.userData.baseY + 0.010 * Math.sin(thoraxLag - 0.25) + 0.004 * downImpulse;
+    g.position.z = g.userData.baseZ - 0.020 * downstroke - 0.006 * thoraxReaction;
+    g.rotation.x = 0.018 * Math.sin(thoraxLag - 0.16) - 0.008 * thoraxReaction;
     g.rotation.y = side * 0.026 * Math.sin(thoraxLag - 0.32);
     g.rotation.z = side * 0.018 * Math.sin(thoraxLag + 0.12);
     for (const f of g.children) {
@@ -1592,35 +3603,40 @@ function animate() {
   }
 
   // 肩甲骨・烏口骨・叉骨の見た目だけを翼より少し遅らせて動かす。
-  // 実物の「肩帯が胴体上でわずかに滑る」印象を作るための微小変位。
-  for (const g of shoulderGirdleVisuals) {
-    const side = g.userData.side;
-    g.position.x = g.userData.baseX + side * 0.010 * Math.sin(thoraxLag - 0.10);
-    g.position.y = g.userData.baseY + 0.012 * Math.sin(thoraxLag - 0.30);
-    g.position.z = g.userData.baseZ - 0.030 * downstroke;
-    g.rotation.x = 0.035 * Math.sin(thoraxLag - 0.20);
-    g.rotation.y = side * 0.045 * Math.sin(thoraxLag - 0.35);
-    g.rotation.z = side * 0.030 * Math.sin(thoraxLag + 0.10);
-  }
+  // 肩帯の定義と運動を関数化し、次の骨格アップデートで差し替えやすくする。
+  updateShoulderGirdleKinematics(thoraxLag, downstroke, downImpulse, thoraxReaction, reversal);
+  updateThoracicRigKinematics(thoraxLag, downstroke, downImpulse, thoraxReaction, reversal);
 
-  // 叉骨バネ：振り下げでわずかに開き、反転で戻る。描画のみで翼長・位相は不変。
-  rebuildFurculaSpring(0.010 * downstroke + 0.004 * reversal);
-  furculaSpring.rotation.x = 0.012 * Math.sin(thoraxLag - 0.25);
-  furculaSpring.position.y = 0.004 * Math.sin(thoraxLag);
+  // Step21: 叉骨バネと竜骨制御は updateThoracicRigKinematics 内で
+  // 翼反力に基づいて更新する。ここでは全体の微小揺れだけを残す。
+  furculaSpring.rotation.x = 0.010 * Math.sin(thoraxLag - 0.25) - 0.008 * thoraxReaction;
+  furculaSpring.position.y = 0.003 * Math.sin(thoraxLag) + 0.003 * downImpulse;
 
-  keel.position.y = -0.300 - 0.010 * reversal;
-  keel.rotation.x = -0.06 + 0.010 * Math.sin(thoraxLag - 0.20);
-  // 尾羽は翼より少し遅れて反応する。開く=空気抵抗とピッチ安定、閉じる=移動しやすい。
-  const tailPhase = tLive - 0.52 + 0.018 * Math.sin(tLive * 0.37);
-  const upAssist = 0.5 + 0.5 * Math.sin(tailPhase);
+  // Step9: 翼の加速度に対して、肩関節rootが制約内で微小に受ける。
+  // ここでは翼三節の運動は変更しない。
+  updateShoulderJointTransmission(1 / 60, flapPhase, wingKin, bodyPhys, reversal, downstroke);
+
+  // Step13: 骨盤主導の尾羽制御。
+  // 尾羽を翼の直接同期から外し、骨盤の慣性遅れ・ヨー・ロールを受ける安定板として動かす。
+  // 尾筒の接続は残し、骨盤→尾筒→尾羽へ少し遅れて伝わる。
+  const pelvisLag = bodyPhys.pelvisLag || 0;
+  const legLag = bodyPhys.legLag || 0;
+  const toeLag = bodyPhys.toeLag || 0;
+  const tailPhase = tLive - 0.74 + 0.020 * Math.sin(tLive * 0.37);
+  const pelvisYaw = 0.052 * pelvisLag + 0.018 * legLag + 0.010 * Math.sin(tLive * 0.58 + 1.2);
+  const pelvisRoll = 0.034 * legLag - 0.018 * pelvisLag + 0.007 * Math.sin(tLive * 0.62);
+  const pelvisPitchControl = -0.095 * pelvisLag + 0.040 * abdomenReaction + 0.022 * tailReaction;
+  const stabilityNeed = clamp01(0.34 + 0.42 * Math.abs(pelvisLag) + 0.20 * Math.abs(legLag) + 0.14 * reversal);
   const reversalAirDump = Math.pow(Math.abs(Math.cos(tailPhase)), 2.2);
-  const tailOpen = 0.24 + 0.44 * upAssist + 0.12 * reversalAirDump;
-  const tailPitch = -0.16 + 0.10 * Math.sin(tailPhase - 0.55) + 0.035 * reversalAirDump;
-  const yawTrim = 0.018 * Math.sin(t * 0.73 + 1.2);
+  const tailOpen = clamp01(0.20 + 0.46 * stabilityNeed + 0.10 * reversalAirDump + 0.06 * Math.abs(toeLag));
+  const tailPitch = -0.13 + pelvisPitchControl + 0.028 * reversalAirDump;
+  const yawTrim = pelvisYaw + 0.006 * Math.sin(t * 0.73 + 1.2);
 
   tailRoot.rotation.x = -0.04 + tailPitch;
-  tailRoot.rotation.y = yawTrim * 0.80;
-  tailRoot.rotation.z = 0.008 * Math.sin(t * 0.62);
+  tailRoot.rotation.y = yawTrim;
+  tailRoot.rotation.z = pelvisRoll + 0.004 * tailReaction;
+  tailRoot.position.y = -0.098 - 0.006 * Math.abs(pelvisLag) + 0.003 * legLag;
+  tailRoot.position.z = -1.030 + 0.010 * pelvisLag + 0.004 * tailReaction;
 
   for (let i = 0; i < tailFeathers.length; i++) {
     const f = tailFeathers[i];
@@ -1630,7 +3646,7 @@ function animate() {
     const layerRank = f.userData.layerRank || 0;
     const signedLayer = layerRank - 4;
     const micro = 0.018 * Math.sin(t * 1.7 + f.userData.microPhase);
-    const outerLag = 0.035 * absSide * Math.sin(tailPhase - 0.7);
+    const outerLag = 0.030 * absSide * Math.sin(tailPhase - 0.7) + 0.028 * absSide * pelvisLag;
 
     // 実物寄り尾羽：同一平面の扇子ではなく、浅い円錐面に配置する。
     // 外側羽ほど後方・下方へ落とし、中央羽は少し立てて安定板として残す。
@@ -1642,25 +3658,26 @@ function animate() {
     const layerZ = 0.0045 * signedLayer;
     const naturalAsym = f.userData.asym || 0;
 
-    f.position.x = side * (0.004 + 0.030 * curvature * tailOpen) + naturalAsym * (0.35 + absSide);
-    f.position.y = -0.010 - coneDrop + layerY;
-    f.position.z = 0.050 - coneDepth + layerZ;
+    f.position.x = side * (0.004 + 0.030 * curvature * tailOpen) + naturalAsym * (0.35 + absSide) + side * 0.004 * legLag;
+    f.position.y = -0.010 - coneDrop + layerY - 0.006 * Math.abs(pelvisLag);
+    f.position.z = 0.050 - coneDepth + layerZ + 0.012 * pelvisLag + 0.004 * toeLag;
 
     // 左右へ扇状に開く。外側ほど大きく、中央羽は安定板として残る。
-    f.rotation.y = side * (0.09 + 0.35 * tailOpen + 0.16 * curvature * tailOpen) + outerLag + naturalAsym;
+    f.rotation.y = side * (0.09 + 0.35 * tailOpen + 0.16 * curvature * tailOpen) + outerLag + naturalAsym + side * 0.018 * pelvisYaw;
 
-    // 円錐曲面：外側羽ほど下向きに寝る。平面感を消す主成分。
-    f.rotation.x = -0.020 - 0.100 * curvature * tailOpen - 0.018 * absSide + micro * 0.75;
+    // 円錐曲面：外側羽ほど下向きに寝る。骨盤ピッチで安定板角が変わる。
+    f.rotation.x = -0.020 - 0.100 * curvature * tailOpen - 0.018 * absSide + micro * 0.75 + 0.045 * pelvisPitchControl;
 
-    // 羽軸方向のねじれ。外側ほど強く、空気を受ける皿状の尾羽にする。
-    f.rotation.z = side * (0.014 + 0.045 * tailOpen + 0.070 * curvature * tailOpen) + micro * 0.45 + naturalAsym * 0.6;
+    // 羽軸方向のねじれ。外側ほど強く、骨盤ロールに対して左右差を作る。
+    f.rotation.z = side * (0.014 + 0.045 * tailOpen + 0.070 * curvature * tailOpen) + micro * 0.45 + naturalAsym * 0.6 + side * 0.030 * pelvisRoll;
   }
 
   // 接続カバー羽は尾羽より控えめに動き、尾筒と尾羽根元を連続させる。
   tailRootCoverts.rotation.x = -0.04 + tailPitch * 0.42;
   tailRootCoverts.rotation.y = yawTrim * 0.45;
-  tailRootCoverts.position.y = -0.064 - 0.006 * reversalAirDump;
-  tailRootCoverts.position.z = -0.975 + 0.010 * Math.sin(tailPhase - 0.30);
+  tailRootCoverts.rotation.z = pelvisRoll * 0.36;
+  tailRootCoverts.position.y = -0.064 - 0.006 * reversalAirDump - 0.004 * Math.abs(pelvisLag);
+  tailRootCoverts.position.z = -0.975 + 0.010 * pelvisLag + 0.006 * Math.sin(tailPhase - 0.30);
   for (const c of tailRootCovertFeathers) {
     const side = c.userData.side;
     const absSide = c.userData.absSide;
@@ -1689,6 +3706,13 @@ function animate() {
   updateWingGeometry(leftWing, leftWingTime);
   updateWingGeometry(rightWing, rightWingTime);
 
+  // 軽量CFD風表示：ボタンで「軽量CFD」にした時だけ更新する。
+  updateLightCfdViz(leftWing, rightWing, tLive);
+  updateBodySegmentSkeleton();
+  updateCervicalSkullRig(tLive, bodyPhys);
+  updateLowerBodyRigSkeleton(tLive, bodyPhys);
+  updateLowerBodyVisuals(tLive, bodyPhys);
+  updateDebugPanel(tLive);
 
   renderer.render(scene, camera);
 }
